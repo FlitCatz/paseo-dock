@@ -1,0 +1,16 @@
+{
+  "schema": 1,
+  "agents": [
+    {"id":"codex","label":"Codex","adapter":"codex"},
+    {"id":"claude","label":"Claude","adapter":"claude"}
+  ],
+  "methodologies": [
+    {"id":"superpowers","label":"Superpowers","installer":"git-plugin","agents":["codex","claude"]},
+    {"id":"gsd-core","label":"GSD Core","installer":"gsd-core","agents":["codex","claude"]},
+    {"id":"ponytail","label":"Ponytail","installer":"git-plugin","agents":["codex","claude"]}
+  ],
+  "utilities": [
+    {"id":"rtk","label":"RTK","installer":"rtk","agents":["codex","claude"],"note":"Command output compression + agent hooks"},
+    {"id":"headroom","label":"Headroom","installer":"headroom","agents":["codex","claude"],"note":"MCP compression tools; installs an isolated Python runtime inside the sandbox"}
+  ]
+}

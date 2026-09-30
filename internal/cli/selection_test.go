@@ -1,0 +1,169 @@
+package cli
+
+import (
+	"bytes"
+	"encoding/json"
+	"os"
+	"paseo-sbx/internal/config"
+	"path/filepath"
+	"testing"
+)
+
+func TestBuildUsesOnlySelectedPairs(t *testing.T) {
+	var out, stderr bytes.Buffer
+	if code := Run("../..", []string{"build", "--profiles", "codex-superpowers,codex-ponytail", "--utilities", "rtk", "--print-bake"}, &bytes.Buffer{}, &out, &stderr); code != 0 {
+		t.Fatal(stderr.String())
+	}
+	var cfg struct {
+		Target map[string]struct {
+			Args map[string]string `json:"args"`
+			Tags []string          `json:"tags"`
+		} `json:"target"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &cfg); err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Target) != 2 || cfg.Target["claude-superpowers"].Args != nil || cfg.Target["codex-ponytail"].Args["UTILITIES"] != "rtk" {
+		t.Fatal(out.String())
+	}
+	if cfg.Target["codex-ponytail"].Tags[0] == "paseo-sbx/codex-ponytail:2026.09.30" {
+		t.Fatal("unversioned utility image")
+	}
+}
+func TestNonInteractiveRequiresSelection(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("HOME", t.TempDir())
+	b, _ := os.ReadFile("../../versions.lock.json")
+	os.WriteFile(filepath.Join(root, "versions.lock.json"), b, 0600)
+	for _, args := range [][]string{{"create", "--workspace", t.TempDir()}, {"build", "--print-bake"}, {"build", "--profiles", "codex-superpowers", "--utilities", "unknown", "--print-bake"}} {
+		if Run(root, args, &bytes.Buffer{}, &bytes.Buffer{}, &bytes.Buffer{}) == 0 {
+			t.Fatalf("accepted %v", args)
+		}
+	}
+}
+func TestMergeRemovesOnlyOwnedInactiveProviders(t *testing.T) {
+	providers := map[string]any{
+		"codex-superpowers": map[string]any{"command": []any{"/base/abc/agent-wrapper", "codex-superpowers"}},
+		"claude-ponytail":   map[string]any{"command": []any{"/base/launcher/agent-wrapper", "claude-ponytail"}},
+		"codex-ponytail":    map[string]any{"command": []any{"/base/def/agent-wrapper", "codex-ponytail"}},
+		"other":             map[string]any{"command": []any{"/someone/agent-wrapper", "other"}},
+	}
+	current := map[string]any{"agents": map[string]any{"providers": providers}}
+	installed := []config.Installed{{Registry: config.Registry{Profiles: map[string]config.Entry{"codex-superpowers": {Agent: "codex"}, "claude-ponytail": {Agent: "claude"}}, Active: []string{"codex-superpowers"}}}}
+	generated := ProviderConfig(config.LauncherPath("/base"), ActiveAdapters(installed))
+	MergeManagedConfig(current, generated, "/base")
+	if len(providers) != 2 || providers["claude-ponytail"] != nil || providers["codex-ponytail"] != nil || providers["other"] == nil {
+		t.Fatal(providers)
+	}
+	command := providers["codex-superpowers"].(map[string]any)["command"].([]string)
+	if command[0] != "/base/launcher/agent-wrapper" {
+		t.Fatal(command)
+	}
+}
+func TestSelectedCreatePreservesInactiveAndRejectsUtilityMismatch(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	workspace := t.TempDir()
+	fake := t.TempDir()
+	t.Setenv("PATH", fake+":"+os.Getenv("PATH"))
+	b, _ := os.ReadFile("../../versions.lock.json")
+	os.WriteFile(filepath.Join(root, "versions.lock.json"), b, 0600)
+	os.Mkdir(filepath.Join(root, "bin"), 0755)
+	os.WriteFile(filepath.Join(root, "bin", "agent-wrapper"), []byte("wrapper"), 0700)
+	os.WriteFile(filepath.Join(fake, "sbx"), []byte("#!/bin/sh\nif [ \"$1\" = ls ]; then cat \"$HOME/rows\"; fi\n"), 0700)
+	os.WriteFile(filepath.Join(home, "rows"), []byte("[]"), 0600)
+	invoke := func(args ...string) int {
+		t.Helper()
+		var stderr bytes.Buffer
+		code := Run(root, args, &bytes.Buffer{}, &bytes.Buffer{}, &stderr)
+		if code != 0 {
+			t.Log(stderr.String())
+		}
+		return code
+	}
+	if invoke("create", "--workspace", workspace, "--profiles", "codex-superpowers,codex-ponytail") != 0 {
+		t.Fatal("create failed")
+	}
+	w, _ := config.Canonical(workspace)
+	runtime, _ := config.RuntimePath(w)
+	var reg config.Registry
+	config.ReadJSON(filepath.Join(runtime, "registry.json"), &reg)
+	if len(reg.Profiles) != 2 || len(reg.ActiveProfiles()) != 2 {
+		t.Fatal(reg)
+	}
+	rows := []map[string]string{}
+	for _, e := range reg.Profiles {
+		rows = append(rows, map[string]string{"name": e.Sandbox})
+	}
+	config.WriteJSON(filepath.Join(home, "rows"), rows)
+	// Changing the selection creates a different image identity, so an existing
+	// sandbox must report the mismatch rather than claim it was reconfigured.
+	before, _ := os.ReadFile(filepath.Join(runtime, "registry.json"))
+	if invoke("create", "--workspace", workspace, "--profiles", "codex-superpowers", "--utilities", "rtk") == 0 {
+		t.Fatal("reused sandbox with missing utility")
+	}
+	after, _ := os.ReadFile(filepath.Join(runtime, "registry.json"))
+	if !bytes.Equal(before, after) {
+		t.Fatal("mismatch changed registry")
+	}
+}
+
+func TestFailedWrapperFinalizationPreservesActiveSelection(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	workspace := t.TempDir()
+	fake := t.TempDir()
+	t.Setenv("PATH", fake+":"+os.Getenv("PATH"))
+	b, _ := os.ReadFile("../../versions.lock.json")
+	os.WriteFile(filepath.Join(root, "versions.lock.json"), b, 0600)
+	os.Mkdir(filepath.Join(root, "bin"), 0755)
+	wrapper := filepath.Join(root, "bin", "agent-wrapper")
+	os.WriteFile(wrapper, []byte("wrapper"), 0700)
+	os.WriteFile(filepath.Join(fake, "sbx"), []byte("#!/bin/sh\nif [ \"$1\" = ls ]; then echo '[]'; fi\n"), 0700)
+	run := func(profiles string) int {
+		return Run(root, []string{"create", "--workspace", workspace, "--profiles", profiles}, &bytes.Buffer{}, &bytes.Buffer{}, &bytes.Buffer{})
+	}
+	if run("codex-superpowers") != 0 {
+		t.Fatal("initial create")
+	}
+	os.Remove(wrapper)
+	if run("claude-superpowers") == 0 {
+		t.Fatal("missing wrapper accepted")
+	}
+	w, _ := config.Canonical(workspace)
+	runtime, _ := config.RuntimePath(w)
+	var reg config.Registry
+	config.ReadJSON(filepath.Join(runtime, "registry.json"), &reg)
+	if !reg.IsActive("codex-superpowers") || reg.IsActive("claude-superpowers") {
+		t.Fatalf("failed finalization switched selection: %+v", reg)
+	}
+	a, _ := NewApp(root)
+	s, err := a.resolveSelection(workspace, "", "", "", "", "", "", false)
+	if err != nil || len(s.Pairs) != 1 || s.Pairs[0].Agent != "codex" {
+		t.Fatalf("saved selection changed: %+v %v", s, err)
+	}
+}
+func TestStopUsesPreservedRegistryAfterCatalogRemoval(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	workspace := t.TempDir()
+	w, _ := config.Canonical(workspace)
+	runtime, _ := config.RuntimePath(w)
+	b, _ := os.ReadFile("../../versions.lock.json")
+	os.WriteFile(filepath.Join(root, "versions.lock.json"), b, 0600)
+	config.WriteJSON(filepath.Join(runtime, "registry.json"), config.Registry{Workspace: w, Profiles: map[string]config.Entry{"codex-removed": {Agent: "codex", Tool: "removed", Workspace: w, Sandbox: "preserved"}}})
+	fake := t.TempDir()
+	t.Setenv("PATH", fake+":"+os.Getenv("PATH"))
+	log := filepath.Join(home, "stopped")
+	os.WriteFile(filepath.Join(fake, "sbx"), []byte("#!/bin/sh\nprintf '%s' \"$*\" > \"$HOME/stopped\"\n"), 0700)
+	if code := Run(root, []string{"stop", "codex-removed", "--workspace", workspace}, &bytes.Buffer{}, &bytes.Buffer{}, &bytes.Buffer{}); code != 0 {
+		t.Fatal("catalog removal stranded sandbox")
+	}
+	got, _ := os.ReadFile(log)
+	if string(got) != "stop preserved" {
+		t.Fatal(string(got))
+	}
+}

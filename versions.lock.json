@@ -1,0 +1,70 @@
+{
+  "schema": 1,
+  "tag": "2026.09.30",
+  "minimum_sbx": "0.46.0",
+  "paseo": "0.10.1",
+  "node": {
+    "version": "v24.21.0",
+    "sha256": {
+      "aarch64": "6ad1325edbdb5649c379b75a237147a666c95d4f9ae8d340fef2d1575d289ad2",
+      "x86_64": "fd8e59d5a511510f6a298afb548f18c7d2b1be404d8b4a27d94fbe49f56cb2d6"
+    }
+  },
+  "base_images": {
+    "codex": "docker.io/docker/sandbox-templates:codex@sha256:a68b972a59148c6359ade441387159033f6d196d48aef9dda06d2d4bb26eb41e",
+    "claude": "docker.io/docker/sandbox-templates:claude-code@sha256:868e3f5ef10579e06903d42e86448851ed59319ab8b9fba6dea2772c449bb2a6"
+  },
+  "agents": {
+    "codex": "0.159.2",
+    "claude": "2.1.285"
+  },
+  "tools": {
+    "superpowers": {
+      "repository": "https://github.com/obra/superpowers.git",
+      "revision": "8ca22dba9a94f28898bbce59f2537ff4d87c747d",
+      "version": "6.4.2"
+    },
+    "ponytail": {
+      "repository": "https://github.com/DietrichGebert/ponytail.git",
+      "revision": "e3ba2aa6f1e6f0bc4d69eb09c9f0d0a93af56156",
+      "version": "4.10.0"
+    },
+    "gsd-core": {
+      "package": "@opengsd/gsd-core",
+      "version": "1.15.0"
+    }
+  },
+  "utilities": {
+    "rtk": {
+      "version": "0.50.0",
+      "assets": {
+        "aarch64": {
+          "url": "https://github.com/rtk-ai/rtk/releases/download/v0.50.0/rtk-aarch64-unknown-linux-gnu.tar.gz",
+          "sha256": "d1cc49dfa2cd443fc32625444b59fe616b6c80478cca210985118347174dd758"
+        },
+        "x86_64": {
+          "url": "https://github.com/rtk-ai/rtk/releases/download/v0.50.0/rtk-x86_64-unknown-linux-musl.tar.gz",
+          "sha256": "bc2b8902b0d9c796c82ef45f16ae2307e17757afeca5ee156235a3dc7bda5f89"
+        }
+      }
+    },
+    "headroom": {
+      "version": "0.39.1",
+      "package": "headroom-ai[mcp]",
+      "python": "3.13.7",
+      "uv": {
+        "version": "0.12.21",
+        "assets": {
+          "aarch64": {
+            "url": "https://github.com/astral-sh/uv/releases/download/0.12.21/uv-aarch64-unknown-linux-gnu.tar.gz",
+            "sha256": "030b69227b40af8c1981b7301793dc66e71ed3c796ea8688209dd268bd91ec51"
+          },
+          "x86_64": {
+            "url": "https://github.com/astral-sh/uv/releases/download/0.12.21/uv-x86_64-unknown-linux-gnu.tar.gz",
+            "sha256": "23f02075b652bb1df64178cfae41b5caf160822e720e2663568f3f5d63bc52c0"
+          }
+        }
+      }
+    }
+  }
+}

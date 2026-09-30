@@ -1,0 +1,123 @@
+package cli
+
+import (
+	"fmt"
+	"os"
+	"paseo-sbx/internal/config"
+	"path/filepath"
+	"strings"
+)
+
+func (a *App) resolveSelection(workspace, profile, profiles, utilities, path, agents, methods string, setUtilities bool) (config.Selection, error) {
+	s := config.Selection{Schema: 1}
+	sources := 0
+	for _, v := range []string{profile, profiles, path, agents + methods} {
+		if v != "" {
+			sources++
+		}
+	}
+	if sources > 1 {
+		return s, fmt.Errorf("use only one of --profile, --profiles, --selection, or --agents/--methodologies")
+	}
+	var err error
+	switch {
+	case profile != "" || profiles != "":
+		if profile != "" {
+			profiles = profile
+		}
+		s, err = config.ParseProfiles(a.Catalog, profiles)
+	case path != "":
+		err = config.ReadJSON(path, &s)
+	case agents != "" || methods != "":
+		if agents == "" || methods == "" {
+			return s, fmt.Errorf("--agents and --methodologies must be supplied together")
+		}
+		for _, agent := range strings.Split(agents, ",") {
+			for _, method := range strings.Split(methods, ",") {
+				s.Pairs = append(s.Pairs, config.Pair{Agent: strings.TrimSpace(agent), Methodology: strings.TrimSpace(method)})
+			}
+		}
+	default:
+		var runtime string
+		runtime, err = a.selectedRuntime(workspace)
+		if err == nil {
+			s, err = readSavedSelection(runtime)
+		}
+		if err != nil {
+			return s, fmt.Errorf("no saved selection; specify --profiles or --agents with --methodologies (interactive selection requires a terminal)")
+		}
+	}
+	if err != nil {
+		return s, err
+	}
+	if setUtilities {
+		s.Utilities = []string{}
+		if utilities != "" {
+			for _, u := range strings.Split(utilities, ",") {
+				s.Utilities = append(s.Utilities, strings.TrimSpace(u))
+			}
+		}
+	}
+	s, err = a.Catalog.Normalize(s)
+	if err != nil {
+		return s, err
+	}
+	for _, p := range s.Pairs {
+		if a.Lock.BaseImages[p.Agent] == "" || a.Lock.Agents[p.Agent] == "" || a.Lock.Tools[p.Methodology] == nil {
+			return s, fmt.Errorf("missing pinned versions for %s/%s", p.Agent, p.Methodology)
+		}
+	}
+	for _, u := range s.Utilities {
+		if a.Lock.Utilities[u] == nil {
+			return s, fmt.Errorf("missing pinned utility %s", u)
+		}
+	}
+	return s, nil
+}
+func readSavedSelection(runtime string) (config.Selection, error) {
+	var reg config.Registry
+	if err := config.ReadJSON(filepath.Join(runtime, "registry.json"), &reg); err != nil {
+		return config.Selection{}, err
+	}
+	if reg.Selection == nil {
+		return config.Selection{}, fmt.Errorf("no completed saved selection")
+	}
+	return *reg.Selection, nil
+}
+func (a *App) build(namespace, platforms string, push bool) error {
+	cfg := a.BakeConfig(namespace, platforms)
+	path := filepath.Join(a.Root, ".generated", "bake.json")
+	if err := config.WriteJSON(path, cfg); err != nil {
+		return err
+	}
+	cmd := []string{"docker", "buildx", "bake", "--file", path, "--progress", "plain"}
+	if push {
+		cmd = append(cmd, "--push")
+	} else {
+		cmd = append(cmd, "--load")
+	}
+	fmt.Fprintln(a.Out, "Building selected images:", strings.Join(a.profiles(), ", "))
+	return a.run(cmd...)
+}
+func (a *App) load(namespace string, keep bool) error {
+	dir := filepath.Join(a.Root, ".artifacts")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return err
+	}
+	for _, p := range a.profiles() {
+		tar := filepath.Join(dir, p+".tar")
+		fmt.Fprintln(a.Out, "Loading sandbox template:", p)
+		if err := a.run("docker", "save", "-o", tar, a.image(p, namespace)); err != nil {
+			return err
+		}
+		if err := a.run("sbx", "template", "load", tar); err != nil {
+			return err
+		}
+		if !keep {
+			if err := os.Remove(tar); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}

@@ -1,0 +1,14 @@
+*
+!go.mod
+!cmd/
+!cmd/install-node/
+!cmd/install-node/main.go
+!internal/
+!internal/nodeinstall/
+!internal/nodeinstall/install.go
+!scripts/
+!scripts/install-tools.sh
+!scripts/install-utilities.sh
+!scripts/agent-instructions.md
+!versions.lock.json
+!Dockerfile

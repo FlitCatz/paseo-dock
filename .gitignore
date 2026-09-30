@@ -1,0 +1,7 @@
+.artifacts/
+.generated/
+.DS_Store
+*.tar
+*.env
+bin/
+ci-bake.json

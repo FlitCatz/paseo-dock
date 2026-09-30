@@ -1,0 +1,106 @@
+{
+  "group": {
+    "default": {
+      "targets": [
+        "claude-gsd-core",
+        "claude-ponytail",
+        "claude-superpowers",
+        "codex-gsd-core",
+        "codex-ponytail",
+        "codex-superpowers"
+      ]
+    }
+  },
+  "target": {
+    "claude-gsd-core": {
+      "args": {
+        "AGENT": "claude",
+        "AGENT_VERSION": "2.1.285",
+        "BASE_IMAGE": "docker.io/docker/sandbox-templates:claude-code@sha256:868e3f5ef10579e06903d42e86448851ed59319ab8b9fba6dea2772c449bb2a6",
+        "METHOD_INSTALLER": "gsd-core",
+        "TOOL": "gsd-core",
+        "UTILITIES": ""
+      },
+      "context": ".",
+      "dockerfile": "Dockerfile",
+      "tags": [
+        "paseo-sbx/claude-gsd-core:2026.09.30-f7df8cb82339"
+      ]
+    },
+    "claude-ponytail": {
+      "args": {
+        "AGENT": "claude",
+        "AGENT_VERSION": "2.1.285",
+        "BASE_IMAGE": "docker.io/docker/sandbox-templates:claude-code@sha256:868e3f5ef10579e06903d42e86448851ed59319ab8b9fba6dea2772c449bb2a6",
+        "METHOD_INSTALLER": "git-plugin",
+        "TOOL": "ponytail",
+        "UTILITIES": ""
+      },
+      "context": ".",
+      "dockerfile": "Dockerfile",
+      "tags": [
+        "paseo-sbx/claude-ponytail:2026.09.30-cfabc4c620ab"
+      ]
+    },
+    "claude-superpowers": {
+      "args": {
+        "AGENT": "claude",
+        "AGENT_VERSION": "2.1.285",
+        "BASE_IMAGE": "docker.io/docker/sandbox-templates:claude-code@sha256:868e3f5ef10579e06903d42e86448851ed59319ab8b9fba6dea2772c449bb2a6",
+        "METHOD_INSTALLER": "git-plugin",
+        "TOOL": "superpowers",
+        "UTILITIES": ""
+      },
+      "context": ".",
+      "dockerfile": "Dockerfile",
+      "tags": [
+        "paseo-sbx/claude-superpowers:2026.09.30-777308a9a312"
+      ]
+    },
+    "codex-gsd-core": {
+      "args": {
+        "AGENT": "codex",
+        "AGENT_VERSION": "0.159.2",
+        "BASE_IMAGE": "docker.io/docker/sandbox-templates:codex@sha256:a68b972a59148c6359ade441387159033f6d196d48aef9dda06d2d4bb26eb41e",
+        "METHOD_INSTALLER": "gsd-core",
+        "TOOL": "gsd-core",
+        "UTILITIES": ""
+      },
+      "context": ".",
+      "dockerfile": "Dockerfile",
+      "tags": [
+        "paseo-sbx/codex-gsd-core:2026.09.30-1f47e7566ee4"
+      ]
+    },
+    "codex-ponytail": {
+      "args": {
+        "AGENT": "codex",
+        "AGENT_VERSION": "0.159.2",
+        "BASE_IMAGE": "docker.io/docker/sandbox-templates:codex@sha256:a68b972a59148c6359ade441387159033f6d196d48aef9dda06d2d4bb26eb41e",
+        "METHOD_INSTALLER": "git-plugin",
+        "TOOL": "ponytail",
+        "UTILITIES": ""
+      },
+      "context": ".",
+      "dockerfile": "Dockerfile",
+      "tags": [
+        "paseo-sbx/codex-ponytail:2026.09.30-dcbc3b7fb3c2"
+      ]
+    },
+    "codex-superpowers": {
+      "args": {
+        "AGENT": "codex",
+        "AGENT_VERSION": "0.159.2",
+        "BASE_IMAGE": "docker.io/docker/sandbox-templates:codex@sha256:a68b972a59148c6359ade441387159033f6d196d48aef9dda06d2d4bb26eb41e",
+        "METHOD_INSTALLER": "git-plugin",
+        "TOOL": "superpowers",
+        "UTILITIES": ""
+      },
+      "context": ".",
+      "dockerfile": "Dockerfile",
+      "tags": [
+        "paseo-sbx/codex-superpowers:2026.09.30-b00e8104901f"
+      ]
+    }
+  }
+}

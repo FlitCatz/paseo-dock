@@ -1,0 +1,91 @@
+name: Sandbox templates
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish catalog images to GHCR
+        type: boolean
+        default: false
+  pull_request:
+    paths:
+      - Dockerfile
+      - .dockerignore
+      - versions.lock.json
+      - scripts/**
+      - go.mod
+      - go.sum
+      - catalog.json
+      - cmd/**
+      - internal/**
+      - Makefile
+      - .github/workflows/templates.yml
+permissions:
+  contents: read
+jobs:
+  boundaries:
+    runs-on: ubuntu-latest
+    outputs:
+      profiles: ${{ steps.matrix.outputs.profiles }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: false
+      - run: go test -race ./...
+      - run: go vet ./...
+      - run: make build
+      - name: Resolve catalog profiles
+        id: matrix
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          const file = fs.existsSync('catalog.json') ? 'catalog.json' : 'internal/config/catalog.json';
+          const catalog = JSON.parse(fs.readFileSync(file));
+          const profiles = catalog.agents.flatMap(a => catalog.methodologies
+            .filter(m => m.agents.includes(a.id)).map(m => `${a.id}-${m.id}`));
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `profiles=${JSON.stringify(profiles)}\n`);
+          NODE
+      - name: Verify platform builds
+        run: |
+          for target in darwin/arm64 darwin/amd64 linux/arm64 linux/amd64; do
+            export GOOS=${target%/*} GOARCH=${target#*/} CGO_ENABLED=0
+            go build -o /tmp/paseo-sbx-${GOOS}-${GOARCH} ./cmd/paseo-sbx
+            go build -o /tmp/agent-wrapper-${GOOS}-${GOARCH} ./cmd/agent-wrapper
+            go build -o /tmp/install-node-${GOOS}-${GOARCH} ./cmd/install-node
+          done
+  images:
+    needs: boundaries
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        profile: ${{ fromJSON(needs.boundaries.outputs.profiles) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: false
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        if: github.event_name == 'workflow_dispatch' && inputs.publish
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build or publish the selected profile
+        env:
+          PROFILE: ${{ matrix.profile }}
+          REPOSITORY: ${{ github.repository }}
+          PUBLISH: ${{ github.event_name == 'workflow_dispatch' && inputs.publish }}
+        run: |
+          go run ./cmd/paseo-sbx build --profile "$PROFILE" --namespace "ghcr.io/${REPOSITORY,,}" \
+            --platforms linux/amd64,linux/arm64 --print-bake > ci-bake.json
+          args=(docker buildx bake -f ci-bake.json "$PROFILE")
+          if [ "$PUBLISH" = true ]; then args+=(--push); fi
+          "${args[@]}"

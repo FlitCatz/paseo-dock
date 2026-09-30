@@ -1,0 +1,8 @@
+#!/bin/sh
+set -eu
+source_root=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+if [ ! -x "$source_root/bin/paseo-sbx" ]; then
+  echo "paseo-sbx: run make build in $source_root first" >&2
+  exit 1
+fi
+exec "$source_root/bin/paseo-sbx" "$@"
