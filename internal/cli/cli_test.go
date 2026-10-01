@@ -17,7 +17,7 @@ func TestBakeProfiles(t *testing.T) {
 	}
 	cfg := a.BakeConfig("example/ns", "linux/amd64,linux/arm64")
 	targets := cfg["target"].(map[string]any)
-	if len(targets) != 6 {
+	if len(targets) != len(a.Catalog.AllProfiles()) {
 		t.Fatal(targets)
 	}
 	target := targets["codex-gsd-core"].(map[string]any)
@@ -26,6 +26,13 @@ func TestBakeProfiles(t *testing.T) {
 	}
 	if len(target["platforms"].([]string)) != 2 {
 		t.Fatal(target)
+	}
+	agy := targets["antigravity-cli-native"].(map[string]any)["args"].(map[string]string)
+	if agy["AGENT"] != "antigravity-cli" || agy["AGENT_VERSION"] == "" {
+		t.Fatalf("Antigravity native CLI is not pinned: %v", agy)
+	}
+	if _, exists := target["args"].(map[string]string)["ANTIGRAVITY_COMPAT_IMAGE"]; exists {
+		t.Fatal("Antigravity compatibility image leaked into Codex build args")
 	}
 }
 func TestInvalidArguments(t *testing.T) {
@@ -85,7 +92,7 @@ func TestCommandLifecycle(t *testing.T) {
 	os.WriteFile(filepath.Join(root, "Dockerfile"), []byte("FROM scratch"), 0600)
 	os.Mkdir(filepath.Join(root, "bin"), 0755)
 	os.WriteFile(filepath.Join(root, "bin", "agent-wrapper"), []byte("trusted executable"), 0700)
-	os.WriteFile(filepath.Join(fake, "sbx"), []byte("#!/bin/sh\nif [ \"$1\" = ls ]; then echo \"[]\"; fi\n"), 0700)
+	os.WriteFile(filepath.Join(fake, "sbx"), []byte("#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$HOME/sbx-commands\"\nif [ \"$1\" = ls ]; then echo \"[]\"; fi\n"), 0700)
 	os.WriteFile(filepath.Join(fake, "docker"), []byte("#!/bin/sh\nif [ \"$1\" = save ]; then touch \"$3\"; fi\n"), 0700)
 	os.WriteFile(filepath.Join(fake, "paseo"), []byte("#!/bin/sh\nif [ \"$3\" = status ]; then echo '{\"localDaemon\":\"running\"}'; else echo \"$3\" > \"$2/action\"; fi\n"), 0700)
 	invoke := func(args ...string) string {
@@ -109,8 +116,13 @@ func TestCommandLifecycle(t *testing.T) {
 	config.ReadJSON(filepath.Join(root, ".generated", "runtime.json"), &state)
 	runtime := state["path"]
 	var reg config.Registry
-	if err := config.ReadJSON(filepath.Join(runtime, "registry.json"), &reg); err != nil || len(reg.Profiles) != 6 {
+	if err := config.ReadJSON(filepath.Join(runtime, "registry.json"), &reg); err != nil || len(reg.Profiles) != len(config.Profiles) {
 		t.Fatalf("registry %v %v", reg, err)
+	}
+	agy := reg.Profiles["antigravity-cli-native"]
+	commands, _ := os.ReadFile(filepath.Join(home, "sbx-commands"))
+	if agy.Agent != "antigravity-cli" || !strings.Contains(string(commands), agy.Image+" --env GEMINI_API_KEY=proxy-managed shell "+reg.Workspace) {
+		t.Fatalf("Antigravity was not created as a shell sandbox: %s", commands)
 	}
 	fakeRows := []map[string]string{}
 	for _, e := range reg.Profiles {
@@ -130,8 +142,11 @@ func TestCommandLifecycle(t *testing.T) {
 	var current map[string]any
 	config.ReadJSON(filepath.Join(paseoHome, "config.json"), &current)
 	providers := current["agents"].(map[string]any)["providers"].(map[string]any)
-	if len(providers) != 7 {
+	if len(providers) != len(config.Profiles)-1 {
 		t.Fatal(providers)
+	}
+	if _, exists := providers["antigravity-cli-native"]; exists {
+		t.Fatal("native plugin provider must not be registered as ACP")
 	}
 	command := providers["codex-superpowers"].(map[string]any)["command"].([]any)
 	canonicalRuntime, err := filepath.EvalSymlinks(runtime)

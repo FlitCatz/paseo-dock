@@ -151,3 +151,71 @@ reload했다(설정 백업 `~/.paseo/config.json.backup-20260930T080322.74439300
 (`-7388c6b052ad`, `-836bc7684b34`)와 Go 전환 검증용 이미지(`go-node-runtime-check:local`,
 `go-installer-check:local`)를 삭제했다. 정리 후 workspace 4개, sandbox 12개, template 12개가
 모두 registry와 일치하고 SBX provider 6개는 `available` 상태다.
+
+## 2026-10-01 Antigravity CLI 초기 구현 (폐기)
+
+설계: catalog에 `antigravity-cli`를 추가하고 `native`와 `superpowers` 조합을 제공한다.
+sbx에는 해당 내장 agent가 없으므로 `shell` sandbox를 만들며, Paseo에는 Google의
+공식 별도 ACP 서버를 `extends: "acp"`로 연결한다. launcher가 workspace와 MCP relay를
+기존처럼 검증하고, ACP의 호스트 파일·터미널 기능은 끈다. 인증은 각 sandbox에서
+수행하고 호스트 인증 폴더를 공유하지 않는다.
+
+구현: `agy` 1.2.14와 ACP 1.2.1의 공식 artifact URL·checksum을 lock에 고정했다.
+Superpowers 스킬은 CLI와 ACP의 두 global 경로에 설치한다. `antigravity-login`은
+Google OAuth callback URL을 숨겨 입력받아 sandbox 내부의 공식 loopback 서버로
+전달한다. `--api-key`는 Gemini API key 모드를 선택하며 실제 키는 sbx proxy가 관리한다.
+GSD Core·Ponytail·RTK·Headroom 조합은 지원하지 않는다.
+
+실제 sbx에서 공식 arm64 ACP가 16KB 페이지 때문에 초기화 시 abort하는 문제를 확인했다.
+arm64 이미지에서는 공식 amd64 ACP 서버와 `localharness_external`을 QEMU로 실행하고,
+필요한 amd64 런타임을 별도 pinned image에서 복사한다. `agy`는 arm64 네이티브다.
+ACP에는 에뮬레이션 성능 비용이 있으며 초기화 중 upstream hugepage 정렬 경고가
+stderr에 출력되지만 세션 생성에는 성공했다.
+
+검증: `make build`, `make test`(Go race), `make vet` 통과.
+최종 native·Superpowers arm64 이미지를 빌드하고 CLI·스킬 설치를 확인했다.
+최종 native 이미지를 sbx에 로드하여 인증 helper의 API 모드 선택과 공용 launcher →
+sbx → 공식 ACP의 initialize·session/new를 검증했다. Paseo의 NO_BROWSER 모델 탐색
+경로에서 workspace를 올바르게 선택하고 모델 14개를 반환했다. 실제 Google 계정
+로그인·모델 요청·Paseo GUI 대화·amd64 이미지 실행은 수행하지 않았다.
+사용자 workspace registry 및 Paseo provider 설정은 변경하지 않았다.
+
+인증 helper 언어 수정: `cmd/antigravity-login`과 `internal/antigravitylogin`으로
+helper와 테스트를 Go로 통일했다. 이번 변경에서 추가했던 Python 파일·설치 의존성·
+Makefile 및 CI 실행 단계를 제거했다. Docker의 기존 Go builder에서 대상 아키텍처용
+정적 바이너리를 빌드한다. callback은 로그인 시도별 state·loopback·port·path를 검증하고
+HTTP proxy와 redirect를 사용하지 않는다. 기존 CLI 설정을 보존하며 인증 모드를
+선택하고, 취소 시 ACP 프로세스를 종료한다. 실제 계정 로그인을 대체하는 가짜 ACP와
+loopback endpoint로 OAuth·API 모드, 설정 권한, 취소 동작을 Go race 테스트로 검증한다.
+
+수정 검증: 전체 Go race 테스트와 vet 통과, helper의 darwin/linux × arm64/amd64
+교차 빌드 성공. native·Superpowers 이미지를 Go helper로 재빌드했다. 최종 native
+이미지로 만든 실제 sbx에서 `antigravity-login --api-key`가 공식 ACP 서버와 통신하여
+인증 모드를 선택하는 데 성공했다. 실제 계정 로그인·모델 요청은 수행하지 않았다.
+
+## 2026-10-01 기존 Antigravity 플러그인으로 전환
+
+초기 ACP 설계는 설치된 `paseo-plugin-antigravity-cli` 0.8.0을 확인하기 전에 전용
+연동이 없다고 가정한 오류였다. 해당 구현의 통과 테스트는 그 전제를 검증하지 못했다.
+ACP artifact·인증 helper·QEMU·호환 image·전용 설치 script를 제거했다.
+
+새 구현은 기존 Go 설치기를 `install-runtime`으로 일반화하여 공식 `agy`의 SHA-512를
+검증한다. catalog·공용 Dockerfile·공용 launcher에 Antigravity를 통합하고,
+`paseo-sbx run`이 local daemon WebSocket API로 기존 native 공급자에 에이전트를 생성한다.
+설치된 플러그인이 stream-json을 처리하며 `agyPath`와 `extraArgs`로 SBX 프로파일을
+선택한다. 별도 TypeScript entry와 SBX 공급자 alias는 추가하지 않는다.
+Codex·Claude 공급자 등록은 유지한다. 기존에 등록한 자체 ACP 항목은 다음 register 때
+해당 trusted launcher의 항목만 정리한다. 사용자 Paseo config는 자동 수정하지 않았다.
+
+첨부·schema·명령용 스킬은 plugin-data에서 guest 임시 경로로 복사하고 종료 시 정리한다.
+외부 일반 경로·symlink는 거부하며 호스트 credential과 HOME은 guest에 전달하지 않는다.
+guest 기록에 의존하는 질문·background·subagent 추적은 지원하지 않는다.
+모델 목록·호스트 전역 설정은 기존 플러그인의 호스트 기준이다.
+
+검증: 전체 Go race 테스트·vet, macOS/Linux × arm64/amd64 Go 교차 빌드 통과.
+native·Superpowers image를 빌드하고 CLI·스킬 설치와 ACP/helper 제거를 확인했다.
+native image의 sbx 로드·공식 CLI 실행도 확인했다.
+실제 Paseo 0.10.2에서 검증용 에이전트를 생성하고, network 코드가 없는 시험용 Go agy의
+checksum을 확인한 뒤 플러그인 → 공용 launcher → sbx의 native 응답을 확인했다.
+cwd는 등록한 workspace, HOME은 `/home/agent`였고 plugin 파일은 guest 임시 경로로
+전달됐다. 실제 Google 로그인과 모델 요청은 수행하지 않았다.

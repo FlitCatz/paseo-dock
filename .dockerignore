@@ -1,11 +1,12 @@
 *
 !go.mod
+!go.sum
 !cmd/
-!cmd/install-node/
-!cmd/install-node/main.go
+!cmd/install-runtime/
+!cmd/install-runtime/main.go
 !internal/
-!internal/nodeinstall/
-!internal/nodeinstall/install.go
+!internal/runtimeinstall/
+!internal/runtimeinstall/install.go
 !scripts/
 !scripts/install-tools.sh
 !scripts/install-utilities.sh

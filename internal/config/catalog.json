@@ -2,12 +2,14 @@
   "schema": 1,
   "agents": [
     {"id":"codex","label":"Codex","adapter":"codex"},
-    {"id":"claude","label":"Claude","adapter":"claude"}
+    {"id":"claude","label":"Claude","adapter":"claude"},
+    {"id":"antigravity-cli","label":"Antigravity CLI","adapter":"antigravity-cli"}
   ],
   "methodologies": [
-    {"id":"superpowers","label":"Superpowers","installer":"git-plugin","agents":["codex","claude"]},
+    {"id":"superpowers","label":"Superpowers","installer":"git-plugin","agents":["codex","claude","antigravity-cli"]},
     {"id":"gsd-core","label":"GSD Core","installer":"gsd-core","agents":["codex","claude"]},
-    {"id":"ponytail","label":"Ponytail","installer":"git-plugin","agents":["codex","claude"]}
+    {"id":"ponytail","label":"Ponytail","installer":"git-plugin","agents":["codex","claude"]},
+    {"id":"native","label":"Native (no methodology)","installer":"none","agents":["antigravity-cli"]}
   ],
   "utilities": [
     {"id":"rtk","label":"RTK","installer":"rtk","agents":["codex","claude"],"note":"Command output compression + agent hooks"},

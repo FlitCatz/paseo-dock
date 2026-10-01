@@ -4,31 +4,32 @@ FROM --platform=$BUILDPLATFORM golang:1.26.1-bookworm AS installer
 ARG TARGETOS
 ARG TARGETARCH
 WORKDIR /src
-COPY go.mod ./
-COPY cmd/install-node ./cmd/install-node
-COPY internal/nodeinstall ./internal/nodeinstall
-RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -o /install-node ./cmd/install-node
+COPY go.mod go.sum ./
+COPY cmd/install-runtime ./cmd/install-runtime
+COPY internal/runtimeinstall ./internal/runtimeinstall
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -o /install-runtime ./cmd/install-runtime
 
 FROM ${BASE_IMAGE} AS node-runtime
 USER root
 COPY versions.lock.json /opt/paseo-sbx/install/
-COPY --from=installer /install-node /opt/paseo-sbx/install/install-node
+COPY --from=installer /install-runtime /opt/paseo-sbx/install/install-runtime
 ENV PATH="/opt/paseo-sbx/runtime/bin:/opt/paseo-sbx/node/bin:${PATH}"
 RUN mkdir -p /opt/paseo-sbx/runtime /opt/paseo-sbx/install \
     && apt-get update \
     && apt-get install -y --no-install-recommends xz-utils curl ca-certificates jq \
     && rm -rf /var/lib/apt/lists/* \
-    && /opt/paseo-sbx/install/install-node
+    && /opt/paseo-sbx/install/install-runtime
 
 FROM node-runtime
 ARG AGENT
 ARG AGENT_VERSION
 RUN if [ "$AGENT" = codex ]; then \
-         npm install --global --prefix /opt/paseo-sbx/runtime "@openai/codex@$AGENT_VERSION"; \
-       elif [ "$AGENT" = claude ]; then \
-         npm install --global --prefix /opt/paseo-sbx/runtime "@anthropic-ai/claude-code@$AGENT_VERSION"; \
-       else echo "Unsupported agent adapter: $AGENT" >&2; exit 1; \
-       fi
+      npm install --global --prefix /opt/paseo-sbx/runtime "@openai/codex@$AGENT_VERSION"; \
+    elif [ "$AGENT" = claude ]; then \
+      npm install --global --prefix /opt/paseo-sbx/runtime "@anthropic-ai/claude-code@$AGENT_VERSION"; \
+    elif [ "$AGENT" = antigravity-cli ]; then \
+      /opt/paseo-sbx/install/install-runtime --agent antigravity-cli --destination /opt/paseo-sbx/runtime/bin/agy; \
+    else echo "Unsupported agent adapter: $AGENT" >&2; exit 1; fi
 COPY versions.lock.json scripts/install-tools.sh scripts/install-utilities.sh scripts/agent-instructions.md /opt/paseo-sbx/install/
 USER agent
 ENV PATH="/home/agent/.local/bin:${PATH}"

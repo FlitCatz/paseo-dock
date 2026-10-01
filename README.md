@@ -13,6 +13,8 @@ TUI에서 agent·methodology·utility를 선택하고 해당 조합만 생성하
 | claude-superpowers | Claude Code | Superpowers |
 | claude-gsd-core | Claude Code | GSD Core |
 | claude-ponytail | Claude Code | Ponytail |
+| antigravity-cli-native | Antigravity CLI / Paseo native plugin | Native (methodology 없음) |
+| antigravity-cli-superpowers | Antigravity CLI / Paseo native plugin | Superpowers skills |
 
 ## 새 머신에 설치
 
@@ -53,7 +55,7 @@ Ctrl+C로 취소합니다. 마지막 화면에 실제 생성할 조합과 Paseo 
 필요하면 `--memory 4g`로 늘립니다.
 
 비대화형 실행에는 명시적인 선택 또는 해당 workspace에 저장된 선택이 필요합니다.
-선택 없이 여섯 개를 자동 생성하지 않습니다.
+선택 없이 전체 조합을 자동 생성하지 않습니다.
 
 ```bash
 ./paseo-sbx create --workspace /absolute/path/to/project \
@@ -98,7 +100,7 @@ Paseo의 기존 provider 오류 캐시를 초기화합니다.
 
 ## Go 빌드와 기존 설치 갱신
 
-`make build`는 `bin/paseo-sbx`, `bin/agent-wrapper`, `bin/install-node`를 만듭니다.
+`make build`는 `bin/paseo-sbx`, `bin/agent-wrapper`, `bin/install-runtime`을 만듭니다.
 저장소의 `./paseo-sbx`는 빌드된 CLI를 실행하는 shell 진입점입니다. 다른 디렉터리에서도
 절대 경로로 실행할 수 있습니다. 바이너리를 소스 트리 밖으로 옮긴 경우에는
 `PASEO_SBX_ROOT=/path/to/paseo-sbx`로 Dockerfile과 lock 파일의 위치를 지정합니다.
@@ -152,7 +154,7 @@ Paseo의 delegation MCP와 별도로 동작합니다. 유틸리티의 설치 정
 구조를 유지하고 ID는 소문자·숫자·하이픈으로 정의합니다. 모든 항목은 `id`, `label`을
 가지며 methodology·utility에는 지원 agent ID 배열 `agents`가 필요합니다.
 
-- Agent: `adapter`는 현재 `codex` 또는 `claude`. lock의 `agents`, `base_images`에 동일 ID의 버전과 digest를 추가합니다.
+- Agent: `adapter`는 현재 `codex`, `claude`, `antigravity-cli`. lock의 `agents`, `base_images`에 동일 ID의 버전과 digest를 추가합니다. Antigravity는 `agent_artifacts`에 공식 CLI 다운로드 URL·SHA-512 checksum도 필요합니다.
 - Methodology: `installer`는 `git-plugin` 또는 `gsd-core`. lock의 `tools`에 repository/revision 또는 package/version을 추가합니다.
 - Utility: 현재 installer는 `rtk`, `headroom`. 별칭 ID를 쓰면 lock 항목에도 `installer`를 지정하고 같은 installer의 다운로드·런타임 필드를 정의합니다.
 
@@ -186,6 +188,55 @@ API key를 사용하면 `sbx secret set anthropic`으로 생성한 Claude sandbo
 구독 인증을 진행할 수 있습니다. 새 sandbox에서는 다시 인증합니다.
 최초 배포용 template에 인증 후의 sandbox snapshot을 덮어써서 게시하지 마세요.
 호스트의 `~/.codex`, `~/.claude`, `~/.paseo`, Docker socket은 mount하지 않습니다.
+
+### Antigravity CLI
+
+공식 `agy` CLI를 Go 설치기로 검증하여 설치합니다. Paseo에는 기존
+`paseo-plugin-antigravity-cli`가 설치·활성화되어 있어야 합니다. 플러그인이 native
+`stream-json`을 처리하고, 공용 Go launcher가 sandbox에서 `agy`를 실행합니다.
+sbx 내장 agent에는 Antigravity가 없으므로 sandbox는 `shell`로 생성합니다.
+인증은 sandbox 안의 공식 CLI에서 진행하며 호스트 Google 인증을 가져오지 않습니다.
+
+```bash
+make build
+./paseo-sbx create --workspace /absolute/path/to/project \
+  --profile antigravity-cli-native --build
+./paseo-sbx shell antigravity-cli-native --workspace /absolute/path/to/project
+
+# sandbox 안에서 공식 CLI를 실행하여 로그인
+agy
+```
+
+공식 CLI의 인증 안내를 따라 로그인한 뒤 sandbox shell에서 나옵니다.
+로그인 창과 callback 처리, Linux keyring 요구사항은 공식 CLI가 담당합니다.
+Paseo 플러그인의 계정 화면은 호스트 계정을 관리하므로 sandbox 로그인에 사용하지 않습니다.
+다음 명령으로 sandbox 프로파일을 지정한 Paseo 에이전트를 만듭니다.
+
+```bash
+./paseo-sbx run --workspace /absolute/path/to/project \
+  --profile antigravity-cli-native '프로젝트를 확인해줘'
+```
+
+생성한 에이전트는 Paseo 앱에 표시됩니다.
+`--model`, `--mode`, `--title`, `--paseo-home`을 지정할 수 있고,
+`--dry-run`으로 daemon 요청 전에 에이전트 설정을 확인할 수 있습니다.
+현재 Paseo 0.10.2는 플러그인 공급자의 config alias를 지원하지 않으므로
+`register`는 Antigravity용 별도 `SBX …` 공급자를 추가하지 않습니다. 앱에서 일반
+Antigravity 공급자를 직접 선택하면 호스트 CLI가 실행됩니다. SBX 에이전트는 위 `run`
+명령으로 생성하고 이후 앱에서 사용합니다. daemon을 재시작하거나 플러그인 코드를 수정하지 않습니다.
+
+Superpowers는 `antigravity-cli-superpowers`로 선택하며 스킬은
+`~/.gemini/antigravity-cli/skills`에 설치합니다. GSD Core·Ponytail·RTK·Headroom은 지원하지 않습니다.
+첨부·schema·명령용 스킬 파일은 플러그인 data 디렉터리에서 임시 guest 디렉터리로 복사합니다.
+workspace 밖의 일반 추가 디렉터리는 거부합니다. 플러그인의 모델 목록·호스트 전역 설정은
+호스트 기준이며 sandbox 계정과 다를 수 있습니다. guest의 대화 기록 파일을 호스트에
+공유하지 않으므로 해당 파일을 읽어야 하는 질문·background·subagent 추적 기능은 지원하지 않습니다.
+Paseo MCP 공유 설정은 기본적으로 꺼 둡니다.
+
+Gemini API key는 `sbx secret set google`과 sandbox 안의 공식 CLI 설정을 사용합니다.
+sandbox에는 `GEMINI_API_KEY=proxy-managed` placeholder를 전달합니다.
+CLI 인증·API 설정은 [Google 공식 문서](https://antigravity.google/docs/cli/install),
+플러그인 옵션은 [Paseo provider options](https://paseo.sh/docs/sdk/provider-options.md)를 참고하세요.
 
 ## Paseo에서 실행과 자동 위임
 

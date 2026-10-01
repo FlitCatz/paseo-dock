@@ -171,3 +171,53 @@ func TestDuplicateHeadersDoNotLeak(t *testing.T) {
 		t.Fatalf("credential leak %s", b)
 	}
 }
+
+func TestACPMCPHeaders(t *testing.T) {
+	var input map[string]any
+	json.Unmarshal([]byte(`{"method":"session/new","params":{"mcpServers":[{"type":"http","name":"paseo","url":"http://localhost:6767/mcp/agents?callerAgentId=parent","headers":[{"name":"Authorization","value":"Bearer HOST_SECRET"}]}]}}`), &input)
+	out, err := RewriteTree(input, func(_ string, h map[string]string) (string, map[string]string, error) {
+		if h["Authorization"] != "Bearer HOST_SECRET" {
+			t.Fatal("lost upstream credential")
+		}
+		return "http://host.docker.internal:12345/key", map[string]string{"Authorization": "Bearer SESSION"}, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := json.Marshal(out)
+	if strings.Contains(string(b), "HOST_SECRET") || !strings.Contains(string(b), `"headers":[{"name":"Authorization","value":"Bearer SESSION"}]`) {
+		t.Fatalf("bad ACP header translation: %s", b)
+	}
+}
+
+func TestAntigravityLaunchAndBoundaries(t *testing.T) {
+	workspace, _ := filepath.EvalSymlinks(t.TempDir())
+	runtime := t.TempDir()
+	bin := t.TempDir()
+	t.Setenv("PATH", bin+":"+os.Getenv("PATH"))
+	t.Setenv("PASEO_AGENT_CWD", workspace)
+	os.WriteFile(filepath.Join(runtime, "registry.json"), []byte(`{"workspace":"`+workspace+`","profiles":{"antigravity-cli-native":{"agent":"antigravity-cli","workspace":"`+workspace+`","sandbox":"agy-box"}}}`), 0600)
+	os.WriteFile(filepath.Join(bin, "sbx"), []byte("#!/bin/sh\nprintf '%s\\n' \"$*\" >&2\ncat\n"), 0700)
+	var out, stderr strings.Builder
+	input := `{"role":"user","parts":[{"text":"hello"}]}` + "\n"
+	in := strings.NewReader(input)
+	code, err := LaunchIO(runtime, "antigravity-cli-native", []string{"--input-format", "stream-json", "--output-format", "stream-json", "--add-dir", workspace}, in, &out, &stderr)
+	if err != nil || code != 0 || !strings.Contains(stderr.String(), "agy-box agy") || out.String() != input {
+		t.Fatalf("%d %v stdout=%s stderr=%s", code, err, out.String(), stderr.String())
+	}
+	if code, err := LaunchIO(runtime, "antigravity-cli-native", []string{"--add-dir", t.TempDir()}, strings.NewReader(input), &strings.Builder{}, &strings.Builder{}); err == nil || code == 0 {
+		t.Fatal("native directory outside workspace accepted")
+	}
+}
+
+func TestNativePluginLaunchArguments(t *testing.T) {
+	p, args, err := LaunchArguments([]string{"--input-format", "stream-json", "--paseo-sbx-profile", "antigravity-cli-native"})
+	if err != nil || p != "antigravity-cli-native" || strings.Join(args, " ") != "--input-format stream-json" {
+		t.Fatalf("%s %v %v", p, args, err)
+	}
+	for _, args := range [][]string{{"--paseo-sbx-profile"}, {"--input-format", "stream-json"}, {"--paseo-sbx-profile", "a", "--paseo-sbx-profile", "b"}} {
+		if _, _, err := LaunchArguments(args); err == nil {
+			t.Fatalf("accepted %v", args)
+		}
+	}
+}

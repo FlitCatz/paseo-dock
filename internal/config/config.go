@@ -21,11 +21,13 @@ type Lock struct {
 		Version string            `json:"version"`
 		SHA256  map[string]string `json:"sha256"`
 	} `json:"node"`
-	BaseImages map[string]string          `json:"base_images"`
-	Agents     map[string]string          `json:"agents"`
-	Tools      map[string]json.RawMessage `json:"tools"`
-	Utilities  map[string]json.RawMessage `json:"utilities,omitempty"`
+	BaseImages     map[string]string          `json:"base_images"`
+	Agents         map[string]string          `json:"agents"`
+	Tools          map[string]json.RawMessage `json:"tools"`
+	Utilities      map[string]json.RawMessage `json:"utilities,omitempty"`
+	AgentArtifacts map[string]json.RawMessage `json:"agent_artifacts,omitempty"`
 }
+
 type Entry struct {
 	Agent     string `json:"agent"`
 	Tool      string `json:"tool"`

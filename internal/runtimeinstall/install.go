@@ -1,8 +1,11 @@
-// Package nodeinstall installs a checksum-pinned official Node distribution.
-package nodeinstall
+// Package runtimeinstall installs checksum-pinned official CLI distributions.
+package runtimeinstall
 
 import (
+	"archive/tar"
+	"compress/gzip"
 	"crypto/sha256"
+	"crypto/sha512"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -15,6 +18,123 @@ import (
 	"strings"
 	"time"
 )
+
+// InstallAgent installs the native Antigravity CLI; it does not install an ACP server.
+func InstallAgent(lockPath, destination, machine, agent string) error {
+	if agent != "antigravity-cli" {
+		return fmt.Errorf("unsupported binary agent %q", agent)
+	}
+	key := map[string]string{"arm64": "aarch64", "aarch64": "aarch64", "amd64": "x86_64", "x86_64": "x86_64"}[machine]
+	if key == "" {
+		return fmt.Errorf("unsupported architecture %q", machine)
+	}
+	var lock struct {
+		Artifacts map[string]struct {
+			Assets map[string]struct {
+				URL    string `json:"url"`
+				SHA512 string `json:"sha512"`
+			} `json:"assets"`
+		} `json:"agent_artifacts"`
+	}
+	b, err := os.ReadFile(lockPath)
+	if err != nil {
+		return err
+	}
+	if err = json.Unmarshal(b, &lock); err != nil {
+		return err
+	}
+	asset := lock.Artifacts[agent].Assets[key]
+	expected, err := hex.DecodeString(asset.SHA512)
+	if err != nil || len(expected) != sha512.Size || asset.URL == "" {
+		return errors.New("missing or invalid CLI artifact")
+	}
+	if _, err = os.Lstat(destination); err == nil {
+		return errors.New("CLI destination already exists")
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	if err = os.MkdirAll(filepath.Dir(destination), 0755); err != nil {
+		return err
+	}
+	dir, err := os.MkdirTemp(filepath.Dir(destination), ".cli-install-*")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(dir)
+	client := &http.Client{Timeout: 5 * time.Minute}
+	res, err := client.Get(asset.URL)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		return fmt.Errorf("CLI download returned HTTP %d", res.StatusCode)
+	}
+	f, err := os.Create(filepath.Join(dir, "cli.tar.gz"))
+	if err != nil {
+		return err
+	}
+	h := sha512.New()
+	const limit = 512 * 1024 * 1024
+	n, copyErr := io.Copy(io.MultiWriter(f, h), io.LimitReader(res.Body, limit+1))
+	closeErr := f.Close()
+	if copyErr != nil {
+		return copyErr
+	}
+	if closeErr != nil {
+		return closeErr
+	}
+	if n > limit {
+		return errors.New("CLI archive exceeds limit")
+	}
+	if hex.EncodeToString(h.Sum(nil)) != hex.EncodeToString(expected) {
+		return errors.New("official CLI archive checksum mismatch")
+	}
+	archive, err := os.Open(filepath.Join(dir, "cli.tar.gz"))
+	if err != nil {
+		return err
+	}
+	defer archive.Close()
+	z, err := gzip.NewReader(archive)
+	if err != nil {
+		return err
+	}
+	defer z.Close()
+	r := tar.NewReader(z)
+	found := false
+	for {
+		header, err := r.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return err
+		}
+		if strings.TrimPrefix(header.Name, "./") != "antigravity" {
+			continue
+		}
+		if found || header.Typeflag != tar.TypeReg || header.Size <= 0 || header.Size > limit {
+			return errors.New("invalid CLI binary in archive")
+		}
+		f, err := os.OpenFile(filepath.Join(dir, "agy"), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0755)
+		if err != nil {
+			return err
+		}
+		_, copyErr := io.Copy(f, r)
+		closeErr := f.Close()
+		if copyErr != nil {
+			return copyErr
+		}
+		if closeErr != nil {
+			return closeErr
+		}
+		found = true
+	}
+	if !found {
+		return errors.New("CLI archive does not contain antigravity")
+	}
+	return os.Rename(filepath.Join(dir, "agy"), destination)
+}
 
 func Install(lockPath, destination, machine string) error {
 	return install(lockPath, destination, machine, "https://nodejs.org/dist")

@@ -63,6 +63,10 @@ sandbox는 프로젝트와 조합마다 따로 있으므로 로그인도 각각 
 
 - **Codex:** `sbx secret set openai --oauth`로 한 번 등록하면 모든 Codex sandbox에 적용됩니다.
 - **Claude API key:** `sbx secret set anthropic`으로 한 번 등록하면 모든 Claude sandbox에 적용됩니다.
+- **Antigravity CLI:** `antigravity-cli-native` 또는 `antigravity-cli-superpowers`를 생성하고,
+  각 sandbox shell에서 공식 `agy`로 로그인합니다. `paseo-sbx run --workspace … --profile …`으로
+  기존 플러그인에 SBX 에이전트를 생성한 뒤 앱에서 사용합니다. 별도 SBX 공급자 항목은
+  추가되지 않습니다. [Antigravity 인증·실행 절차](README.md#antigravity-cli)를 참고하세요.
 - **Claude 구독 로그인:** Claude sandbox마다 로그인합니다.
 
   ```bash

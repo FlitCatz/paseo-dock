@@ -2,6 +2,8 @@
   "group": {
     "default": {
       "targets": [
+        "antigravity-cli-native",
+        "antigravity-cli-superpowers",
         "claude-gsd-core",
         "claude-ponytail",
         "claude-superpowers",
@@ -12,6 +14,44 @@
     }
   },
   "target": {
+    "antigravity-cli-native": {
+      "args": {
+        "AGENT": "antigravity-cli",
+        "AGENT_VERSION": "1.2.14",
+        "BASE_IMAGE": "docker.io/docker/sandbox-templates:codex@sha256:a68b972a59148c6359ade441387159033f6d196d48aef9dda06d2d4bb26eb41e",
+        "METHOD_INSTALLER": "none",
+        "TOOL": "native",
+        "UTILITIES": ""
+      },
+      "context": ".",
+      "dockerfile": "Dockerfile",
+      "platforms": [
+        "linux/amd64",
+        "linux/arm64"
+      ],
+      "tags": [
+        "paseo-sbx/antigravity-cli-native:2026.09.30-4ceb7cbcbe04"
+      ]
+    },
+    "antigravity-cli-superpowers": {
+      "args": {
+        "AGENT": "antigravity-cli",
+        "AGENT_VERSION": "1.2.14",
+        "BASE_IMAGE": "docker.io/docker/sandbox-templates:codex@sha256:a68b972a59148c6359ade441387159033f6d196d48aef9dda06d2d4bb26eb41e",
+        "METHOD_INSTALLER": "git-plugin",
+        "TOOL": "superpowers",
+        "UTILITIES": ""
+      },
+      "context": ".",
+      "dockerfile": "Dockerfile",
+      "platforms": [
+        "linux/amd64",
+        "linux/arm64"
+      ],
+      "tags": [
+        "paseo-sbx/antigravity-cli-superpowers:2026.09.30-141ea661f5be"
+      ]
+    },
     "claude-gsd-core": {
       "args": {
         "AGENT": "claude",
@@ -23,8 +63,12 @@
       },
       "context": ".",
       "dockerfile": "Dockerfile",
+      "platforms": [
+        "linux/amd64",
+        "linux/arm64"
+      ],
       "tags": [
-        "paseo-sbx/claude-gsd-core:2026.09.30-f7df8cb82339"
+        "paseo-sbx/claude-gsd-core:2026.09.30-16178c2233ec"
       ]
     },
     "claude-ponytail": {
@@ -38,8 +82,12 @@
       },
       "context": ".",
       "dockerfile": "Dockerfile",
+      "platforms": [
+        "linux/amd64",
+        "linux/arm64"
+      ],
       "tags": [
-        "paseo-sbx/claude-ponytail:2026.09.30-cfabc4c620ab"
+        "paseo-sbx/claude-ponytail:2026.09.30-b224f8b80696"
       ]
     },
     "claude-superpowers": {
@@ -53,8 +101,12 @@
       },
       "context": ".",
       "dockerfile": "Dockerfile",
+      "platforms": [
+        "linux/amd64",
+        "linux/arm64"
+      ],
       "tags": [
-        "paseo-sbx/claude-superpowers:2026.09.30-777308a9a312"
+        "paseo-sbx/claude-superpowers:2026.09.30-bfbd9d90ca87"
       ]
     },
     "codex-gsd-core": {
@@ -68,8 +120,12 @@
       },
       "context": ".",
       "dockerfile": "Dockerfile",
+      "platforms": [
+        "linux/amd64",
+        "linux/arm64"
+      ],
       "tags": [
-        "paseo-sbx/codex-gsd-core:2026.09.30-1f47e7566ee4"
+        "paseo-sbx/codex-gsd-core:2026.09.30-497b8ba6581f"
       ]
     },
     "codex-ponytail": {
@@ -83,8 +139,12 @@
       },
       "context": ".",
       "dockerfile": "Dockerfile",
+      "platforms": [
+        "linux/amd64",
+        "linux/arm64"
+      ],
       "tags": [
-        "paseo-sbx/codex-ponytail:2026.09.30-dcbc3b7fb3c2"
+        "paseo-sbx/codex-ponytail:2026.09.30-8cd0d60a6b08"
       ]
     },
     "codex-superpowers": {
@@ -98,8 +158,12 @@
       },
       "context": ".",
       "dockerfile": "Dockerfile",
+      "platforms": [
+        "linux/amd64",
+        "linux/arm64"
+      ],
       "tags": [
-        "paseo-sbx/codex-superpowers:2026.09.30-b00e8104901f"
+        "paseo-sbx/codex-superpowers:2026.09.30-2a5c502f8c23"
       ]
     }
   }

@@ -7,7 +7,9 @@ lock_file=/opt/paseo-sbx/install/versions.lock.json
 marketplace_dir="$HOME/.local/share/paseo-sbx/marketplace"
 mkdir -p "$marketplace_dir/plugins" "$HOME/.codex" "$HOME/.claude"
 
-if [[ "$method_installer" == gsd-core || ( -z "$method_installer" && "$tool_kind" == gsd-core ) ]]; then
+if [[ "$method_installer" == none ]]; then
+  :
+elif [[ "$method_installer" == gsd-core || ( -z "$method_installer" && "$tool_kind" == gsd-core ) ]]; then
   gsd_version=$(node -e 'console.log(require(process.argv[1]).tools[process.argv[2]].version)' "$lock_file" "$tool_kind")
   gsd_package=$(node -e 'console.log(require(process.argv[1]).tools[process.argv[2]].package)' "$lock_file" "$tool_kind")
   npx --yes "$gsd_package@$gsd_version" "--$agent_kind" --global
@@ -33,9 +35,19 @@ NODE
   if [[ "$agent_kind" == codex ]]; then
     codex plugin marketplace add "$marketplace_dir"
     codex plugin add "$tool_kind@paseo-sbx"
-  else
+  elif [[ "$agent_kind" == claude ]]; then
     claude plugin marketplace add "$marketplace_dir"
     claude plugin install "$tool_kind@paseo-sbx" --scope user
+  elif [[ "$agent_kind" == antigravity-cli && "$tool_kind" == superpowers ]]; then
+    for dir in "$HOME/.gemini/antigravity-cli/skills"; do
+      mkdir -p "$dir"
+      for skill in "$marketplace_dir/plugins/$tool_kind/skills/"*; do
+        [[ -f "$skill/SKILL.md" ]] || continue
+        ln -s "$skill" "$dir/$(basename "$skill")"
+      done
+    done
+  else
+    echo "unsupported methodology for $agent_kind: $tool_kind" >&2; exit 1
   fi
 fi
 
@@ -44,8 +56,14 @@ if [[ "$agent_kind" == codex ]]; then
   if [[ "$tool_kind" == superpowers ]]; then
     printf '\nUse the using-superpowers skill before starting work.\n' >> "$HOME/.codex/AGENTS.md"
   fi
-else
+elif [[ "$agent_kind" == claude ]]; then
   cat /opt/paseo-sbx/install/agent-instructions.md >> "$HOME/.claude/CLAUDE.md"
+elif [[ "$agent_kind" == antigravity-cli ]]; then
+  mkdir -p "$HOME/.gemini"
+  cat /opt/paseo-sbx/install/agent-instructions.md >> "$HOME/.gemini/GEMINI.md"
+  if [[ "$tool_kind" == superpowers ]]; then
+    printf '\nUse the using-superpowers skill before starting work.\n' >> "$HOME/.gemini/GEMINI.md"
+  fi
 fi
 node - "$agent_kind" "$tool_kind" "$lock_file" <<'NODE'
 const fs = require('fs');

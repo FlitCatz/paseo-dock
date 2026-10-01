@@ -18,6 +18,124 @@ import (
 	"syscall"
 )
 
+// prepareNative copies only plugin-prepared assets into an ephemeral guest
+// directory. Authentication directories are never mounted or copied.
+func prepareNative(args []string, workspace, sandbox string, stderr io.Writer) ([]string, map[string]string, func(), error) {
+	args = append([]string{}, args...)
+	home := os.Getenv("PASEO_HOME")
+	if home == "" {
+		h, err := os.UserHomeDir()
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		home = filepath.Join(h, ".paseo")
+	}
+	root, err := config.Canonical(filepath.Join(home, "plugin-data", "antigravity-cli"))
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	paths := map[string]string{}
+	guest := ""
+	cleanup := func() {
+		if guest != "" {
+			c := exec.Command("sbx", "exec", sandbox, "rm", "-rf", "--", guest)
+			c.Stderr = stderr
+			_ = c.Run()
+		}
+	}
+	fail := func(err error) ([]string, map[string]string, func(), error) { cleanup(); return nil, nil, nil, err }
+	for i, arg := range args {
+		if arg != "--add-dir" && arg != "--json-schema" {
+			continue
+		}
+		if i+1 >= len(args) {
+			return fail(fmt.Errorf("missing value for %s", arg))
+		}
+		path, e := config.Canonical(args[i+1])
+		if e != nil {
+			return fail(e)
+		}
+		if config.Within(path, workspace) {
+			continue
+		}
+		if path == root || !config.Within(path, root) {
+			return fail(fmt.Errorf("%s path must be in the workspace or native plugin assets: %s", arg, path))
+		}
+		var size int64
+		e = filepath.WalkDir(path, func(p string, d os.DirEntry, e error) error {
+			if e != nil {
+				return e
+			}
+			if d.Type()&os.ModeSymlink != 0 {
+				return errors.New("plugin assets must not contain symbolic links")
+			}
+			info, e := d.Info()
+			if e != nil {
+				return e
+			}
+			if !info.IsDir() && !info.Mode().IsRegular() {
+				return errors.New("plugin assets must contain regular files")
+			}
+			size += info.Size()
+			if size > 128*1024*1024 {
+				return errors.New("plugin assets exceed size limit")
+			}
+			return nil
+		})
+		if e != nil {
+			return fail(e)
+		}
+		if guest == "" {
+			c := exec.Command("sbx", "exec", sandbox, "mktemp", "-d", "/tmp/paseo-sbx-assets.XXXXXXXXXX")
+			c.Stderr = stderr
+			b, e := c.Output()
+			if e != nil {
+				return fail(errors.New("cannot create guest assets directory"))
+			}
+			guest = strings.TrimSpace(string(b))
+			if !strings.HasPrefix(guest, "/tmp/paseo-sbx-assets.") || filepath.Clean(guest) != guest || strings.Contains(guest[5:], "/") {
+				guest = ""
+				return fail(errors.New("invalid guest assets directory"))
+			}
+		}
+		next, ok := paths[args[i+1]]
+		if !ok {
+			next = fmt.Sprintf("%s/asset-%d", guest, len(paths))
+			c := exec.Command("sbx", "cp", path, sandbox+":"+next)
+			c.Stdout = stderr
+			c.Stderr = stderr
+			if e = c.Run(); e != nil {
+				return fail(errors.New("cannot copy native plugin assets"))
+			}
+			paths[args[i+1]] = next
+		}
+		args[i+1] = next
+	}
+	return args, paths, cleanup, nil
+}
+
+func rewriteNativePaths(value any, paths map[string]string) any {
+	switch v := value.(type) {
+	case string:
+		for from, to := range paths {
+			v = strings.ReplaceAll(v, from, to)
+		}
+		return v
+	case []any:
+		for i, x := range v {
+			v[i] = rewriteNativePaths(x, paths)
+		}
+		return v
+	case map[string]any:
+		for k, x := range v {
+			v[k] = rewriteNativePaths(x, paths)
+		}
+		return v
+	default:
+		return value
+	}
+}
+
 func RewriteTree(value any, bind gateway.BindFunc) (any, error) {
 	switch v := value.(type) {
 	case []any:
@@ -50,17 +168,33 @@ func RewriteTree(value any, bind gateway.BindFunc) (any, error) {
 					key = "http_headers"
 				}
 				headers := map[string]string{}
+				arrayHeaders := false
 				if raw, exists := r[key]; exists {
-					m, ok := raw.(map[string]any)
-					if !ok {
-						return nil, errors.New("invalid MCP headers")
-					}
-					for k, x := range m {
-						str, ok := x.(string)
-						if !ok {
-							return nil, errors.New("invalid MCP header value")
+					switch m := raw.(type) {
+					case map[string]any:
+						for k, x := range m {
+							str, ok := x.(string)
+							if !ok {
+								return nil, errors.New("invalid MCP header value")
+							}
+							headers[k] = str
 						}
-						headers[k] = str
+					case []any:
+						arrayHeaders = true
+						for _, x := range m {
+							header, ok := x.(map[string]any)
+							if !ok {
+								return nil, errors.New("invalid ACP MCP header")
+							}
+							name, nameOK := header["name"].(string)
+							value, valueOK := header["value"].(string)
+							if !nameOK || name == "" || !valueOK {
+								return nil, errors.New("invalid ACP MCP header")
+							}
+							headers[name] = value
+						}
+					default:
+						return nil, errors.New("invalid MCP headers")
 					}
 				}
 				next, h, err := bind(endpoint, headers)
@@ -69,6 +203,13 @@ func RewriteTree(value any, bind gateway.BindFunc) (any, error) {
 				}
 				r["url"] = next
 				r[key] = h
+				if arrayHeaders {
+					list := []any{}
+					for name, value := range h {
+						list = append(list, map[string]string{"name": name, "value": value})
+					}
+					r[key] = list
+				}
 				if key == "http_headers" {
 					delete(r, "headers")
 				}
@@ -87,6 +228,7 @@ func CheckWorkdirs(value any, workspace string) error {
 	}
 	return checkWorkdirs(value, canonical)
 }
+
 func checkWorkdirs(value any, workspace string) error {
 	switch v := value.(type) {
 	case []any:
@@ -241,7 +383,7 @@ func LaunchIO(runtime, profile string, args []string, in io.Reader, out, stderr 
 	catalog := registry.EffectiveCatalog()
 	pair, valid := catalog.Pair(profile)
 	agent, known := catalog.Agent(pair.Agent)
-	if !ok || !valid || !known || !registry.IsActive(profile) || agent.Adapter != entry.Agent || (entry.Agent != "codex" && entry.Agent != "claude") || entry.Sandbox == "" {
+	if !ok || !valid || !known || !registry.IsActive(profile) || agent.Adapter != entry.Agent || !config.SupportedAdapter(entry.Agent) || entry.Sandbox == "" {
 		return 1, errors.New("invalid sandbox profile")
 	}
 	workspace, err := config.Canonical(entry.Workspace)
@@ -256,7 +398,7 @@ func LaunchIO(runtime, profile string, args []string, in io.Reader, out, stderr 
 		return 1, errors.New("host launcher must remain outside writable sandbox workspaces")
 	}
 	if len(args) == 1 && (args[0] == "--version" || args[0] == "-v") {
-		cmd := exec.Command("sbx", "exec", entry.Sandbox, entry.Agent, "--version")
+		cmd := exec.Command("sbx", "exec", entry.Sandbox, config.AgentCommand(entry.Agent), "--version")
 		cmd.Stdout = out
 		cmd.Stderr = stderr
 		return exitStatus(cmd.Run()), nil
@@ -270,7 +412,7 @@ func LaunchIO(runtime, profile string, args []string, in io.Reader, out, stderr 
 		return 1, err
 	}
 	if !config.Within(cwd, workspace) {
-		if !explicit && entry.Agent == "codex" && len(args) > 0 && args[0] == "app-server" {
+		if !explicit && len(args) > 0 && entry.Agent == "codex" && args[0] == "app-server" {
 			cwd = workspace
 		} else {
 			return 1, errors.New("Paseo cwd is outside the registered sandbox workspace")
@@ -303,13 +445,22 @@ func LaunchIO(runtime, profile string, args []string, in io.Reader, out, stderr 
 			return 1, err
 		}
 	}
+	nativePaths := map[string]string{}
+	if entry.Agent == "antigravity-cli" {
+		var cleanup func()
+		args, nativePaths, cleanup, err = prepareNative(args, workspace, entry.Sandbox, stderr)
+		if err != nil {
+			return 1, err
+		}
+		defer cleanup()
+	}
 	command := []string{"exec", "-i"}
-	for _, name := range []string{"PASEO_AGENT_ID", "PASEO_PARENT_AGENT_ID"} {
+	for _, name := range []string{"PASEO_AGENT_ID", "PASEO_PARENT_AGENT_ID", "NO_BROWSER"} {
 		if v, ok := os.LookupEnv(name); ok {
 			command = append(command, "--env", name+"="+v)
 		}
 	}
-	command = append(command, "--workdir", cwd, entry.Sandbox, entry.Agent)
+	command = append(command, "--workdir", cwd, entry.Sandbox, config.AgentCommand(entry.Agent))
 	command = append(command, args...)
 	child := exec.Command("sbx", command...)
 	child.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
@@ -347,6 +498,16 @@ func LaunchIO(runtime, profile string, args []string, in io.Reader, out, stderr 
 		for {
 			line, e := reader.ReadBytes(10)
 			if len(line) > 0 {
+				if entry.Agent == "antigravity-cli" && len(nativePaths) > 0 {
+					var value any
+					if err := json.Unmarshal(line, &value); err != nil {
+						failures <- errors.New("invalid native plugin JSON")
+						syscall.Kill(-child.Process.Pid, syscall.SIGTERM)
+						return
+					}
+					line, _ = json.Marshal(rewriteNativePaths(value, nativePaths))
+					line = append(line, 10)
+				}
 				if entry.Agent == "codex" && len(strings.TrimSpace(string(line))) > 0 {
 					var message map[string]any
 					if json.Unmarshal(line, &message) != nil || message == nil {
@@ -424,11 +585,40 @@ func Main() int {
 	if err != nil {
 		return 1
 	}
+	profile, args, err := LaunchArguments(os.Args[1:])
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "paseo-sbx launcher:", err)
+		return 1
+	}
 	// The shared launcher lives in <base>/launcher; legacy copies in <base>/<id>.
-	code, err := Launch(filepath.Dir(filepath.Dir(exe)), os.Args[1], os.Args[2:])
+	code, err := Launch(filepath.Dir(filepath.Dir(exe)), profile, args)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "paseo-sbx launcher:", err)
 		return 1
 	}
 	return code
+}
+
+// LaunchArguments also accepts the metadata appended by a native plugin.
+func LaunchArguments(args []string) (string, []string, error) {
+	for i, arg := range args {
+		if arg != "--paseo-sbx-profile" {
+			continue
+		}
+		if i+1 >= len(args) || args[i+1] == "" {
+			return "", nil, errors.New("profile is required")
+		}
+		profile := args[i+1]
+		filtered := append(append([]string{}, args[:i]...), args[i+2:]...)
+		for _, arg := range filtered {
+			if arg == "--paseo-sbx-profile" {
+				return "", nil, errors.New("duplicate profile")
+			}
+		}
+		return profile, filtered, nil
+	}
+	if len(args) == 0 || strings.HasPrefix(args[0], "-") {
+		return "", nil, errors.New("profile is required")
+	}
+	return args[0], args[1:], nil
 }

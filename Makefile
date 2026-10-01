@@ -4,7 +4,7 @@ build:
 	mkdir -p bin
 	CGO_ENABLED=0 go build -trimpath -o bin/paseo-sbx ./cmd/paseo-sbx
 	CGO_ENABLED=0 go build -trimpath -o bin/agent-wrapper ./cmd/agent-wrapper
-	CGO_ENABLED=0 go build -trimpath -o bin/install-node ./cmd/install-node
+	CGO_ENABLED=0 go build -trimpath -o bin/install-runtime ./cmd/install-runtime
 
 test:
 	go test -race ./...

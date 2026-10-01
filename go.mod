@@ -5,6 +5,7 @@ go 1.26.0
 require (
 	charm.land/bubbletea/v2 v2.0.10
 	github.com/charmbracelet/x/term v0.2.2
+	github.com/coder/websocket v1.8.14
 )
 
 require (

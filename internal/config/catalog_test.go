@@ -49,3 +49,32 @@ func TestImageFingerprintIncludesUtilityVersions(t *testing.T) {
 		t.Fatal("selection ignored")
 	}
 }
+
+func TestAntigravitySelectionAndArtifacts(t *testing.T) {
+	c := DefaultCatalog()
+	for _, method := range []string{"native", "superpowers"} {
+		if _, err := c.Normalize(Selection{Schema: 1, Pairs: []Pair{{"antigravity-cli", method}}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, method := range []string{"gsd-core", "ponytail"} {
+		if _, err := c.Normalize(Selection{Schema: 1, Pairs: []Pair{{"antigravity-cli", method}}}); err == nil {
+			t.Fatalf("accepted unsupported method %s", method)
+		}
+	}
+	for _, utility := range []string{"rtk", "headroom"} {
+		if _, err := c.Normalize(Selection{Schema: 1, Pairs: []Pair{{"antigravity-cli", "native"}}, Utilities: []string{utility}}); err == nil {
+			t.Fatalf("accepted unsupported utility %s", utility)
+		}
+	}
+	l, err := Load("../..")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := Selection{Schema: 1, Pairs: []Pair{{"antigravity-cli", "native"}}}
+	before := ImageTag(l, s)
+	l.AgentArtifacts["antigravity-cli"] = json.RawMessage(`{"integration":"native-plugin-v2"}`)
+	if before == ImageTag(l, s) {
+		t.Fatal("ACP version change reused image")
+	}
+}

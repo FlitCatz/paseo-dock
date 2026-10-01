@@ -12,11 +12,13 @@
   },
   "base_images": {
     "codex": "docker.io/docker/sandbox-templates:codex@sha256:a68b972a59148c6359ade441387159033f6d196d48aef9dda06d2d4bb26eb41e",
-    "claude": "docker.io/docker/sandbox-templates:claude-code@sha256:868e3f5ef10579e06903d42e86448851ed59319ab8b9fba6dea2772c449bb2a6"
+    "claude": "docker.io/docker/sandbox-templates:claude-code@sha256:868e3f5ef10579e06903d42e86448851ed59319ab8b9fba6dea2772c449bb2a6",
+    "antigravity-cli": "docker.io/docker/sandbox-templates:codex@sha256:a68b972a59148c6359ade441387159033f6d196d48aef9dda06d2d4bb26eb41e"
   },
   "agents": {
     "codex": "0.159.2",
-    "claude": "2.1.285"
+    "claude": "2.1.285",
+    "antigravity-cli": "1.2.14"
   },
   "tools": {
     "superpowers": {
@@ -32,6 +34,9 @@
     "gsd-core": {
       "package": "@opengsd/gsd-core",
       "version": "1.15.0"
+    },
+    "native": {
+      "version": "builtin"
     }
   },
   "utilities": {
@@ -65,6 +70,21 @@
           }
         }
       }
+    }
+  },
+  "agent_artifacts": {
+    "antigravity-cli": {
+      "assets": {
+        "aarch64": {
+          "url": "https://storage.googleapis.com/antigravity-public/antigravity-cli/1.2.14-4571742832820224/linux-arm/cli_linux_arm64.tar.gz",
+          "sha512": "d96a67d6952a8ec1da16c8b6515f1393ed0260658cf104d9b57b8d13c92c591322ed5e08a62894842be81888116da0f5f80def7971c913d1f462300103426954"
+        },
+        "x86_64": {
+          "url": "https://storage.googleapis.com/antigravity-public/antigravity-cli/1.2.14-4571742832820224/linux-x64/cli_linux_x64.tar.gz",
+          "sha512": "fd771dfc74ddd07b61c8b0a6fd7a238f53a3a098a51052583a01d97ab84ee60db741ce5f041e87a9da3c1a9aabe95b053113374437df1e231773552781edaf09"
+        }
+      },
+      "integration": "native-plugin-v1"
     }
   }
 }

@@ -66,6 +66,10 @@ func (a *App) resolveSelection(workspace, profile, profiles, utilities, path, ag
 		if a.Lock.BaseImages[p.Agent] == "" || a.Lock.Agents[p.Agent] == "" || a.Lock.Tools[p.Methodology] == nil {
 			return s, fmt.Errorf("missing pinned versions for %s/%s", p.Agent, p.Methodology)
 		}
+		item, _ := a.Catalog.Agent(p.Agent)
+		if item.Adapter == "antigravity-cli" && a.Lock.AgentArtifacts[p.Agent] == nil {
+			return s, fmt.Errorf("missing pinned Antigravity CLI artifacts for %s", p.Agent)
+		}
 	}
 	for _, u := range s.Utilities {
 		if a.Lock.Utilities[u] == nil {

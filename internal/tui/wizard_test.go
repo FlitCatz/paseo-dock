@@ -89,3 +89,26 @@ func TestIncompatibleUtilityCanBeDeselected(t *testing.T) {
 		t.Fatalf("could not clear incompatible selection: %s", m.View().Content)
 	}
 }
+
+func TestWizardAntigravityNative(t *testing.T) {
+	m := NewModel(config.DefaultCatalog(), config.Selection{}, "/workspace", "2g")
+	key(m, tea.KeyDown)
+	key(m, tea.KeyDown)
+	key(m, tea.KeySpace)
+	key(m, tea.KeyEnter)
+	if len(m.items()) != 2 || m.items()[1].ID != "native" {
+		t.Fatal(m.items())
+	}
+	key(m, tea.KeyDown)
+	key(m, tea.KeySpace)
+	key(m, tea.KeyEnter)
+	key(m, tea.KeySpace) // RTK is unavailable for Antigravity.
+	if m.Error == "" || m.utilities["rtk"] {
+		t.Fatal("unsupported utility selectable")
+	}
+	key(m, tea.KeyEnter)
+	key(m, tea.KeyEnter)
+	if !m.Confirmed || strings.Join(m.Result.Selection.Profiles(), ",") != "antigravity-cli-native" {
+		t.Fatal(m.Result)
+	}
+}

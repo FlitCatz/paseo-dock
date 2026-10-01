@@ -1,7 +1,11 @@
-package nodeinstall
+package runtimeinstall
 
 import (
+	"archive/tar"
+	"bytes"
+	"compress/gzip"
 	"crypto/sha256"
+	"crypto/sha512"
 	"encoding/hex"
 	"encoding/json"
 	"net/http"
@@ -9,8 +13,63 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
+
+func TestNativeAgentChecksumAndArchive(t *testing.T) {
+	for _, kind := range []string{"valid", "checksum", "symlink", "missing"} {
+		t.Run(kind, func(t *testing.T) {
+			var payload bytes.Buffer
+			gz := gzip.NewWriter(&payload)
+			archive := tar.NewWriter(gz)
+			h := &tar.Header{Name: "antigravity", Mode: 0755, Size: 6, Typeflag: tar.TypeReg}
+			if kind == "symlink" {
+				h.Typeflag = tar.TypeSymlink
+				h.Size = 0
+				h.Linkname = "/etc/passwd"
+			}
+			if kind == "missing" {
+				h.Name = "other"
+			}
+			archive.WriteHeader(h)
+			if h.Size > 0 {
+				archive.Write([]byte("binary"))
+			}
+			archive.Close()
+			gz.Close()
+			sum := sha512.Sum512(payload.Bytes())
+			checksum := hex.EncodeToString(sum[:])
+			if kind == "checksum" {
+				checksum = strings.Repeat("0", 128)
+			}
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write(payload.Bytes()) }))
+			defer server.Close()
+			dir := t.TempDir()
+			lock, _ := json.Marshal(map[string]any{"agent_artifacts": map[string]any{"antigravity-cli": map[string]any{"assets": map[string]any{"aarch64": map[string]string{"url": server.URL, "sha512": checksum}}}}})
+			path := filepath.Join(dir, "lock.json")
+			os.WriteFile(path, lock, 0600)
+			dest := filepath.Join(dir, "bin", "agy")
+			err := InstallAgent(path, dest, "arm64", "antigravity-cli")
+			if kind == "valid" {
+				if err != nil {
+					t.Fatal(err)
+				}
+				b, _ := os.ReadFile(dest)
+				if string(b) != "binary" {
+					t.Fatal(string(b))
+				}
+			} else {
+				if err == nil {
+					t.Fatal("invalid artifact accepted")
+				}
+				if _, err := os.Stat(dest); !os.IsNotExist(err) {
+					t.Fatal("invalid binary installed")
+				}
+			}
+		})
+	}
+}
 
 func TestVerifiedInstall(t *testing.T) {
 	dir := t.TempDir()

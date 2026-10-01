@@ -260,7 +260,12 @@ func (a *App) create(workspace, namespace, memory string) error {
 		if names[name] {
 			fmt.Fprintln(a.Out, "Reusing", name)
 		} else {
-			if err = a.run("sbx", "create", "--name", name, "--pull", "never", "--skills", "off", "--cpus", "2", "--memory", memory, "--template", entry.Image, entry.Agent, w); err != nil {
+			command := []string{"sbx", "create", "--name", name, "--pull", "never", "--skills", "off", "--cpus", "2", "--memory", memory, "--template", entry.Image}
+			if entry.Agent == "antigravity-cli" {
+				command = append(command, "--env", "GEMINI_API_KEY=proxy-managed")
+			}
+			command = append(command, config.SandboxAgent(entry.Agent), w)
+			if err = a.run(command...); err != nil {
 				return err
 			}
 		}
@@ -312,7 +317,13 @@ func ActiveAdapters(installed []config.Installed) map[string]string {
 func ProviderConfig(launcher string, adapters map[string]string) map[string]any {
 	providers := map[string]any{}
 	for p, agent := range adapters {
-		providers[p] = map[string]any{"extends": agent, "label": "SBX " + p, "enabled": true, "command": []string{launcher, p}, "paseoTools": map[string]any{"enabled": true, "disabledTools": disabledTools}}
+		if agent == "antigravity-cli" {
+			// The existing plugin owns this provider. Per-agent options select SBX.
+			continue
+		}
+		command := []string{launcher, p}
+		provider := map[string]any{"extends": config.ProviderAdapter(agent), "label": "SBX " + p, "enabled": true, "command": command, "paseoTools": map[string]any{"enabled": true, "disabledTools": disabledTools}}
+		providers[p] = provider
 	}
 	return map[string]any{"version": 1, "daemon": map[string]any{"mcp": map[string]any{"enabled": true, "injectIntoAgents": true}}, "agents": map[string]any{"providers": providers}}
 }
@@ -365,7 +376,8 @@ func MergeManagedConfig(current, generated map[string]any, base string) {
 		case []string:
 			command = v
 		}
-		if len(command) == 2 && ownedCommand(command[0], base) && command[1] == p {
+		managed := len(command) == 2 || (len(command) == 3 && command[2] == "--acp" && strings.HasPrefix(p, "antigravity-cli-"))
+		if managed && ownedCommand(command[0], base) && command[1] == p {
 			if _, ok := wanted[p]; !ok {
 				delete(providers, p)
 			}
@@ -582,11 +594,11 @@ func (a *App) syncProviders(home string, apply bool) error {
 }
 func Run(root string, args []string, in io.Reader, out, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "usage: paseo-sbx {build|load|create|register|unregister|prune|list|shell|stop} [options]")
+		fmt.Fprintln(stderr, "usage: paseo-sbx {build|load|create|register|run|unregister|prune|list|shell|stop} [options]")
 		return 2
 	}
 	if args[0] == "--help" || args[0] == "-h" || args[0] == "help" {
-		fmt.Fprintln(out, "usage: paseo-sbx {build|load|create|register|unregister|prune|list|shell|stop} [options]\nRun paseo-sbx COMMAND --help for command options.")
+		fmt.Fprintln(out, "usage: paseo-sbx {build|load|create|register|run|unregister|prune|list|shell|stop} [options]\nRun paseo-sbx COMMAND --help for command options.")
 		return 0
 	}
 	app, err := NewApp(root)
@@ -606,6 +618,9 @@ func Run(root string, args []string, in io.Reader, out, stderr io.Writer) int {
 }
 func (a *App) execute(args []string) error {
 	command := args[0]
+	if command == "run" {
+		return a.runPlugin(args[1:])
+	}
 	f := flag.NewFlagSet(command, flag.ContinueOnError)
 	f.SetOutput(a.Err)
 	var profile, workspace, platforms, profiles, utilities, selectionPath, agents, methods string

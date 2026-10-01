@@ -102,14 +102,14 @@ func (c Catalog) Normalize(s Selection) (Selection, error) {
 	pairs := map[string]Pair{}
 	for _, p := range s.Pairs {
 		a, ok := c.Agent(p.Agent)
-		if !ok || (a.Adapter != "codex" && a.Adapter != "claude") {
+		if !ok || !SupportedAdapter(a.Adapter) {
 			return s, fmt.Errorf("unsupported agent adapter for %q", p.Agent)
 		}
 		m, ok := find(c.Methodologies, p.Methodology)
 		if !ok || !slices.Contains(m.Agents, p.Agent) {
 			return s, fmt.Errorf("unsupported pair %s/%s", p.Agent, p.Methodology)
 		}
-		if m.Installer != "git-plugin" && m.Installer != "gsd-core" {
+		if m.Installer != "git-plugin" && m.Installer != "gsd-core" && m.Installer != "none" {
 			return s, fmt.Errorf("unsupported methodology installer %q", m.Installer)
 		}
 		pairs[p.Agent+"-"+p.Methodology] = p
