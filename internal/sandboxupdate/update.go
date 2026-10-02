@@ -94,8 +94,13 @@ func UpdateLockedContext(ctx context.Context, runtime string, entry config.Entry
 	}
 	fmt.Fprintln(log, "paseo-sbx: updating", entry.Sandbox)
 	state := refreshStages(ctx, entry, run, time.Now(), emit)
+	return finishUpdate(ctx, base, state, log)
+}
+
+// finishUpdate persists the attempt before reporting its completion status.
+func finishUpdate(ctx context.Context, base string, state State, log io.Writer) error {
 	if err := config.WriteJSON(base+".json", state); err != nil {
-		return err
+		return errors.Join(err, ctx.Err())
 	}
 	if len(state.Errors) > 0 {
 		if ctx.Err() != nil {
@@ -103,7 +108,7 @@ func UpdateLockedContext(ctx context.Context, runtime string, entry config.Entry
 		}
 		return fmt.Errorf("sandbox update incomplete: %v", state.Errors)
 	}
-	fmt.Fprintln(log, "paseo-sbx: updated", entry.Sandbox, state.Versions)
+	fmt.Fprintln(log, "paseo-sbx: updated", state.Sandbox, state.Versions)
 	return nil
 }
 

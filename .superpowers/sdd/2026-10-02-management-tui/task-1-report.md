@@ -208,3 +208,112 @@ nonblocking log observer so view rendering does not backpressure subprocesses.
 Host group termination does not prove guest installer termination. Real sandbox
 lifecycle validation is deliberately left to the controller's later task; no live
 sandbox or default Paseo home was used as a test target.
+
+## Review fix round 1/5
+
+Fix base: 4dff4c4. Addressed both Important findings from task-1-review.md.
+
+### Prune / sandbox lock lifetime
+
+Test: TestPruneDuringUpdatePreservesSandboxLock, operations/service_test.go.
+The test starts a real UpdateContext against the Go sbx helper, waits for the
+installer, removes its workspace, and invokes prune concurrently. It verifies
+that prune reports the actual lock conflict, retains registry metadata and the
+same lock inode, and rejects another sandbox acquisition while the updater holds
+it. After cancellation/release, prune succeeds, forgets the registry, preserves
+both registered and historical lock-file inodes, and permits a later acquisition.
+
+RED command:
+
+```text
+rtk proxy env GOCACHE=/private/tmp/paseo-sbx-management-go-cache go test ./internal/operations -run TestPruneDuringUpdatePreservesSandboxLock
+--- FAIL: TestPruneDuringUpdatePreservesSandboxLock (0.07s)
+prune overlapped active installer: <nil>
+prune replaced the live lock inode: no such file or directory
+prune allowed reacquisition while installer holds lock
+conflicting prune forgot registry: no such file or directory
+completed prune replaced sandbox lock inode
+FAIL operations 0.079s
+```
+
+Fix: prune acquires all registered sandbox keys in each affected missing runtime
+before changing provider or registry metadata. Prior acquisitions unwind on a
+conflict; all releases run in reverse order. Successful prune removes only
+registry.json, selection.json and the legacy per-runtime agent-wrapper. It
+retains the updates directory, update history, and every legacy lock inode;
+historical automatic callers therefore continue acquiring the same file. Keeping
+the history matches the policy that the sandbox itself is preserved, while
+config.Registries and CLI list no longer see the forgotten workspace.
+
+GREEN covering command:
+
+```text
+rtk proxy env GOCACHE=/private/tmp/paseo-sbx-management-go-cache go test ./internal/operations -run TestPruneDuringUpdatePreservesSandboxLock
+ok operations 0.081s
+```
+
+### Internal deadline / failed result persistence
+
+Test: TestInternalDeadlineAndRecordWriteFailure, sandboxupdate/update_test.go.
+The test creates an expired child deadline with a still-live parent, forces the
+atomic state rename to fail by placing a directory at the record destination,
+and exercises the updater's actual persistence/completion boundary. It requires
+both errors.Is(DeadlineExceeded) and errors.As(*os.LinkError) to survive. This is
+the error classification consumed by Execute for NeedsVerification even when its
+parent context remains live.
+
+The existing completion block was extracted without behavior changes into a
+private finishUpdate helper so the test reaches the exact production boundary
+without waiting three minutes or adding a public timeout/test knob.
+
+RED command:
+
+```text
+rtk proxy env GOCACHE=/private/tmp/paseo-sbx-management-go-cache go test ./internal/sandboxupdate -run TestInternalDeadlineAndRecordWriteFailure
+--- FAIL: TestInternalDeadlineAndRecordWriteFailure (0.01s)
+internal deadline hidden by record-write failure: rename ... box.json: file exists
+FAIL sandboxupdate 0.012s
+```
+
+Fix: finishUpdate now returns errors.Join(persistenceError, childContext.Err())
+when record writing fails, preserving both the filesystem cause and the internal
+timeout/cancellation classification. Successful persistence and normal component
+failure behavior are unchanged.
+
+GREEN covering command:
+
+```text
+rtk proxy env GOCACHE=/private/tmp/paseo-sbx-management-go-cache go test -race ./internal/operations ./internal/sandboxupdate
+ok operations 1.582s
+ok sandboxupdate 1.059s
+```
+
+Final GREEN command, elevated for existing local httptest listeners:
+
+```text
+rtk proxy env GOCACHE=/private/tmp/paseo-sbx-management-go-cache go test -race ./...
+? cmd/agent-wrapper [no test files]
+? cmd/install-runtime [no test files]
+? cmd/paseo-sbx [no test files]
+ok internal/cli 4.033s
+ok internal/config (cached)
+ok internal/gateway (cached)
+ok internal/launcher 1.138s
+ok internal/operationlock (cached)
+ok internal/operations (cached)
+ok internal/process (cached)
+ok internal/runtimeinstall (cached)
+ok internal/sandboxupdate (cached)
+ok internal/tui (cached)
+```
+
+Self-review: checked the lock acquisition/release order, no metadata changes on
+lock conflict, inode retention after completed prune, the existing CLI prune
+contract, and the preserved child-context error classification. git diff --check
+passed. Changed files in this fix: operations/workspaces.go,
+operations/service_test.go, sandboxupdate/update.go,
+sandboxupdate/update_test.go, and this report. No public API or dependency added.
+
+Remaining concern: the reviewer Minor finding about process-helper readiness is
+explicitly deferred by the controller to final review and was not changed in
+this round. Both assigned Important findings are resolved.

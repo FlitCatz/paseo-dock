@@ -23,6 +23,29 @@ type fixture struct {
 	current string
 }
 
+// A child timeout must survive failed persistence even though the caller remains live.
+func TestInternalDeadlineAndRecordWriteFailure(t *testing.T) {
+	parent := context.Background()
+	child, cancel := context.WithDeadline(parent, time.Now().Add(-time.Second))
+	defer cancel()
+	base := filepath.Join(t.TempDir(), "box")
+	if err := os.Mkdir(base+".json", 0700); err != nil {
+		t.Fatal(err)
+	}
+	state := State{Sandbox: "box", Attempt: time.Now(), Errors: map[string]string{"agent": context.DeadlineExceeded.Error()}}
+	err := finishUpdate(child, base, state, io.Discard)
+	if parent.Err() != nil {
+		t.Fatal("test accidentally canceled caller")
+	}
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("internal deadline hidden by record-write failure: %v", err)
+	}
+	var persistence *os.LinkError
+	if !errors.As(err, &persistence) {
+		t.Errorf("record-write failure lost: %v", err)
+	}
+}
+
 func (f *fixture) run(_ context.Context, args []string, _ bool) (string, error) {
 	s := strings.Join(args, " ")
 	f.calls = append(f.calls, s)

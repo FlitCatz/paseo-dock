@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"paseo-sbx/internal/config"
+	"paseo-sbx/internal/operationlock"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -305,6 +306,31 @@ func (a *execution) prune(home string, dryRun bool) error {
 	if dryRun {
 		return nil
 	}
+	// Acquire every affected sandbox before changing provider or registry metadata.
+	// Keep these lock inodes even after pruning: automatic callers can retain an
+	// entry after its registry is forgotten and must still acquire the same flock.
+	var releases []func()
+	defer func() {
+		for i := len(releases) - 1; i >= 0; i-- {
+			releases[i]()
+		}
+	}()
+	for _, i := range missing {
+		if filepath.Dir(i.Runtime) != base {
+			return fmt.Errorf("refusing to remove %s outside %s", i.Runtime, base)
+		}
+		var keys []string
+		for _, entry := range i.Registry.Profiles {
+			if entry.Sandbox != "" {
+				keys = append(keys, operationlock.SandboxKey(entry.Sandbox))
+			}
+		}
+		release, err := operationlock.Acquire(a.ctx, i.Runtime, keys)
+		if err != nil {
+			return err
+		}
+		releases = append(releases, release)
+	}
 	// Providers already ignore missing workspaces; sync first so a failure
 	// leaves every registry in place.
 	if err = a.syncProviders(home, true); err != nil {
@@ -314,8 +340,12 @@ func (a *execution) prune(home string, dryRun bool) error {
 		if filepath.Dir(i.Runtime) != base {
 			return fmt.Errorf("refusing to remove %s outside %s", i.Runtime, base)
 		}
-		if err = os.RemoveAll(i.Runtime); err != nil {
-			return err
+		// Forget launch routing and saved selection, retaining update history and
+		// lock files because the underlying sandboxes are deliberately preserved.
+		for _, name := range []string{"registry.json", "selection.json", "agent-wrapper"} {
+			if err = os.Remove(filepath.Join(i.Runtime, name)); err != nil && !os.IsNotExist(err) {
+				return err
+			}
 		}
 		a.changed = true
 		fmt.Fprintln(a.Out, "Removed registry:", i.Runtime)

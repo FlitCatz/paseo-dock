@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"paseo-sbx/internal/config"
+	"paseo-sbx/internal/operationlock"
 	"paseo-sbx/internal/sandboxupdate"
 	"path/filepath"
 	"slices"
@@ -16,6 +17,82 @@ import (
 	"testing"
 	"time"
 )
+
+// Prune must neither overlap a live installer nor unlink the inode held by its lock.
+func TestPruneDuringUpdatePreservesSandboxLock(t *testing.T) {
+	s, target, _ := operationFixture(t)
+	if err := os.MkdirAll(filepath.Join(s.Root, "bin"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(s.Root, "bin", "agent-wrapper"), []byte("trusted test launcher"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	exe, _ := os.Executable()
+	if err := os.Symlink(exe, filepath.Join(filepath.Dir(os.Getenv("SBX_TEST_LOG")), "paseo")); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- sandboxupdate.UpdateContext(ctx, target.Runtime, target.Entry, true, io.Discard, nil) }()
+	waitReady(t)
+	if err := os.RemoveAll(target.Workspace); err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256([]byte(target.Entry.Sandbox))
+	lockPath := filepath.Join(target.Runtime, "updates", fmt.Sprintf("%x.lock", sum[:8]))
+	before, err := os.Stat(lockPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = s.Execute(context.Background(), Request{Kind: KindPrune}, nil)
+	if !errors.Is(err, operationlock.ErrConflict) {
+		t.Errorf("prune overlapped active installer: %v", err)
+	}
+	after, statErr := os.Stat(lockPath)
+	if statErr != nil || !os.SameFile(before, after) {
+		t.Error("prune replaced the live lock inode", statErr)
+	}
+	release, err := operationlock.Acquire(context.Background(), target.Runtime, []string{operationlock.SandboxKey(target.Entry.Sandbox)})
+	if err == nil {
+		release()
+		t.Error("prune allowed reacquisition while installer holds lock")
+	}
+	if _, err := os.Stat(filepath.Join(target.Runtime, "registry.json")); err != nil {
+		t.Error("conflicting prune forgot registry", err)
+	}
+	cancel()
+	<-done
+	// Completed pruning still retains every historical lock inode, including an
+	// unregistered sandbox's lock file, so stale automatic callers cannot bypass it.
+	orphanPath := filepath.Join(target.Runtime, "updates", "historical.lock")
+	if err := os.WriteFile(orphanPath, nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	orphanBefore, err := os.Stat(orphanPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.Execute(context.Background(), Request{Kind: KindPrune}, nil); err != nil {
+		t.Fatal("prune failed after installer released", err)
+	}
+	after, err = os.Stat(lockPath)
+	if err != nil || !os.SameFile(before, after) {
+		t.Error("completed prune replaced sandbox lock inode", err)
+	}
+	orphanAfter, err := os.Stat(orphanPath)
+	if err != nil || !os.SameFile(orphanBefore, orphanAfter) {
+		t.Error("prune removed historical lock inode", err)
+	}
+	if _, err := os.Stat(filepath.Join(target.Runtime, "registry.json")); !os.IsNotExist(err) {
+		t.Error("prune did not forget registry", err)
+	}
+	release, err = operationlock.Acquire(context.Background(), target.Runtime, []string{operationlock.SandboxKey(target.Entry.Sandbox)})
+	if err != nil {
+		t.Fatal("released lock blocked retry after prune", err)
+	}
+	release()
+}
 
 // External sbx is a Go test executable; registry, updater and process boundaries stay real.
 func TestMain(m *testing.M) {
