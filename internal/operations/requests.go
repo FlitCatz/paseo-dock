@@ -38,5 +38,8 @@ type Event struct {
 type Result struct {
 	Changed, NeedsVerification bool
 	Versions                   map[string]string
+	VersionCheckedAt           time.Time
+	VersionErrors              map[string]string
+	Warnings                   []string
 	Remaining, Missing         []Target
 }

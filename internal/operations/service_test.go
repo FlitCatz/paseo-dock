@@ -96,6 +96,9 @@ func TestPruneDuringUpdatePreservesSandboxLock(t *testing.T) {
 
 // External sbx is a Go test executable; registry, updater and process boundaries stay real.
 func TestMain(m *testing.M) {
+	if os.Getenv("OBSERVE_TEST_MODE") == "1" && slices.Contains([]string{"sbx", "paseo", "docker"}, filepath.Base(os.Args[0])) {
+		observationFake()
+	}
 	if filepath.Base(os.Args[0]) == "paseo" {
 		if slices.Contains(os.Args, "status") {
 			fmt.Println(`{"localDaemon":"running"}`)

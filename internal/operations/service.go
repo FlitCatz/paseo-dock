@@ -262,6 +262,9 @@ func (s *Service) Execute(ctx context.Context, r Request, emit func(Event)) (res
 		r.PaseoHome = "~/.paseo"
 	}
 	a.stage(string(r.Kind), "Starting "+string(r.Kind))
+	if r.Kind == KindVersions {
+		return a.checkVersions(r.Target)
+	}
 	if r.Kind == KindUpdate || r.Kind == KindStop {
 		targets, e := s.updateTargets(r)
 		if e != nil {
@@ -337,8 +340,6 @@ func (s *Service) Execute(ctx context.Context, r Request, emit func(Event)) (res
 			}
 		}
 	case KindRegister, KindPrune:
-	case KindVersions:
-		return result, errors.New("versions is not implemented yet")
 	default:
 		return result, fmt.Errorf("unknown operation %q", r.Kind)
 	}
