@@ -11,13 +11,13 @@ import (
 	"io"
 	"maps"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"time"
 
 	"paseo-sbx/internal/config"
+	"paseo-sbx/internal/operationlock"
+	"paseo-sbx/internal/process"
 )
 
 type State struct {
@@ -31,9 +31,33 @@ type State struct {
 
 type runner func(context.Context, []string, bool) (string, error)
 
+func UpdateContext(ctx context.Context, runtime string, entry config.Entry, force bool, log io.Writer, emit func(string)) error {
+	if entry.Sandbox == "" || !config.SupportedAdapter(entry.Agent) {
+		return errors.New("invalid sandbox entry")
+	}
+	if !force && os.Getenv("PASEO_SBX_AUTO_UPDATE") == "0" {
+		return nil
+	}
+	release, err := operationlock.Acquire(ctx, runtime, []string{operationlock.SandboxKey(entry.Sandbox)})
+	if err != nil {
+		if !force && errors.Is(err, operationlock.ErrConflict) {
+			return nil
+		}
+		return err
+	}
+	defer release()
+	return UpdateLockedContext(ctx, runtime, entry, force, log, emit)
+}
+
 // Update checks at most daily (hourly after failures). Force bypasses the interval.
 // Failures are returned to explicit callers; automatic callers can continue launching.
 func Update(runtime string, entry config.Entry, force bool, log io.Writer) error {
+	return UpdateContext(context.Background(), runtime, entry, force, log, nil)
+}
+
+// UpdateLockedContext requires the caller to hold runtime's matching SandboxKey
+// lock. It avoids reacquisition when the caller validates a frozen target under lock.
+func UpdateLockedContext(ctx context.Context, runtime string, entry config.Entry, force bool, log io.Writer, emit func(string)) error {
 	if entry.Sandbox == "" || !config.SupportedAdapter(entry.Agent) {
 		return errors.New("invalid sandbox entry")
 	}
@@ -46,18 +70,6 @@ func Update(runtime string, entry config.Entry, force bool, log io.Writer) error
 		return err
 	}
 	base := filepath.Join(dir, fmt.Sprintf("%x", sum[:8]))
-	f, err := os.OpenFile(base+".lock", os.O_CREATE|os.O_RDWR, 0600)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	if err = syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
-		if !force && (errors.Is(err, syscall.EWOULDBLOCK) || errors.Is(err, syscall.EAGAIN)) {
-			return nil
-		}
-		return fmt.Errorf("sandbox update already running: %w", err)
-	}
-	defer syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
 	var prior State
 	_ = config.ReadJSON(base+".json", &prior)
 	interval := 24 * time.Hour
@@ -67,11 +79,11 @@ func Update(runtime string, entry config.Entry, force bool, log io.Writer) error
 	if !force && prior.Sandbox == entry.Sandbox && prior.Image == entry.Image && time.Since(prior.Attempt) < interval {
 		return nil
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Minute)
 	defer cancel()
 	run := func(ctx context.Context, args []string, capture bool) (string, error) {
 		// A fixed guest directory prevents workspace npm configuration from affecting installs.
-		cmd := exec.CommandContext(ctx, "sbx", append([]string{"exec", "--workdir", "/tmp", entry.Sandbox}, args...)...)
+		cmd := process.Command(ctx, "sbx", append([]string{"exec", "--workdir", "/tmp", entry.Sandbox}, args...)...)
 		cmd.Stderr = log
 		if capture {
 			b, err := cmd.Output()
@@ -81,11 +93,14 @@ func Update(runtime string, entry config.Entry, force bool, log io.Writer) error
 		return "", cmd.Run()
 	}
 	fmt.Fprintln(log, "paseo-sbx: updating", entry.Sandbox)
-	state := refresh(ctx, entry, run, time.Now())
+	state := refreshStages(ctx, entry, run, time.Now(), emit)
 	if err := config.WriteJSON(base+".json", state); err != nil {
 		return err
 	}
 	if len(state.Errors) > 0 {
+		if ctx.Err() != nil {
+			return fmt.Errorf("sandbox update incomplete; guest state needs verification: %w", ctx.Err())
+		}
 		return fmt.Errorf("sandbox update incomplete: %v", state.Errors)
 	}
 	fmt.Fprintln(log, "paseo-sbx: updated", entry.Sandbox, state.Versions)
@@ -102,7 +117,13 @@ func (u updater) command(args ...string) error          { _, err := u.run(u.ctx,
 func (u updater) output(args ...string) (string, error) { return u.run(u.ctx, args, true) }
 
 func refresh(ctx context.Context, entry config.Entry, run runner, now time.Time) State {
+	return refreshStages(ctx, entry, run, now, nil)
+}
+func refreshStages(ctx context.Context, entry config.Entry, run runner, now time.Time, emit func(string)) State {
 	s := State{Sandbox: entry.Sandbox, Image: entry.Image, Attempt: now, Versions: map[string]string{}, Errors: map[string]string{}}
+	if emit != nil {
+		emit("environment")
+	}
 	u := updater{ctx: ctx, run: run}
 	home, err := u.output("printenv", "HOME")
 	if err != nil || !strings.HasPrefix(home, "/") || strings.ContainsAny(home, "\r\n") {
@@ -116,6 +137,13 @@ func refresh(ctx context.Context, entry config.Entry, run runner, now time.Time)
 		return s
 	}
 	step := func(id string, fn func() (string, error)) {
+		if emit != nil {
+			emit(id)
+		}
+		if err := ctx.Err(); err != nil {
+			s.Errors[id] = err.Error()
+			return
+		}
 		v, err := fn()
 		if err != nil {
 			s.Errors[id] = err.Error()
