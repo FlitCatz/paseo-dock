@@ -40,6 +40,7 @@ type Dashboard struct {
 	Help, Searching, Unmanaged     bool
 	requestID                      uint64
 	pending                        bool
+	pollScheduled                  bool
 	ctx                            context.Context
 	cancel                         context.CancelFunc
 	lastSlow                       time.Time
@@ -72,7 +73,7 @@ func (m *Dashboard) refresh(now time.Time, manual bool) tea.Cmd {
 	m.requestID++
 	id := m.requestID
 	slow := m.slowWanted || m.lastSlow.IsZero() || now.Sub(m.lastSlow) >= 15*time.Second
-	q := operations.Query{IncludePaseo: slow, IncludeDocker: slow, IncludeTemplates: m.templatesWanted || m.templateTab}
+	q := operations.Query{IncludePaseo: slow, IncludeDocker: slow, IncludeTemplates: m.templatesWanted}
 	m.templatesWanted = false
 	m.slowWanted = false
 	if slow {
@@ -91,6 +92,7 @@ func (m *Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.Width = max(1, v.Width)
 		m.Height = max(1, v.Height)
 	case pollMsg:
+		m.pollScheduled = false
 		return m, m.refresh(time.Time(v), false)
 	case snapshotMsg:
 		if v.id != m.requestID || !m.pending {
@@ -150,7 +152,11 @@ func (m *Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.reconcileSelection()
 		}
 		m.syncLists()
-		return m, poll()
+		if !m.pollScheduled {
+			m.pollScheduled = true
+			return m, poll()
+		}
+		return m, nil
 	case tea.KeyPressMsg:
 		k := v.String()
 		if k == "ctrl+c" {
@@ -183,8 +189,14 @@ func (m *Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		case "tab":
 			m.Focus = (m.Focus + 1) % 4
+			if m.Focus >= 2 {
+				m.detailTab = m.Focus - 2
+			}
 		case "shift+tab":
 			m.Focus = (m.Focus + 3) % 4
+			if m.Focus >= 2 {
+				m.detailTab = m.Focus - 2
+			}
 		case "/":
 			m.Searching = true
 			m.Search = ""
@@ -234,7 +246,7 @@ func (m *Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			} else {
 				var cmd tea.Cmd
-				if m.Focus == 3 || m.detailTab == 1 {
+				if m.Focus == 3 {
 					m.logs, cmd = m.logs.Update(msg)
 				} else {
 					m.details, cmd = m.details.Update(msg)
@@ -318,6 +330,18 @@ func (m *Dashboard) syncLists() {
 			ws = append(ws, panelItem{id: w.ID, label: label})
 		}
 	}
+	workspaceVisible := false
+	for _, item := range ws {
+		if item.(panelItem).id == m.WorkspaceID {
+			workspaceVisible = true
+			break
+		}
+	}
+	if !workspaceVisible && len(ws) > 0 {
+		m.WorkspaceID = ws[0].(panelItem).id
+		m.ProfileID = ""
+		m.reconcileSelection()
+	}
 	for _, s := range m.rows() {
 		id := sandboxID(s)
 		label := id + "  " + s.RuntimeState + "  " + s.Registration
@@ -333,6 +357,16 @@ func (m *Dashboard) syncLists() {
 	}
 	m.workspaces.SetItems(ws)
 	m.sandboxes.SetItems(ss)
+	profileVisible := false
+	for _, item := range ss {
+		if item.(panelItem).id == m.ProfileID {
+			profileVisible = true
+			break
+		}
+	}
+	if !profileVisible && len(ss) > 0 {
+		m.ProfileID = ss[0].(panelItem).id
+	}
 	for i, w := range ws {
 		if w.(panelItem).id == m.WorkspaceID {
 			m.workspaces.Select(i)

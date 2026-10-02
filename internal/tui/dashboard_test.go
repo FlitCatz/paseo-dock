@@ -306,3 +306,129 @@ func TestDashboardUnconfirmedUpdateIsNotSuccess(t *testing.T) {
 		t.Fatalf("unconfirmed update shown as success: %q", content)
 	}
 }
+
+func TestDashboardManualRefreshKeepsSinglePollingTimer(t *testing.T) {
+	b := &dashboardBackend{snapshot: fixtureSnapshot()}
+	m := NewDashboard(b, config.Catalog{}, "")
+	_, scheduled := m.Update(m.Init()())
+	if scheduled == nil {
+		t.Fatal("initial observation did not schedule polling")
+	}
+	for i := 0; i < 3; i++ {
+		_, query := m.Update(tea.KeyPressMsg{Code: 'r', Text: "r"})
+		if query == nil {
+			t.Fatal("manual query missing")
+		}
+		_, extraTimer := m.Update(query())
+		if extraTimer != nil {
+			t.Fatal("manual response added another polling timer before existing timer fired")
+		}
+	}
+	_, query := m.Update(scheduled())
+	if query == nil {
+		t.Fatal("original timer stopped polling")
+	}
+	_, nextTimer := m.Update(query())
+	if nextTimer == nil {
+		t.Fatal("consumed timer was not rearmed after observation")
+	}
+	if len(b.queries) != 5 {
+		t.Fatalf("query count %d, want initial + 3 manual + 1 scheduled", len(b.queries))
+	}
+}
+
+func TestDashboardSearchKeepsMarkerIdentityAndDetailsAligned(t *testing.T) {
+	for _, tc := range []struct {
+		name, search, workspace, profile string
+		focus                            int
+	}{
+		{"workspace", "/workspace/b", "runtime-b", "b-one", 0},
+		{"profile", "two", "runtime-a", "a-two", 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := NewDashboard(&dashboardBackend{}, config.Catalog{}, "")
+			deliver(m, fixtureSnapshot())
+			m.Focus = tc.focus
+			dashboardKey(m, "/")
+			for _, r := range tc.search {
+				dashboardKey(m, string(r))
+			}
+			view := m.View().Content
+			if m.WorkspaceID != tc.workspace || m.ProfileID != tc.profile {
+				t.Fatalf("filter left wrong identity %s/%s: %q", m.WorkspaceID, m.ProfileID, view)
+			}
+			if details := m.detailContent(); !strings.Contains(details, "Profile: "+tc.profile) {
+				t.Fatalf("details diverged: %q", details)
+			}
+			selected := m.workspaces.SelectedItem()
+			want := tc.workspace
+			if tc.focus == 1 {
+				selected = m.sandboxes.SelectedItem()
+				want = tc.profile
+			}
+			if selected == nil || selected.(panelItem).id != want {
+				t.Fatalf("highlight differs from authoritative identity: %+v", selected)
+			}
+			m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+			m.View()
+			if m.WorkspaceID != tc.workspace || m.ProfileID != tc.profile {
+				t.Fatal("clearing search changed visible selected identity")
+			}
+		})
+	}
+}
+
+func TestDashboardDetailsScrollAfterReturningFromLogs(t *testing.T) {
+	m := NewDashboard(&dashboardBackend{}, config.Catalog{}, "")
+	s := fixtureSnapshot()
+	s.Workspaces[0].Sandboxes[0].InitialVersions = map[string]string{"agent": "1.0", "methodology": "2.0"}
+	deliver(m, s)
+	m.Focus = 2
+	m.View()
+	m.Update(tea.KeyPressMsg{Code: tea.KeyRight})
+	m.Update(tea.KeyPressMsg{Code: tea.KeyTab, Mod: tea.ModShift})
+	m.View()
+	if m.Focus != 2 {
+		t.Fatalf("shift tab returned to focus %d", m.Focus)
+	}
+	logOffset := m.logs.YOffset()
+	m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
+	if m.details.YOffset() != 1 || m.logs.YOffset() != logOffset {
+		t.Fatalf("details/log offsets %d/%d, want 1/%d", m.details.YOffset(), m.logs.YOffset(), logOffset)
+	}
+	dashboardKey(m, "j")
+	if m.details.YOffset() != 2 {
+		t.Fatalf("j scrolled wrong viewport, details offset %d", m.details.YOffset())
+	}
+}
+
+func TestDashboardTemplatesOnlyOnEntryOrManualRefresh(t *testing.T) {
+	b := &dashboardBackend{snapshot: fixtureSnapshot()}
+	m := NewDashboard(b, config.Catalog{}, "")
+	m.Update(m.Init()())
+	_, cmd := m.Update(tea.KeyPressMsg{Code: 't', Text: "t"})
+	msg := cmd().(snapshotMsg)
+	if !msg.query.IncludeTemplates {
+		t.Fatal("entry did not request templates")
+	}
+	m.Update(msg)
+	for i := 0; i < 3; i++ {
+		_, cmd = m.Update(pollMsg(time.Now().Add(time.Duration(i+1) * 3 * time.Second)))
+		msg = cmd().(snapshotMsg)
+		if msg.query.IncludeTemplates {
+			t.Fatal("displayed template tab caused repeated automatic template query")
+		}
+		m.Update(msg)
+	}
+	_, cmd = m.Update(tea.KeyPressMsg{Code: 'r', Text: "r"})
+	msg = cmd().(snapshotMsg)
+	if !msg.query.IncludeTemplates {
+		t.Fatal("manual refresh omitted templates")
+	}
+	m.Update(msg)
+	dashboardKey(m, "t")
+	_, cmd = m.Update(tea.KeyPressMsg{Code: 't', Text: "t"})
+	if !cmd().(snapshotMsg).query.IncludeTemplates {
+		t.Fatal("reentry omitted templates")
+	}
+}
