@@ -282,6 +282,9 @@ func (m *Dashboard) chooseAction(a action) tea.Cmd {
 		r.Selection = *w.Selection
 	}
 	if a.workspace {
+		// A nonnil empty slice is an explicit inactive baseline, distinct from
+		// omitted CLI targets that resolve activation at execution time.
+		r.Targets = make([]operations.Target, 0)
 		for _, s := range w.Sandboxes {
 			if s.Active {
 				r.Targets = append(r.Targets, s.Target)

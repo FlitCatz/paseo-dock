@@ -541,6 +541,55 @@ func TestJobRetryUsesFailedRequest(t *testing.T) {
 	}
 }
 
+func TestJobProviderConfirmationsFreezeActiveScope(t *testing.T) {
+	for _, a := range []int{5, 6} {
+		t.Run(fmt.Sprint(a), func(t *testing.T) {
+			b := &jobBackend{}
+			m := NewDashboard(b, config.DefaultCatalog(), "")
+			defer m.cancel()
+			s := managementFixture()
+			deliver(m, s)
+			m.enqueue(operations.Request{Kind: operations.KindStop, Target: m.rows()[0].Target}) // Hold dispatch until completion is delivered.
+			m.chooseAction(m.actions()[a])
+			keyCmd(m, "enter")
+			s.Workspaces[0].Sandboxes[1].Target.Entry.Sandbox = "replacement"
+			s.Workspaces[0].Sandboxes[1].Active = false
+			deliver(m, s)
+			_, cmd := m.Update(jobDoneMsg{id: m.runningJob})
+			events := startJobCommands(cmd)
+			m.Update(awaitJobDone(t, events))
+			b.mu.Lock()
+			defer b.mu.Unlock()
+			r := b.requests[0]
+			if len(r.Targets) != 2 || r.Targets[1].Entry.Sandbox != "sandbox-two" || r.Targets[1].Profile != "a-two" {
+				t.Fatalf("queued provider scope retargeted: %+v", r)
+			}
+		})
+	}
+}
+func TestJobInactiveUnregisterKeepsExplicitEmptyScope(t *testing.T) {
+	b := &jobBackend{}
+	m := NewDashboard(b, config.DefaultCatalog(), "")
+	defer m.cancel()
+	s := managementFixture()
+	for i := range s.Workspaces[0].Sandboxes {
+		s.Workspaces[0].Sandboxes[i].Active = false
+	}
+	deliver(m, s)
+	m.chooseAction(m.actions()[6])
+	if m.confirm == nil || m.confirm.request.Targets == nil || len(m.confirm.request.Targets) != 0 {
+		t.Fatal("inactive unregister omitted its explicit activation baseline")
+	}
+	s.Workspaces[0].Sandboxes[1].Active = true
+	deliver(m, s)
+	runJobCommand(m, keyCmd(m, "enter"))
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if len(b.requests) != 1 || b.requests[0].Targets == nil || len(b.requests[0].Targets) != 0 {
+		t.Fatal("empty confirmation lost through enqueue/dispatch freezing")
+	}
+}
+
 func TestOneMutationRealServiceAndRegistryRevalidation(t *testing.T) {
 	for _, changed := range []bool{false, true} {
 		t.Run(fmt.Sprint("changed=", changed), func(t *testing.T) {

@@ -24,8 +24,10 @@ type Target struct {
 	Entry                       config.Entry
 }
 type Request struct {
-	Kind                                                           Kind
-	Target                                                         Target
+	Kind   Kind
+	Target Target
+	// For register/unregister a nonnil Targets slice (including empty) is
+	// the confirmed complete active scope; nil preserves legacy CLI resolution.
 	Targets                                                        []Target
 	Selection                                                      config.Selection
 	Namespace, Platforms, Memory, PaseoHome                        string

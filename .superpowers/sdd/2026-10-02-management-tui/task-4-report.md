@@ -159,3 +159,110 @@ The 17 management tests include a real operations.Service and Go sbx subprocess 
 Reviewed the diff and task contracts. Requests do not share target/selection slices; model fields only change on Update; job logging is synchronized; failures cannot wedge dispatch; shell cannot overlap active/queued work. Existing service revalidation, lock ordering and updater remain the execution path. Polling still has one timer; template reads remain tab-entry/manual only. No new dependency, second scheduler, guest stop, rollback, registration restoration or Task 5 advanced action was introduced.
 
 All required Task 4 automated checks passed. Real tea.ExecProcess callback behavior is covered without a terminal renderer. Actual PTY terminal restoration and disposable live sbx/Docker/Paseo lifecycle validation remain later integration scope; no existing live resource or configuration was mutated and no live/PTY success is claimed. `jobs.go` contains the planned task responsibilities in one file and is substantial; future expansion should keep action/queue/log responsibilities deliberate.
+
+## Review fix round 1 — Important I1
+
+Fix base: `3c568a7`. Scope is the frozen provider mutation scope only; the deferred semantic-stage finding and Task 5 registration restoration are unchanged.
+
+Read the review and receiving-code-review guidance, verified the feedback against the actual service/provider path, and used the previously read systematic debugging guidance to isolate the boundary. Root cause: the dashboard already froze each active target, but Execute only resolved the selected target and discarded the full active-list baseline. register/unregister then reread current activation while writing registry/provider state. Thus a queued change to another entry or Active altered the confirmed effect.
+
+The fix adds shared-service validation after the existing mutation locks and selected-target validation, before any registry/launcher/generated-provider/config/backup write. It checks every explicit target's entry and workspace/runtime identity and compares the complete active profile set, irrespective of order. Invalid or changed scope returns an error without mutation. The existing merge/union logic and lock acquisition remain unchanged.
+
+Per controller ruling, nil Targets retains legacy CLI resolution; a nonnil slice, including empty, confirms the complete active baseline. The dashboard now constructs an explicit empty baseline for workspace actions and its existing freeze/enqueue/dispatch copies preserve that distinction. The request field documents the contract.
+
+### RED evidence
+
+```text
+rtk proxy env GOCACHE=/private/tmp/paseo-sbx-management-go-cache go test ./internal/operations -run TestExecuteProviderScope
+--- FAIL: TestExecuteProviderScopeRejectsChangedConfirmation
+    register/nonselected_entry: provider mutation accepted changed confirmed nonselected entry
+    register/active_removed: provider mutation accepted changed confirmed active removed
+    register/active_added: provider mutation accepted changed confirmed active added
+    unregister/nonselected_entry: provider mutation accepted changed confirmed nonselected entry
+    unregister/active_removed: provider mutation accepted changed confirmed active removed
+    unregister/active_added: provider mutation accepted changed confirmed active added
+    unregister/empty_became_active: provider mutation accepted changed confirmed empty became active
+    [Each case also showed Changed=true, registry/config or artifact writes and a backup.]
+FAIL paseo-sbx/internal/operations 0.549s
+```
+
+This run additionally exposed three unchanged-unregister fixture assertions caused by an uncanonicalized initial managed launcher command (`/var` versus `/private/var`). Canonicalizing that test fixture made the unchanged/legacy cases pass without a production change:
+
+```text
+rtk proxy env GOCACHE=/private/tmp/paseo-sbx-management-go-cache go test ./internal/operations -run TestExecuteProviderScopeUnchangedAndLegacyCLI
+ok paseo-sbx/internal/operations 0.251s
+```
+
+The separate UI regression caught loss of the explicit empty baseline before the fix:
+
+```text
+rtk proxy env GOCACHE=/private/tmp/paseo-sbx-management-go-cache go test ./internal/tui -run 'TestJob(ProviderConfirmations|InactiveUnregister)'
+--- FAIL: TestJobInactiveUnregisterKeepsExplicitEmptyScope
+    inactive unregister omitted its explicit activation baseline
+FAIL paseo-sbx/internal/tui 0.007s
+```
+
+Checking the full explicit identity found that a request without a selected Profile could name workspace B with runtime A while its Targets named A. The scope validator must reject that identity disagreement as well:
+
+```text
+rtk proxy env GOCACHE=/private/tmp/paseo-sbx-management-go-cache go test ./internal/operations -run TestExecuteProviderScopeRejectsMixedWorkspace
+--- FAIL: TestExecuteProviderScopeRejectsMixedWorkspace/register
+    explicit provider scope ignored selected workspace identity
+--- FAIL: TestExecuteProviderScopeRejectsMixedWorkspace/unregister
+    explicit provider scope ignored selected workspace identity
+FAIL paseo-sbx/internal/operations 0.095s
+```
+
+### GREEN evidence
+
+After validating the frozen scope and preserving nonnil empty construction:
+
+```text
+rtk proxy env GOCACHE=/private/tmp/paseo-sbx-management-go-cache go test ./internal/operations -run TestExecuteProviderScope
+ok paseo-sbx/internal/operations 0.439s
+rtk proxy env GOCACHE=/private/tmp/paseo-sbx-management-go-cache go test ./internal/tui -run 'TestJob(ProviderConfirmations|InactiveUnregister)'
+ok paseo-sbx/internal/tui 0.007s
+```
+
+After the mixed-workspace identity check, the final focused race commands passed:
+
+```text
+rtk proxy env GOCACHE=/private/tmp/paseo-sbx-management-go-cache go test -race ./internal/operations -run TestExecuteProviderScope
+ok paseo-sbx/internal/operations 1.528s
+rtk proxy env GOCACHE=/private/tmp/paseo-sbx-management-go-cache go test -race ./internal/tui -run 'TestJob(ProviderConfirmations|InactiveUnregister)'
+ok paseo-sbx/internal/tui 1.023s
+```
+
+Coverage verifies both provider actions reject changed nonselected entries and Active additions/removals; explicit empty unregister rejects later activation; unchanged and reordered confirmed scopes succeed; nil-target CLI requests still use current activation/entries; unrelated workspace and custom providers survive the existing union/merge. UI queue tests confirm changes to a nonselected row and activation cannot alter the retained request, and an inactive unregister baseline stays explicitly empty through confirmation/enqueue/dispatch. Failure assertions inspect actual registry/config bytes, generated/launcher artifacts and backups rather than only error strings.
+
+### Final verification and changed files
+
+```text
+rtk proxy env GOCACHE=/private/tmp/paseo-sbx-management-go-cache go test -race ./internal/tui ./internal/operations
+ok paseo-sbx/internal/tui 5.732s
+ok paseo-sbx/internal/operations 3.152s
+```
+
+Because this changes shared mutation validation, the full suite ran once on the final candidate with authorized escalation for the existing httptest listeners:
+
+```text
+rtk proxy env GOCACHE=/private/tmp/paseo-sbx-management-go-cache go test -race ./...
+? paseo-sbx/cmd/agent-wrapper [no test files]
+? paseo-sbx/cmd/install-runtime [no test files]
+? paseo-sbx/cmd/paseo-sbx [no test files]
+ok paseo-sbx/internal/cli 3.821s
+ok paseo-sbx/internal/config (cached)
+ok paseo-sbx/internal/gateway (cached)
+ok paseo-sbx/internal/launcher (cached)
+ok paseo-sbx/internal/operationlock (cached)
+ok paseo-sbx/internal/operations (cached)
+ok paseo-sbx/internal/process (cached)
+ok paseo-sbx/internal/runtimeinstall (cached)
+ok paseo-sbx/internal/sandboxupdate (cached)
+ok paseo-sbx/internal/tui (cached)
+exit 0
+```
+
+`rtk proxy env GOCACHE=/private/tmp/paseo-sbx-management-go-cache go vet ./...` and `rtk proxy git diff --check` exited 0 with no output.
+
+Changed files: `internal/operations/providers.go`, `service.go`, `requests.go`, `service_test.go`; `internal/tui/jobs.go`, `jobs_test.go`; this report. Self-review checked the validation occurs under the original mutation locks and precedes every provider-side write; nil behavior is gated in Execute; confirmation copies preserve an explicit empty slice. No second scheduler, new lock scheme, restoration, merge change or live resource mutation. No remaining I1 concern found; previously reported PTY/live integration limits remain.

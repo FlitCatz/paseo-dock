@@ -7,6 +7,7 @@ import (
 	"os"
 	"paseo-sbx/internal/config"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 )
@@ -91,6 +92,64 @@ func MergeManagedConfig(current, generated map[string]any, base string) {
 	}
 	MergeConfig(current, generated)
 }
+
+// validateProviderScope runs under Execute's existing runtime/home locks, before
+// any registry, launcher, backup or provider write. Explicit targets describe
+// the complete confirmed active set; a nil set keeps legacy CLI resolution.
+func (s *Service) validateProviderScope(target Target, targets []Target) error {
+	runtime := target.Runtime
+	if runtime == "" {
+		var err error
+		runtime, err = s.SelectedRuntime(target.Workspace)
+		if err != nil {
+			return err
+		}
+	}
+	runtime, err := config.Canonical(runtime)
+	if err != nil {
+		return err
+	}
+	var reg config.Registry
+	if err = config.ReadJSON(filepath.Join(runtime, "registry.json"), &reg); err != nil {
+		return err
+	}
+	if err = validateObservedRegistry(reg, runtime); err != nil {
+		return err
+	}
+	if target.Workspace != "" {
+		workspace, err := config.Canonical(target.Workspace)
+		if err != nil {
+			return err
+		}
+		if workspace != reg.Workspace {
+			return errors.New("confirmed provider workspace changed")
+		}
+	}
+	confirmed := make([]string, 0, len(targets))
+	seen := make(map[string]bool, len(targets))
+	for _, t := range targets {
+		if t.Entry == (config.Entry{}) || seen[t.Profile] {
+			return errors.New("invalid confirmed provider scope")
+		}
+		seen[t.Profile] = true
+		validated, err := s.resolveTarget(t)
+		if err != nil {
+			return err
+		}
+		if validated.Runtime != runtime || validated.Workspace != reg.Workspace {
+			return errors.New("confirmed provider workspace changed")
+		}
+		confirmed = append(confirmed, validated.Profile)
+	}
+	active := slices.Clone(reg.ActiveProfiles())
+	slices.Sort(active)
+	slices.Sort(confirmed)
+	if !slices.Equal(active, confirmed) {
+		return errors.New("confirmed workspace activation changed")
+	}
+	return nil
+}
+
 func (a *execution) register(runtime, home string, apply bool) error {
 	var reg config.Registry
 	if err := config.ReadJSON(filepath.Join(runtime, "registry.json"), &reg); err != nil {

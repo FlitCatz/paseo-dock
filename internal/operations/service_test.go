@@ -504,6 +504,222 @@ func TestExecuteRejectsChangedTarget(t *testing.T) {
 	}
 }
 
+// Provider confirmation covers every active entry, not only the selected row.
+func TestExecuteProviderScopeRejectsChangedConfirmation(t *testing.T) {
+	for _, kind := range []Kind{KindRegister, KindUnregister} {
+		for _, change := range []string{"nonselected entry", "active removed", "active added", "empty became active"} {
+			t.Run(string(kind)+"/"+change, func(t *testing.T) {
+				if kind == KindRegister && change == "empty became active" {
+					t.Skip("empty registration is unavailable")
+				}
+				s, targets, home := providerScopeFixture(t)
+				registryPath := filepath.Join(targets[0].Runtime, "registry.json")
+				var reg config.Registry
+				if err := config.ReadJSON(registryPath, &reg); err != nil {
+					t.Fatal(err)
+				}
+				request := Request{Kind: kind, Target: targets[0], Targets: slices.Clone(targets), PaseoHome: home, Apply: true}
+				switch change {
+				case "nonselected entry":
+					entry := reg.Profiles[targets[1].Profile]
+					entry.Sandbox = "unconfirmed replacement"
+					reg.Profiles[targets[1].Profile] = entry
+				case "active removed":
+					reg.Active = []string{targets[0].Profile}
+				case "active added":
+					reg.Active = append(reg.Active, "codex-superpowers")
+				case "empty became active":
+					request.Targets = make([]Target, 0)
+				}
+				if err := config.WriteJSON(registryPath, reg); err != nil {
+					t.Fatal(err)
+				}
+				beforeRegistry, err := os.ReadFile(registryPath)
+				if err != nil {
+					t.Fatal(err)
+				}
+				beforeConfig, err := os.ReadFile(filepath.Join(home, "config.json"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				result, err := s.Execute(context.Background(), request, nil)
+				if err == nil {
+					t.Errorf("provider mutation accepted changed confirmed %s", change)
+				}
+				if result.Changed {
+					t.Error("stale provider confirmation reported a mutation")
+				}
+				afterRegistry, _ := os.ReadFile(registryPath)
+				afterConfig, _ := os.ReadFile(filepath.Join(home, "config.json"))
+				if !bytes.Equal(beforeRegistry, afterRegistry) || !bytes.Equal(beforeConfig, afterConfig) {
+					t.Error("stale scope wrote registry or Paseo config")
+				}
+				for _, path := range []string{filepath.Join(s.Root, ".generated", "paseo.providers.json"), config.LauncherPath(filepath.Dir(targets[0].Runtime))} {
+					if _, err := os.Stat(path); !os.IsNotExist(err) {
+						t.Errorf("stale scope wrote artifact %s: %v", path, err)
+					}
+				}
+				backups, err := filepath.Glob(filepath.Join(home, "config.json.backup-*"))
+				if err != nil || len(backups) != 0 {
+					t.Error("stale scope created config backup", backups, err)
+				}
+			})
+		}
+	}
+}
+
+func TestExecuteProviderScopeUnchangedAndLegacyCLI(t *testing.T) {
+	for _, kind := range []Kind{KindRegister, KindUnregister} {
+		for _, mode := range []string{"confirmed", "confirmed empty", "legacy nil scope"} {
+			t.Run(string(kind)+"/"+mode, func(t *testing.T) {
+				if kind == KindRegister && mode == "confirmed empty" {
+					t.Skip("empty registration is unavailable")
+				}
+				s, targets, home := providerScopeFixture(t)
+				path := filepath.Join(targets[0].Runtime, "registry.json")
+				var reg config.Registry
+				if err := config.ReadJSON(path, &reg); err != nil {
+					t.Fatal(err)
+				}
+				request := Request{Kind: kind, Target: targets[0], Targets: slices.Clone(targets), PaseoHome: home, Apply: true}
+				switch mode {
+				case "confirmed":
+					reg.Active = []string{targets[1].Profile, targets[0].Profile}
+				case "confirmed empty":
+					reg.Active = []string{}
+					request.Targets = make([]Target, 0)
+				case "legacy nil scope":
+					request.Targets = nil
+					reg.Active = append(reg.Active, "codex-superpowers")
+					entry := reg.Profiles[targets[1].Profile]
+					entry.Sandbox = "current CLI sandbox"
+					reg.Profiles[targets[1].Profile] = entry
+				}
+				if err := config.WriteJSON(path, reg); err != nil {
+					t.Fatal(err)
+				}
+				// An unrelated workspace still participates in the existing provider union.
+				otherWorkspace, err := config.Canonical(t.TempDir())
+				if err != nil {
+					t.Fatal(err)
+				}
+				otherRuntime, _ := config.RuntimePath(otherWorkspace)
+				if err = config.WriteJSON(filepath.Join(otherRuntime, "registry.json"), config.Registry{Workspace: otherWorkspace, Active: []string{"other-provider"}, Profiles: map[string]config.Entry{"other-provider": {Workspace: otherWorkspace, Agent: "codex", Tool: "native", Sandbox: "other", Image: "image"}}}); err != nil {
+					t.Fatal(err)
+				}
+				result, err := s.Execute(context.Background(), request, nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if !result.Changed {
+					t.Fatal("successful provider mutation did not report change")
+				}
+				providers, err := readProviders(home)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, ok := providers["other-provider"]; !ok {
+					t.Fatal("provider mutation removed unrelated workspace")
+				}
+				if _, ok := providers["user-provider"]; !ok {
+					t.Fatal("provider mutation removed unrelated custom provider")
+				}
+				if kind == KindRegister {
+					for _, profile := range reg.ActiveProfiles() {
+						if _, ok := providers[profile]; !ok {
+							t.Errorf("registration omitted active profile %s", profile)
+						}
+					}
+				} else {
+					var after config.Registry
+					if err := config.ReadJSON(path, &after); err != nil {
+						t.Fatal(err)
+					}
+					if len(after.ActiveProfiles()) != 0 {
+						t.Fatal("unregister retained activation")
+					}
+					if _, ok := providers[targets[0].Profile]; ok {
+						t.Fatal("unregister retained target workspace provider")
+					}
+				}
+			})
+		}
+	}
+}
+
+func TestExecuteProviderScopeRejectsMixedWorkspace(t *testing.T) {
+	for _, kind := range []Kind{KindRegister, KindUnregister} {
+		t.Run(string(kind), func(t *testing.T) {
+			s, targets, home := providerScopeFixture(t)
+			otherWorkspace, err := config.Canonical(t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			otherRuntime, _ := config.RuntimePath(otherWorkspace)
+			path := filepath.Join(otherRuntime, "registry.json")
+			if err = config.WriteJSON(path, config.Registry{Workspace: otherWorkspace, Active: []string{"other"}, Profiles: map[string]config.Entry{"other": {Workspace: otherWorkspace, Agent: "codex", Tool: "native", Sandbox: "other", Image: "image"}}}); err != nil {
+				t.Fatal(err)
+			}
+			before, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			result, err := s.Execute(context.Background(), Request{Kind: kind, Target: Target{Runtime: targets[0].Runtime, Workspace: otherWorkspace}, Targets: targets, PaseoHome: home, Apply: true}, nil)
+			if err == nil || result.Changed {
+				t.Fatal("explicit provider scope ignored selected workspace identity")
+			}
+			after, _ := os.ReadFile(path)
+			if !bytes.Equal(before, after) {
+				t.Fatal("scope validation allowed other workspace unregister")
+			}
+		})
+	}
+}
+
+func providerScopeFixture(t *testing.T) (*Service, []Target, string) {
+	t.Helper()
+	s, selected, log := operationFixture(t)
+	if err := os.MkdirAll(filepath.Join(s.Root, "bin"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(s.Root, "bin", "agent-wrapper"), []byte("trusted test launcher"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = os.Symlink(exe, filepath.Join(filepath.Dir(log), "paseo")); err != nil {
+		t.Fatal(err)
+	}
+	other := selected
+	other.Profile = "claude-native"
+	other.Entry.Agent = "claude"
+	other.Entry.Sandbox = "two"
+	inactive := selected.Entry
+	inactive.Tool = "superpowers"
+	inactive.Sandbox = "three"
+	reg := config.Registry{Workspace: selected.Workspace, Active: []string{selected.Profile, other.Profile}, Profiles: map[string]config.Entry{selected.Profile: selected.Entry, other.Profile: other.Entry, "codex-superpowers": inactive}}
+	if err = config.WriteJSON(filepath.Join(selected.Runtime, "registry.json"), reg); err != nil {
+		t.Fatal(err)
+	}
+	home := t.TempDir()
+	base, err := config.BaseDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	base, err = config.Canonical(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	initial := ProviderConfig(config.LauncherPath(base), map[string]string{selected.Profile: selected.Entry.Agent, other.Profile: other.Entry.Agent})
+	object(object(initial, "agents"), "providers")["user-provider"] = map[string]any{"enabled": true, "command": []string{"custom-launcher"}}
+	if err = config.WriteJSON(filepath.Join(home, "config.json"), initial); err != nil {
+		t.Fatal(err)
+	}
+	return s, []Target{selected, other}, home
+}
+
 // Cancellation during a guest installer must preserve partial state and require verification.
 func TestUpdateContextCancellation(t *testing.T) {
 	s, target, log := operationFixture(t)

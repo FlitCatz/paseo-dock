@@ -369,6 +369,11 @@ func (s *Service) Execute(ctx context.Context, r Request, emit func(Event)) (res
 		}
 		r.Target = validated
 	}
+	if (r.Kind == KindRegister || r.Kind == KindUnregister) && r.Targets != nil {
+		if err := s.validateProviderScope(r.Target, r.Targets); err != nil {
+			return result, err
+		}
+	}
 	switch r.Kind {
 	case KindBuild:
 		err = a.build(r.Namespace, r.Platforms, r.Push)
