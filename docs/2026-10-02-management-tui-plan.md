@@ -1,7 +1,7 @@
 # 상태 기반 sandbox 관리 TUI 계획
 
 날짜: 2026-10-02
-상태: 설계 재검토 완료. 관리 TUI 구현은 아직 시작하지 않았다.
+상태: 관리 TUI 구현·Tasks 1–5 review·PTY 및 최종 test/vet/build 검증 완료. Task 6 독립 review와 Live 업데이트 성공은 미완료 (HTTP 403).
 기준 commit: `a8f6588` (origin/main에 push 완료)
 
 ## 판단
@@ -162,9 +162,9 @@ guest 상태와 부분 설치를 재확인하고 '취소 요청', '중단 확인
 - [x] 로컬 sbx 명령과 Bubble Tea v2 공식 API 확인
 - [x] 상태·등록·잠금·취소의 모순과 누락 식별
 - [x] 파일·인터페이스·실패 테스트별 구현 순서 작성
-- [ ] 구현 계획 검토 및 실행 방식 선택
-- [ ] 격리 작업공간 준비와 baseline 검증
-- [ ] 작업별 RED → GREEN → review 및 최종 검증
+- [x] 구현 계획 검토 및 subagent-driven-development 실행 선택
+- [x] `.worktrees/management-tui` 격리 작업공간과 baseline 검증
+- [ ] 최종 검증·branch review (실행 상태와 task 보고서 참조)
 
 ### 검토 결과와 구체화할 계약
 
@@ -219,3 +219,48 @@ guest 상태와 부분 설치를 재확인하고 '취소 요청', '중단 확인
 Go cache와 로컬 테스트 서버를 허용하는 환경으로 다시 baseline을 확인한다.
 현재 권한에서 `sbx ls --json`과 `sbx template ls --json`도 login service 오류를
 반환했다. live 상태 조회·sandbox lifecycle 검증 성공을 주장하지 않는다.
+
+### 2026-10-02 구현·검증 상태
+
+공용 Go operations 서비스, typed snapshot·명시적 버전 확인, dashboard 진입·조회,
+대기열·취소·shell 전환, 내장 생성 wizard·고급 build/load·등록 복원·정리 흐름을 구현했다.
+Tasks 1–5는 독립 review의 Important 지적을 수정하고 재검토를 통과했다.
+Task 5의 최초 embedded API RED는 컴파일 오류였다는 기록을 유지하며 이를 행동 실패로
+소급해서 표시하지 않는다. 이후 생성 대상 고정·stale completion은 행동 RED→GREEN으로 검증했다.
+
+Task 6의 화면 경계 테스트는 120×40, 80×24, 40×10, 12×4에서 한글 경로·긴 오류와
+선택 행을 검증한다. 실제 PTY에서 120×40 → 80×24 resize, 실제 operations 서비스와
+Go fake 외부 명령, shell 터미널 속성 전달·복귀 redraw, `q`/Ctrl+C 종료 속성 복원,
+NO_COLOR와 대량 subprocess 로그의 화면 경계를 확인했다. 이 항목들은 기존 구현에서
+통과한 characterization이며 제품 RED를 새로 만들지 않았다. 호스트 취소 검증은 실제
+자식의 준비 완료·PID·동일 process group을 확인한 뒤 취소하도록 강화했다.
+
+최종 candidate의 `make test` (`go test -race ./...`), `make vet`, `make build`는 모두
+종료 코드 0이었다. stdin을 `/dev/null`로 리디렉션한 인수 없는 바이너리는 usage와
+종료 코드 2, `--help`는 help와 종료 코드 0을 반환했다. 전체 regression 중 변경하지
+않은 패키지는 Go test cache 결과를 사용했고, 변경된 process/tui 테스트는 실행됐다.
+
+제한된 실행에서는 sbx login service·Docker socket 오류가 계속되지만, 허용된 실행의
+읽기 전용 `sbx ls --json`, `sbx template ls --json`, `docker info` 재확인은 성공했다.
+폐기용 workspace `/private/tmp/paseo-sbx-live-task6-3925873850/workspace`와 sandbox
+`paseo-antigravity-cli-superpowers-1a5e5790a6`에서 다음 결과를 기록했다.
+
+| Live 단계 | 종료 코드 | 관찰 |
+| --- | --- | --- |
+| create | 0 | 현재 lock·catalog·선택과 일치하는 기존 loaded template 사용 |
+| update | 1 | Antigravity manifest HTTP 403 / curl 22; 부분 실패와 남은 대상 기록 |
+| stop | 0 | 선택한 폐기용 sandbox만 중지 |
+| shell | 0 | 실제 PTY bash 진입과 종료, 중지된 guest 시작 확인 |
+| register | 0 | 격리된 config backup·merge, 격리된 Paseo daemon 시작 |
+| unregister | 0 | 격리된 config backup·merge·reload, active_profiles 비우기 |
+
+trusted root, runtime base, launcher, Paseo config는 모두 위 임시 경로에 격리했다.
+Go proxy는 sbx 변경을 폐기용 이름·workspace로, Paseo 호출을 명시적 격리 `--home`으로
+제한하며 실제 sbx 인증 환경은 별도 child에서만 사용했다. 사용자의 기본 runtime과
+Paseo home, 기존 sandbox를 변경하지 않았다. 별도 build/retag·sandbox 삭제를 수행하지 않았다.
+
+남은 sandbox는 **running**이며 shell에서 다시 시작됐고, registry의 active_profiles는
+빈 배열이며 saved selection/profile은 보존됐다. 격리된 Paseo home과 daemon
+PID 90284 / `127.0.0.1:51047`도 남아 있다. 해당 adapter의 native plugin provider는
+unmanaged이므로 이 실행은 관리 Codex/Claude provider 설치의 live 증거가 아니다.
+모든 단계가 성공하는 live lifecycle과 Task 6 독립 review는 아직 완료로 표시하지 않는다.

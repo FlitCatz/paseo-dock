@@ -1,7 +1,69 @@
 # Paseo + Docker Sandboxes
 
-TUI에서 agent·methodology·utility를 선택하고 해당 조합만 생성하여 Paseo에 연결합니다.
+Go 관리 TUI에서 workspace와 sandbox 상태를 보고 생성·업데이트·shell·Paseo 연결을 관리합니다.
 각 에이전트의 파일·shell·하위 프로세스는 독립된 Docker Sandbox 안에서 실행됩니다.
+
+## 관리 TUI
+
+`make build` 후 터미널에서 `./bin/paseo-sbx`를 인수 없이 실행하거나
+`./bin/paseo-sbx tui --workspace /absolute/path/to/project`로 초기 workspace를 선택합니다.
+인수 없는 실행의 stdin/stdout이 터미널이 아니면 usage와 종료 코드 2를 반환합니다.
+`./bin/paseo-sbx --help`는 비대화형 환경에서도 종료 코드 0입니다.
+기존 CLI 명령과 `create`의 독립 생성 wizard도 계속 사용할 수 있습니다.
+
+| 키 | 동작 |
+| --- | --- |
+| Tab / Shift+Tab | workspace, sandbox, 상세, 로그 패널 이동 |
+| ↑↓ / j k | 목록 선택 또는 상세·로그 스크롤 |
+| ←→ / h l | 상세·로그 탭 전환 |
+| /, Enter, Esc | 검색 시작, 입력 확정, 검색 해제·화면 취소 |
+| r / ? | 상태·연결·template 수동 갱신 / 도움말 |
+| Enter | 선택 대상의 작업 메뉴; ↑↓/jk 선택, Enter 확인·실행, Esc 취소 |
+| u / s | 선택 sandbox 업데이트 확인 / shell·로그인 진입 |
+| n | 경로·메모리 입력과 directory picker → 선택 wizard → 생성 확인 |
+| a | 저장된 선택으로 build/load, template 보기, 누락 workspace 정리 미리보기 |
+| t / v | template 탭 / 미등록 sandbox의 읽기 전용 보기 |
+| c / R | 실행 작업 취소 요청·대기 작업 취소 / 최근 실패 작업의 고정 대상 재시도 확인 |
+| q / Ctrl+C | 종료; 작업 중이면 계속 실행 또는 취소 후 종료 선택 |
+
+120×40 이상에서는 여러 패널을 함께 보여 주고, 80×24에서는 상세·로그 탭을 사용하며,
+작은 화면에서는 포커스 패널을 표시합니다. 한글 표시 너비에 맞춰 내용을 줄이고,
+`NO_COLOR=1`을 설정하면 색상 스타일을 생략합니다. shell 종료 후 관리 화면으로 돌아옵니다.
+shell은 실행 중인 변경 작업과 대기열이 모두 끝난 뒤 사용할 수 있습니다.
+
+registry와 `sbx ls --json`은 3초 간격, Paseo·Docker 연결은 15초 간격으로 조회합니다.
+template은 탭 진입과 수동 갱신 때 읽습니다. 자동 조회는 guest를 실행하지 않습니다.
+연결 실패 시 마지막 목록과 확인 시각을 보존하고 현재 runtime을 확인 불가로 표시합니다.
+등록하지 않은 sandbox는 읽기 전용이며, registry 활성 상태와 실제 Paseo 등록을 구분합니다.
+Antigravity native plugin provider는 관리 launcher provider가 아니므로 `unmanaged`로 표시됩니다.
+
+상세의 **이미지 기준 (guest 미확인)**은 lock의 버전이고, **마지막 확인**은 현재 sandbox·image와
+일치하는 guest 확인 기록입니다. 작업 메뉴의 **guest 버전 확인**은 바이너리·설치 기록만 읽습니다.
+**업데이트**는 installer를 실행하며 선택 sandbox 또는 workspace의 활성 조합 전체에 적용할 수
+있습니다. 버전 확인·업데이트·shell은 `sbx exec`를 사용하므로 중지된 guest를 시작할 수 있습니다.
+관리 화면의 shell 진입은 숨은 자동 업데이트를 수행하지 않습니다. 기존 CLI `shell`과 launcher는
+기존 자동 갱신 정책을 유지합니다. 중지는 실행 중인 세션에 영향을 줄 수 있어 대상 확인이 필요합니다.
+
+변경 작업은 한 번에 하나씩 실행하며 조회·탐색은 계속할 수 있습니다. 대상·선택·옵션은 확인 때
+고정되고 실행 직전에 다시 검증합니다. 최대 20개 작업을 보관하고 작업별 로그는 256 KiB의 최근
+출력으로 제한합니다. `c`는 호스트 subprocess와 자식 process group에 취소를 전달하지만 guest
+installer 중단을 증명하지 못하면 **확인 필요**로 표시합니다. sandbox stop이나 완료된 변경의
+자동 rollback은 하지 않습니다. 작업 중 `q`/Ctrl+C는 `k`/Esc로 계속 실행하거나 `c`/Enter로
+취소 후 완료까지 기다리고 종료할 수 있습니다.
+
+생성 확인에는 실제 조합·utilities·CPU 2·메모리·build/load·Paseo 적용 여부가 표시됩니다.
+이미지·설정이 다른 기존 sandbox는 자동 재사용하지 않습니다. 일부 생성 또는 OpenSpec 초기화가
+실패하면 실제 남은 대상과 오류가 로그에 남습니다. 로그와 guest 상태를 확인한 뒤 `R`로 같은
+대상·선택을 재시도하거나 수정한 선택으로 새 생성 흐름을 시작합니다. Paseo 해제는 sandbox와
+완료된 saved selection을 보존하며, 관리 화면의 등록은 저장된 선택과 profile entry를 검증하여
+명시적으로 활성 상태를 복원할 수 있습니다. 기존 CLI `register`의 검증은 그대로 유지됩니다.
+고급 정리는 미리보기의 누락 workspace만 다시 검증하여 registry·selection·launch routing을
+정리하며 sandbox와 update 기록·lock을 보존합니다.
+
+검증 기록은 [관리 TUI 설계 상태](docs/2026-10-02-management-tui-plan.md)에 있습니다.
+실제 PTY의 shell 복귀·터미널 복원과 fake 외부 명령 테스트는 통과했습니다.
+폐기용 실환경에서 생성·중지·shell·격리된 Paseo 등록/해제는 확인했고, Antigravity 업데이트는
+공식 manifest HTTP 403으로 부분 실패했습니다. 모든 단계가 성공하는 live lifecycle은 아직 미검증입니다.
 
 기본 카탈로그에서 선택 가능한 조합은 다음과 같습니다. 모두 자동 생성되는 것은 아닙니다.
 

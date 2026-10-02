@@ -1,0 +1,1 @@
+usage: paseo-sbx {build|load|create|register|run|unregister|prune|list|shell|stop|update} [options]

@@ -1,0 +1,14 @@
+go test -race ./...
+?   	paseo-sbx/cmd/agent-wrapper	[no test files]
+?   	paseo-sbx/cmd/install-runtime	[no test files]
+?   	paseo-sbx/cmd/paseo-sbx	[no test files]
+ok  	paseo-sbx/internal/cli	(cached)
+ok  	paseo-sbx/internal/config	(cached)
+ok  	paseo-sbx/internal/gateway	(cached)
+ok  	paseo-sbx/internal/launcher	(cached)
+ok  	paseo-sbx/internal/operationlock	(cached)
+ok  	paseo-sbx/internal/operations	(cached)
+ok  	paseo-sbx/internal/process	1.023s
+ok  	paseo-sbx/internal/runtimeinstall	(cached)
+ok  	paseo-sbx/internal/sandboxupdate	(cached)
+ok  	paseo-sbx/internal/tui	9.447s

@@ -10,6 +10,11 @@
 
 **Spec:** `docs/2026-10-02-management-tui-plan.md` (재검토 기록 포함)
 
+**실행 상태 (2026-10-02):** `.worktrees/management-tui`, `feat/management-tui`에서
+subagent-driven-development로 Tasks 1–5 구현 및 독립 review를 마쳤다.
+Task 6의 터미널·문서 검증은 아래에 기록한다. 아래 원래 RED 체크리스트는 계획 기록이며
+Task 5 최초 embedded API 컴파일-only RED를 행동 RED로 표시하지 않는다.
+
 ## Global Constraints
 
 - 새 기능, CLI, helper 및 테스트는 Go로 작성한다.
@@ -244,25 +249,25 @@ operations/workspaces.go, providers.go and tests.
 **Interfaces:** Consumes completed RunDashboard and existing CLI. Go helpers only; local PTY
 test dependency, if needed, is fixed to an exact version and limited to test use.
 
-- [ ] **Step 1: RED tests** — `TestDashboardTerminalBounds` covers 120×40, 80×24, 40×10 and
+- [x] **Step 1: Tests (characterization)** — `TestDashboardTerminalBounds` covers 120×40, 80×24, 40×10 and
   12×4 with Korean paths and long errors; lines stay within display width/height and selection
   remains visible. `TestDashboardPTYRestore` runs the app in a real PTY against fake external
   executables, resizes, enters/exits shell, checks dashboard redraw and exit terminal attributes;
   NO_COLOR output contains no color styling. Reuse state tests instead of fixed full-screen snapshots.
-- [ ] **Step 2: Run RED** — `go test ./internal/tui -run 'TestDashboard(TerminalBounds|PTYRestore)'`.
+- [x] **Step 2: Run characterization** — `go test ./internal/tui -run 'TestDashboard(TerminalBounds|PTYRestore)'`.
   Expected: any discovered rendering/restore defects fail before fixes; features already correctly
   implemented are characterization tests and do not require inventing a failure.
-- [ ] **Step 3: Implement required fixes** — each product fix gets a reproducing test; document
+- [x] **Step 3: Document verified behavior** — no product fix was needed; document
   no-args/tui, keyboard controls, explicit versions vs updates, guest start, queue/cancellation,
   advanced actions and partial failure recovery. Update status only to the verified level.
-- [ ] **Step 4: Final verification** — `make test`, `make vet`, `make build`.
+- [x] **Step 4: Final verification** — `make test`, `make vet`, `make build`.
   Expected: exit 0 for each. Also verify no-args with redirected stdin exits 2 and explicit help exits 0.
   Sandbox permissions/caches are environment constraints, never a reason to remove race tests.
 - [ ] **Step 5: Live lifecycle** — only a disposable workspace/sandbox and isolated Paseo home;
   create → update → stop → shell → register → unregister. Record target names, exit codes and
   remaining state. Do not touch existing sandboxes or the default Paseo home as a fallback.
   If unavailable, record this criterion as unverified and report the exact blocker.
-- [ ] **Step 6: Commit** — `docs: document and verify management TUI workflows`.
+- [x] **Step 6: Candidate commit** — `docs: document and verify management TUI workflows`.
 
 ## Pre-flight self-review
 
@@ -273,5 +278,28 @@ test dependency, if needed, is fixed to an exact version and limited to test use
 - PruneTargets is declared as a planned Task 5 extension, not an implicit earlier field.
 - Existing CLI register behavior stays unchanged; TUI restore is explicit and validates completed state.
 - Update lock is not re-acquired by updater under Execute; implementation must use one locked boundary.
-- sbx login service error and restricted baseline are recorded in the design; live lifecycle is not yet verified.
-- Execution method and worktree selection remain pending. No product code or dependency was changed during planning.
+- Restricted sbx login service/Docker socket errors remain environment constraints. Elevated read-only rechecks succeeded; disposable lifecycle executed with update HTTP 403, so all-success lifecycle stays unverified.
+- Execution used subagent-driven-development in `.worktrees/management-tui`; the planning-stage no-code-change statement is historical.
+
+## Task 6 evidence and remaining criteria
+
+- `TestDashboardTerminalBounds`: all four planned dimensions, Korean long paths/errors,
+  focused workspace and sandbox markers, display width and height passed.
+- `TestDashboardPTYRestore`: actual PTY, actual operations service and Go fake commands,
+  resize, shell canonical attributes, dashboard redraw, NO_COLOR, multi-megabyte subprocess
+  logs and exit attribute/alternate-screen restoration for q and Ctrl+C passed.
+- `TestDashboardLogFloodBounds`: latest output retained within 256 KiB and viewport bounds;
+  existing queue/stale-response tests were reused. Task 1 process cancellation was strengthened
+  with actual child readiness/PID and shared process-group checks. Characterization tests
+  needed no production fix and no fabricated RED.
+- Final candidate `make test` (race), `make vet`, `make build` exited 0;
+  redirected no-argument binary exited 2 and explicit `--help` exited 0.
+- Live create/update/stop/shell/register/unregister exits were **0/1/0/0/0/0**. Update recorded
+  Antigravity manifest HTTP 403/curl 22 and retained partial failure. Remaining disposable
+  sandbox `paseo-antigravity-cli-superpowers-1a5e5790a6` is running; isolated registry active=[];
+  saved profile, temp runtime/launcher/root/Paseo home and isolated daemon PID 90284 remain.
+  Native plugin provider is unmanaged, so managed provider live installation is unverified.
+- Isolation and detailed remaining state are in the binding spec's execution status.
+  Exact commands/output and self-review are in
+  `.superpowers/sdd/2026-10-02-management-tui/task-6-report.md`; raw PTY/live logs and
+  the Go lifecycle evidence helper are retained alongside it.

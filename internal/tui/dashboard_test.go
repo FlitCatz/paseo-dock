@@ -174,6 +174,72 @@ func TestDashboardNarrowKoreanNoColor(t *testing.T) {
 	}
 }
 
+// Removing display-width clipping or list scrolling must hide/overflow the selection.
+func TestDashboardTerminalBounds(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	for _, size := range [][2]int{{120, 40}, {80, 24}, {40, 10}, {12, 4}} {
+		for _, focus := range []int{0, 1} {
+			t.Run(fmt.Sprintf("%dx%d/focus%d", size[0], size[1], focus), func(t *testing.T) {
+				m := NewDashboard(&dashboardBackend{}, config.Catalog{}, "")
+				defer m.cancel()
+				s := fixtureSnapshot()
+				s.Workspaces[0].Path = "/한국어/선택된-아주-긴-workspace-경로"
+				s.SBX.Error = strings.Repeat("연결 실패: 긴 오류 경로 /한국어/파일 ", 40)
+				for i := 0; i < 40; i++ {
+					s.Workspaces[0].Sandboxes = append(s.Workspaces[0].Sandboxes, operations.Sandbox{Target: operations.Target{Profile: fmt.Sprintf("한글-%02d", i)}, RuntimeState: "unknown"})
+				}
+				deliver(m, s)
+				m.Focus, m.ProfileID = focus, "한글-39"
+				m.Update(tea.WindowSizeMsg{Width: size[0], Height: size[1]})
+				view := m.View().Content
+				lines := strings.Split(view, "\n")
+				if len(lines) > size[1] {
+					t.Fatalf("height %d > %d", len(lines), size[1])
+				}
+				for _, line := range lines {
+					if ansi.StringWidth(line) > size[0] {
+						t.Fatalf("width exceeds %d: %q", size[0], line)
+					}
+				}
+				want := "› /한국어"
+				if focus == 1 {
+					want = "› 한글-39"
+				}
+				if !strings.Contains(view, want) {
+					t.Fatalf("focused selection invisible: %q", view)
+				}
+			})
+		}
+	}
+}
+
+// Output must remain bounded and responsive when a subprocess emits megabytes.
+func TestDashboardLogFloodBounds(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	m := NewDashboard(&dashboardBackend{}, config.Catalog{}, "")
+	defer m.cancel()
+	deliver(m, fixtureSnapshot())
+	log := newJobLog()
+	log.emit(operations.Event{Stage: "stdout", Text: strings.Repeat("한국어 출력\n", 200000) + "마지막 출력"})
+	if len(log.text()) > 256<<10 || !strings.HasSuffix(log.text(), "마지막 출력") {
+		t.Fatal("log did not retain bounded tail")
+	}
+	m.jobs = []*job{{id: 1, state: "running", log: log, request: operations.Request{Kind: operations.KindUpdate}}}
+	m.Focus = 3
+	for _, size := range [][2]int{{120, 40}, {80, 24}, {40, 10}, {12, 4}} {
+		m.Update(tea.WindowSizeMsg{Width: size[0], Height: size[1]})
+		view := m.View().Content
+		if len(strings.Split(view, "\n")) > size[1] {
+			t.Fatal("flood overflows terminal height")
+		}
+		for _, line := range strings.Split(view, "\n") {
+			if ansi.StringWidth(line) > size[0] {
+				t.Fatal("flood overflows terminal width")
+			}
+		}
+	}
+}
+
 func TestDashboardPendingManualRefreshIncludesSlowMetadata(t *testing.T) {
 	b := &dashboardBackend{snapshot: fixtureSnapshot()}
 	m := NewDashboard(b, config.Catalog{}, "")
