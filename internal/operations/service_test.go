@@ -179,6 +179,11 @@ func TestExecuteRejectsInvalidSelection(t *testing.T) {
 	}
 }
 func fakeSBX() {
+	if os.Getenv("SBX_TEST_STDIN") == "1" {
+		b, _ := io.ReadAll(os.Stdin)
+		fmt.Printf("stdin:%s", b)
+		return
+	}
 	args := os.Args[1:]
 	command := strings.Join(args, " ")
 	f, _ := os.OpenFile(os.Getenv("SBX_TEST_LOG"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
@@ -226,6 +231,30 @@ func fakeSBX() {
 		fmt.Println(strings.TrimSuffix(args[2], "XXXXXXXXXX") + "test")
 	case strings.HasSuffix(command, "--version"):
 		fmt.Println("9.0.0")
+	}
+}
+
+func TestExecuteBackgroundDoesNotConsumeTerminalInput(t *testing.T) {
+	s, target, _ := operationFixture(t)
+	t.Setenv("SBX_TEST_STDIN", "1")
+	input := bytes.NewBufferString("terminal keys")
+	s.In = input
+	var events strings.Builder
+	_, err := s.Execute(context.Background(), Request{Kind: KindStop, Target: target}, func(e Event) { events.WriteString(e.Text) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if input.String() != "terminal keys" || strings.Contains(events.String(), "stdin:terminal keys") {
+		t.Fatalf("background subprocess consumed terminal input: remaining %q events %q", input.String(), events.String())
+	}
+	var out bytes.Buffer
+	s.Out = &out
+	_, err = s.Execute(context.Background(), Request{Kind: KindStop, Target: target}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.String() != "stdin:terminal keys" || input.Len() != 0 || s.In != input {
+		t.Fatalf("CLI stdin changed: %q / %q", out.String(), input.String())
 	}
 }
 

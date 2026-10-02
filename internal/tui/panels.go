@@ -60,6 +60,8 @@ func (dashboardKeys) ShortHelp() []keys.Binding {
 func (dashboardKeys) FullHelp() [][]keys.Binding {
 	return [][]keys.Binding{dashboardKeys{}.ShortHelp(), {
 		keys.NewBinding(keys.WithKeys("v"), keys.WithHelp("v", "미등록 sandbox (읽기 전용)")), keys.NewBinding(keys.WithKeys("t"), keys.WithHelp("t", "template 탭")), keys.NewBinding(keys.WithKeys("left", "right"), keys.WithHelp("←→", "상세/로그 탭")), keys.NewBinding(keys.WithKeys("esc"), keys.WithHelp("Esc", "검색 취소")),
+		keys.NewBinding(keys.WithKeys("enter"), keys.WithHelp("Enter", "작업")), keys.NewBinding(keys.WithKeys("u"), keys.WithHelp("u", "업데이트")), keys.NewBinding(keys.WithKeys("s"), keys.WithHelp("s", "shell")), keys.NewBinding(keys.WithKeys("c"), keys.WithHelp("c", "취소 요청")),
+		keys.NewBinding(keys.WithKeys("R"), keys.WithHelp("R", "고정 대상 재시도")),
 	}}
 }
 
@@ -185,7 +187,7 @@ func (m *Dashboard) panel(which, width, height int) string {
 	case 3:
 		m.logs.SetWidth(width)
 		m.logs.SetHeight(available)
-		m.logs.SetContent("조회 dashboard · 변경 작업 없음")
+		m.logs.SetContent(m.logContent())
 		body = m.logs.View()
 	}
 	if titleHeight == 0 {
@@ -241,6 +243,27 @@ func (m *Dashboard) View() tea.View {
 		body = lipgloss.JoinHorizontal(lipgloss.Top, m.panel(0, left, top), "│", m.panel(1, right, top)) + "\n" + m.panel(which, width, available-top-1)
 	default:
 		body = m.panel(m.Focus, width, available)
+	}
+	if content := m.managementContent(); content != "" {
+		m.modal.SetWidth(width)
+		m.modal.SetHeight(available)
+		if !m.actionMenu {
+			content = ansi.Hardwrap(content, width, true)
+		}
+		m.modal.SetContent(content)
+		if m.actionMenu {
+			line := m.actionIndex + 1
+			if line < m.modal.YOffset() {
+				m.modal.SetYOffset(line)
+			}
+			if line >= m.modal.YOffset()+available {
+				m.modal.SetYOffset(line - available + 1)
+			}
+		}
+		body = m.modal.View()
+	}
+	if m.actionError != "" {
+		footer = m.actionError + " · " + footer
 	}
 	lines := []string{}
 	if headerLines > 0 {

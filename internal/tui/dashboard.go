@@ -29,28 +29,36 @@ type snapshotMsg struct {
 	err      error
 }
 type Dashboard struct {
-	Backend                        Backend
-	Catalog                        config.Catalog
-	Snapshot                       operations.Snapshot
-	WorkspaceID, ProfileID, Search string
-	Focus                          int
-	Width, Height                  int
-	LastSuccess                    time.Time
-	Error                          string
-	Help, Searching, Unmanaged     bool
-	requestID                      uint64
-	pending                        bool
-	pollScheduled                  bool
-	ctx                            context.Context
-	cancel                         context.CancelFunc
-	lastSlow                       time.Time
-	templatesWanted                bool
-	slowWanted                     bool
-	templateTab                    bool
-	detailTab                      int
-	workspaces, sandboxes          list.Model
-	details, logs                  viewport.Model
-	help                           help.Model
+	Backend                                               Backend
+	Catalog                                               config.Catalog
+	Snapshot                                              operations.Snapshot
+	WorkspaceID, ProfileID, Search                        string
+	Focus                                                 int
+	Width, Height                                         int
+	LastSuccess                                           time.Time
+	Error                                                 string
+	Help, Searching, Unmanaged                            bool
+	requestID                                             uint64
+	pending                                               bool
+	pollScheduled                                         bool
+	ctx                                                   context.Context
+	cancel                                                context.CancelFunc
+	lastSlow                                              time.Time
+	templatesWanted                                       bool
+	slowWanted                                            bool
+	templateTab                                           bool
+	detailTab                                             int
+	workspaces, sandboxes                                 list.Model
+	details, logs, modal                                  viewport.Model
+	help                                                  help.Model
+	jobs                                                  []*job
+	runningJob, nextJobID                                 uint64
+	actionMenu                                            bool
+	actionIndex                                           int
+	confirm                                               *confirmation
+	exitPrompt, exitAfterJobs, shellPending, shellRunning bool
+	actionError                                           string
+	workRefreshWanted                                     bool
 }
 
 func NewDashboard(b Backend, c config.Catalog, w string) *Dashboard {
@@ -58,6 +66,7 @@ func NewDashboard(b Backend, c config.Catalog, w string) *Dashboard {
 	m := &Dashboard{Backend: b, Catalog: c, WorkspaceID: w, ctx: ctx, cancel: cancel, Width: 80, Height: 24, details: viewport.New(), logs: viewport.New(), help: help.New()}
 	m.workspaces = newPanelList()
 	m.sandboxes = newPanelList()
+	m.modal = viewport.New()
 	return m
 }
 func poll() tea.Cmd { return tea.Tick(3*time.Second, func(t time.Time) tea.Msg { return pollMsg(t) }) }
@@ -87,6 +96,9 @@ func (m *Dashboard) refresh(now time.Time, manual bool) tea.Cmd {
 }
 func (m *Dashboard) Init() tea.Cmd { return m.refresh(time.Now(), false) }
 func (m *Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if handled, cmd := m.jobMessage(msg); handled {
+		return m, cmd
+	}
 	switch v := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.Width = max(1, v.Width)
@@ -153,15 +165,23 @@ func (m *Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.syncLists()
 		if !m.pollScheduled {
+			if m.workRefreshWanted {
+				m.workRefreshWanted = false
+				return m, m.refresh(time.Now(), false)
+			}
 			m.pollScheduled = true
 			return m, poll()
+		}
+		if m.workRefreshWanted {
+			m.workRefreshWanted = false
+			return m, m.refresh(time.Now(), false)
 		}
 		return m, nil
 	case tea.KeyPressMsg:
 		k := v.String()
 		if k == "ctrl+c" {
-			m.cancel()
-			return m, tea.Quit
+			_, cmd := m.managementKey(k)
+			return m, cmd
 		}
 		if m.Searching {
 			switch k {
@@ -182,6 +202,10 @@ func (m *Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.syncLists()
 			return m, nil
+		}
+		if handled, cmd := m.managementKey(k); handled {
+			m.syncLists()
+			return m, cmd
 		}
 		switch k {
 		case "q":

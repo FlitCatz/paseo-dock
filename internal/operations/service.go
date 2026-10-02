@@ -59,6 +59,10 @@ func (s *Service) execution(ctx context.Context, selection *config.Selection, em
 		copyService.Err = io.Discard
 	}
 	if emit != nil {
+		// Background observers own output, while Bubble Tea owns terminal input.
+		// Only the request-local copy changes; CLI execution without an observer
+		// keeps its interactive input and shell transfers ownership explicitly.
+		copyService.In = nil
 		var mu sync.Mutex
 		observer := emit
 		emit = func(e Event) { mu.Lock(); defer mu.Unlock(); observer(e) }
