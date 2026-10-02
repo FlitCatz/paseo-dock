@@ -1,7 +1,7 @@
 # 상태 기반 sandbox 관리 TUI 계획
 
 날짜: 2026-10-02
-상태: 제안. 관리 TUI 구현은 아직 시작하지 않았다.
+상태: 설계 재검토 완료. 관리 TUI 구현은 아직 시작하지 않았다.
 기준 commit: `a8f6588` (origin/main에 push 완료)
 
 ## 판단
@@ -151,3 +151,71 @@ guest 상태와 부분 설치를 재확인하고 '취소 요청', '중단 확인
 - [Bubbles 공식 component 문서](https://github.com/charmbracelet/bubbles/blob/main/README.md).
 - [Bubbles v2 호환성 안내](https://github.com/charmbracelet/bubbles/blob/main/UPGRADE_GUIDE_V2.md).
 - [Bubble Tea 2.0.10 ExecProcess](https://pkg.go.dev/charm.land/bubbletea/v2@v2.0.10#ExecProcess).
+
+## 2026-10-02 재검토 기록
+
+검토 기준은 현재 HEAD `e297632`이다. 위 사용자 흐름과 1차 범위를 유지한다.
+이 문서는 요구사항·설계의 기준으로 사용하고, 실행할 작업은
+`docs/superpowers/plans/2026-10-02-management-tui.md`에 분리한다.
+
+- [x] 현재 CLI·wizard·updater·launcher·registry 구조 대조
+- [x] 로컬 sbx 명령과 Bubble Tea v2 공식 API 확인
+- [x] 상태·등록·잠금·취소의 모순과 누락 식별
+- [x] 파일·인터페이스·실패 테스트별 구현 순서 작성
+- [ ] 구현 계획 검토 및 실행 방식 선택
+- [ ] 격리 작업공간 준비와 baseline 검증
+- [ ] 작업별 RED → GREEN → review 및 최종 검증
+
+### 검토 결과와 구체화할 계약
+
+1. **공유 서비스는 실제 실행 로직을 소유한다.** CLI의 인수 처리와 대화형 진입만
+   `internal/cli`에 남긴다. build/load/create/registry/provider 처리 및 선택 검증을
+   `internal/operations`로 이동한다. `operations`가 `cli`나 `tui`를 import하지 않는다.
+   CLI 재실행이나 출력 재파싱으로 중복 구현하지 않는다.
+2. **활성과 등록을 구분한다.** 현재 `unregister`는 registry의 active_profiles를
+   비우며 `register`는 빈 active_profiles를 거부한다. TUI의 명시적 재등록은 완료된
+   saved selection의 profile을 검증하여 활성화를 복원한 뒤 기존 provider merge를
+   수행한다. saved selection이 없는 불완전 생성은 재등록하지 않는다. 화면에서
+   active_profiles만으로 Paseo 등록 성공을 표시하지 않으며, 실제 설정·확인 오류를
+   함께 표시한다. provider는 여러 workspace가 공유하므로 workspace 해제 시 다른
+   workspace의 provider를 지우지 않는 기존 union 정책을 유지한다.
+3. **확인 기록을 신뢰할 조건을 정한다.** update 기록의 sandbox와 image가 현재
+   registry와 일치할 때만 마지막 확인 버전으로 사용한다. lock의 버전은 현재 guest
+   버전이 아니라 이미지 구성의 기준이다. guest 버전 확인은 업데이트와 다른 작업이며
+   installer·패키지 네트워크 조회를 실행하지 않는다.
+4. **조회 실패는 빈 목록이 아니다.** sbx의 배열·sandboxes wrapper를 지원하되 잘못된
+   JSON과 알 수 없는 형식을 오류로 표시한다. 마지막 성공 목록·시각을 보존하고 현재
+   runtime 상태는 확인 불가로 표시한다. registry 손상도 별도 오류로 노출한다.
+5. **잠금 범위와 순서를 고정한다.** 기존 updater lock과 같은 sandbox key를 공용
+   잠금으로 사용하여 명시적 update·stop과 launcher 자동 update의 충돌을 막는다.
+   registry 변경은 workspace lock, build/load의 공유 산출물은 root lock, provider
+   merge는 전체 runtime base와 Paseo home lock을 사용한다. 여러 잠금은 정렬된 key
+   순서로 획득한다. launcher의 agent 세션 전체를 update lock으로 막지 않는다.
+6. **취소 결과를 과장하지 않는다.** 외부 context 취소로 호스트 process group을
+   종료하고 결과를 남긴다. guest installer 종료를 증명하지 못하면 '확인 필요'로
+   표시하며 sandbox stop이나 rollback을 자동 실행하지 않는다. 자동 사후 조회는
+   guest 내부 확인을 수행하지 않으므로 이를 중단 확인의 증거로 사용하지 않는다.
+7. **shell은 대기 작업이 없는 상태에서 터미널을 넘긴다.** 변경 작업 실행 중에는
+   shell 진입을 보류한다. 대상 검증 후 `ExecProcess`로 터미널을 넘기고 복귀 callback에서
+   다시 조회한다. dashboard shell은 숨은 자동 업데이트를 수행하지 않으며 기존 CLI
+   shell의 자동 업데이트 정책은 유지한다.
+8. **실환경 검증의 범위를 정한다.** PTY와 fake backend 검증은 필수다. 폐기용 sandbox
+   검증은 실제 sbx·Docker·Paseo 환경에서만 진행하고 사용자 기존 sandbox나 설정으로
+   대체하지 않는다. 환경이 불가하면 그 검증은 미완료로 명시한다.
+
+### 접근 방식 비교
+
+- 권장: 실행 서비스를 먼저 분리하고 상태 조회, dashboard, 작업 실행, 생성 통합 순서로
+  완성한다. 기존 CLI 테스트를 공용 서비스의 회귀 검증으로 사용한다.
+- CLI 안에 dashboard callback을 붙이면 초기 변경은 작지만 실행 경계와 취소·잠금이
+  CLI에 남고 테스트가 결합된다. 공용 실행 계층이라는 요구를 충족하기 어렵다.
+- 외부 CLI를 다시 실행하는 방식은 빠르지만 typed 결과·부분 성공·작업 이벤트를
+  보장하지 못하므로 채택하지 않는다.
+
+### 확인된 검증 환경 제약
+
+기본 sandbox에서 기존 `make test`는 Go cache 접근과 httptest의 로컬 포트 bind가
+거부되어 실패했다. 제품 회귀로 판정하지 않는다. 실행 준비 단계에서 쓰기 가능한
+Go cache와 로컬 테스트 서버를 허용하는 환경으로 다시 baseline을 확인한다.
+현재 권한에서 `sbx ls --json`과 `sbx template ls --json`도 login service 오류를
+반환했다. live 상태 조회·sandbox lifecycle 검증 성공을 주장하지 않는다.
