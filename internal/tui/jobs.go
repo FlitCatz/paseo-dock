@@ -27,6 +27,7 @@ type job struct {
 	result                  operations.Result
 	log                     *jobLog
 	cancel                  context.CancelFunc
+	previewFlow             uint64
 }
 type jobDoneMsg struct {
 	id     uint64
@@ -90,7 +91,7 @@ func (m *Dashboard) enqueue(r operations.Request) tea.Cmd {
 		m.jobs = append(m.jobs[:index], m.jobs[index+1:]...)
 	}
 	m.nextJobID++
-	m.jobs = append(m.jobs, &job{id: m.nextJobID, request: freezeRequest(r), state: "queued", log: newJobLog()})
+	m.jobs = append(m.jobs, &job{id: m.nextJobID, request: freezeRequest(r), state: "queued", log: newJobLog(), previewFlow: m.flowGeneration})
 	m.Focus = 3
 	m.detailTab = 1
 	return m.dispatchJob()
@@ -141,6 +142,7 @@ func (m *Dashboard) findJob(id uint64) *job {
 	return nil
 }
 func (m *Dashboard) cancelJobs() {
+	m.newFlow()
 	for _, j := range m.jobs {
 		switch j.state {
 		case "running":
@@ -184,7 +186,7 @@ func (m *Dashboard) jobMessage(msg tea.Msg) (bool, tea.Cmd) {
 		}
 		m.runningJob = 0
 		if v.err == nil && j.request.Kind == operations.KindPrune && j.request.DryRun {
-			m.prunePreview(v.result)
+			m.prunePreview(v.result, j.previewFlow)
 		}
 		if m.exitAfterJobs && !m.busy() {
 			m.cancel()
@@ -276,6 +278,7 @@ func (m *Dashboard) chooseAction(a action) tea.Cmd {
 		return nil
 	}
 	m.actionError = ""
+	m.newFlow()
 	m.actionMenu = false
 	s, w := m.selectedSandbox(), m.selectedWorkspace()
 	if s == nil || w == nil {
@@ -329,6 +332,9 @@ func actionWarning(kind operations.Kind) string {
 	return ""
 }
 func (m *Dashboard) managementKey(k string) (bool, tea.Cmd) {
+	if k == "esc" || k == "q" || k == "ctrl+c" {
+		m.newFlow()
+	}
 	if m.exitPrompt {
 		switch k {
 		case "esc", "k":
@@ -368,6 +374,7 @@ func (m *Dashboard) managementKey(k string) (bool, tea.Cmd) {
 		case "enter":
 			r := m.confirm.request
 			m.confirm = nil
+			m.newFlow()
 			return true, m.enqueue(r)
 		}
 		return true, nil
@@ -390,6 +397,7 @@ func (m *Dashboard) managementKey(k string) (bool, tea.Cmd) {
 	}
 	switch k {
 	case "enter":
+		m.newFlow()
 		m.actionMenu = true
 		m.actionIndex = 0
 		m.modal.GotoTop()
@@ -405,6 +413,7 @@ func (m *Dashboard) managementKey(k string) (bool, tea.Cmd) {
 		for i := len(m.jobs) - 1; i >= 0; i-- {
 			j := m.jobs[i]
 			if j.state == "failed" || j.state == "needs verification" || j.state == "cancelled" {
+				m.newFlow()
 				m.confirm = &confirmation{freezeRequest(j.request), "고정된 실패 작업 재시도", actionWarning(j.request.Kind)}
 				m.modal.GotoTop()
 				return true, nil

@@ -27,11 +27,21 @@ type savedSelectionMsg struct {
 	request   operations.Request
 	selection config.Selection
 	err       error
+	flow      uint64
+}
+
+// Async confirmations belong to the input flow that requested them. Navigation
+// into another action or abandonment advances the generation independently of
+// job execution, so an old preview still finishes without taking over a modal.
+func (m *Dashboard) newFlow() { m.flowGeneration++ }
+func (m *Dashboard) ownsFlow(flow uint64) bool {
+	return flow == m.flowGeneration && m.confirm == nil && m.creating == nil && !m.actionMenu && !m.advancedMenu && !m.exitPrompt
 }
 
 var memoryPattern = regexp.MustCompile(`^[1-9][0-9]*[kKmMgG]?[bB]?$`)
 
 func (m *Dashboard) startCreation() tea.Cmd {
+	m.newFlow()
 	path, memory := textinput.New(), textinput.New()
 	path.Prompt = "Workspace 경로: "
 	memory.Prompt = "Memory / sandbox: "
@@ -70,6 +80,9 @@ func (m *Dashboard) creationMessage(msg tea.Msg) (bool, tea.Cmd) {
 		return true, m.enqueue(r)
 	}
 	if v, ok := msg.(savedSelectionMsg); ok {
+		if !m.ownsFlow(v.flow) {
+			return true, nil
+		}
 		if v.err != nil {
 			m.actionError = safeText(v.err.Error())
 			return true, nil
@@ -221,7 +234,11 @@ func (m *Dashboard) advancedKey(k string) (bool, tea.Cmd) {
 			}
 			r := operations.Request{Kind: kind, Target: operations.Target{Workspace: w.Path, Runtime: w.Runtime}}
 			b := m.Backend
-			return true, func() tea.Msg { s, err := b.SavedSelection(r.Target.Workspace); return savedSelectionMsg{r, s, err} }
+			flow := m.flowGeneration
+			return true, func() tea.Msg {
+				s, err := b.SavedSelection(r.Target.Workspace)
+				return savedSelectionMsg{request: r, selection: s, err: err, flow: flow}
+			}
 		}
 		return true, nil
 	}
@@ -229,6 +246,7 @@ func (m *Dashboard) advancedKey(k string) (bool, tea.Cmd) {
 	case "n":
 		return true, m.startCreation()
 	case "a":
+		m.newFlow()
 		m.advancedMenu = true
 		m.advancedIndex = 0
 		m.modal.GotoTop()
@@ -250,7 +268,10 @@ func (m *Dashboard) advancedContent() string {
 	}
 	return strings.Join(lines, "\n")
 }
-func (m *Dashboard) prunePreview(r operations.Result) {
+func (m *Dashboard) prunePreview(r operations.Result, flow uint64) {
+	if !m.ownsFlow(flow) {
+		return
+	}
 	targets := r.Missing
 	if targets == nil {
 		targets = make([]operations.Target, 0)

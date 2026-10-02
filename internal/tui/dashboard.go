@@ -62,6 +62,7 @@ type Dashboard struct {
 	creating                                              *creation
 	advancedMenu                                          bool
 	advancedIndex                                         int
+	flowGeneration                                        uint64
 }
 
 func NewDashboard(b Backend, c config.Catalog, w string) *Dashboard {
