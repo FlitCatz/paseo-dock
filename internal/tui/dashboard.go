@@ -59,6 +59,9 @@ type Dashboard struct {
 	exitPrompt, exitAfterJobs, shellPending, shellRunning bool
 	actionError                                           string
 	workRefreshWanted                                     bool
+	creating                                              *creation
+	advancedMenu                                          bool
+	advancedIndex                                         int
 }
 
 func NewDashboard(b Backend, c config.Catalog, w string) *Dashboard {
@@ -97,6 +100,9 @@ func (m *Dashboard) refresh(now time.Time, manual bool) tea.Cmd {
 func (m *Dashboard) Init() tea.Cmd { return m.refresh(time.Now(), false) }
 func (m *Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if handled, cmd := m.jobMessage(msg); handled {
+		return m, cmd
+	}
+	if handled, cmd := m.creationMessage(msg); handled {
 		return m, cmd
 	}
 	switch v := msg.(type) {

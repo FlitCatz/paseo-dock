@@ -28,7 +28,10 @@ type Request struct {
 	Target Target
 	// For register/unregister a nonnil Targets slice (including empty) is
 	// the confirmed complete active scope; nil preserves legacy CLI resolution.
-	Targets                                                        []Target
+	Targets []Target
+	// RestoreTargets pins the desired completed saved-selection entries while
+	// Targets continues to pin the prior active scope.
+	RestoreTargets, PruneTargets                                   []Target
 	Selection                                                      config.Selection
 	Namespace, Platforms, Memory, PaseoHome                        string
 	Push, KeepArchive, BuildFirst, Apply, DryRun, RestoreSelection bool

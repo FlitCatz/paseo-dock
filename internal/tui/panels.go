@@ -62,6 +62,7 @@ func (dashboardKeys) FullHelp() [][]keys.Binding {
 		keys.NewBinding(keys.WithKeys("v"), keys.WithHelp("v", "미등록 sandbox (읽기 전용)")), keys.NewBinding(keys.WithKeys("t"), keys.WithHelp("t", "template 탭")), keys.NewBinding(keys.WithKeys("left", "right"), keys.WithHelp("←→", "상세/로그 탭")), keys.NewBinding(keys.WithKeys("esc"), keys.WithHelp("Esc", "검색 취소")),
 		keys.NewBinding(keys.WithKeys("enter"), keys.WithHelp("Enter", "작업")), keys.NewBinding(keys.WithKeys("u"), keys.WithHelp("u", "업데이트")), keys.NewBinding(keys.WithKeys("s"), keys.WithHelp("s", "shell")), keys.NewBinding(keys.WithKeys("c"), keys.WithHelp("c", "취소 요청")),
 		keys.NewBinding(keys.WithKeys("R"), keys.WithHelp("R", "고정 대상 재시도")),
+		keys.NewBinding(keys.WithKeys("n"), keys.WithHelp("n", "새 sandbox 생성")), keys.NewBinding(keys.WithKeys("a"), keys.WithHelp("a", "고급 build/load/prune")),
 	}}
 }
 
@@ -200,6 +201,9 @@ func (m *Dashboard) panel(which, width, height int) string {
 	return lipgloss.NewStyle().Width(width).Height(height).Render(style.Render(ansi.Truncate(title, width, "…")) + "\n" + body)
 }
 func (m *Dashboard) View() tea.View {
+	if m.creating != nil && !m.exitPrompt {
+		return m.creationView()
+	}
 	m.syncLists()
 	width, height := max(1, m.Width), max(1, m.Height)
 	header := "PASEO SBX  " + connectionText("sbx", m.Snapshot.SBX) + "  " + connectionText("Paseo", m.Snapshot.Paseo) + "  " + connectionText("Docker", m.Snapshot.Docker)

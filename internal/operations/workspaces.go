@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"paseo-sbx/internal/config"
 	"paseo-sbx/internal/operationlock"
@@ -263,7 +264,7 @@ func (a *execution) listAll() error {
 	enc.SetIndent("", "  ")
 	return enc.Encode(rows)
 }
-func (a *execution) prune(home string, dryRun bool) error {
+func (a *execution) prune(home string, dryRun bool, targets []Target) error {
 	base, err := config.BaseDir()
 	if err != nil {
 		return err
@@ -275,11 +276,66 @@ func (a *execution) prune(home string, dryRun bool) error {
 	if err != nil {
 		return err
 	}
+	if targets != nil {
+		// An explicitly empty confirmed set must never resolve new missing rows.
+		confirmed := map[string][]Target{}
+		for _, t := range targets {
+			confirmed[t.Runtime] = append(confirmed[t.Runtime], t)
+		}
+		installed = nil
+		runtimes := make([]string, 0, len(confirmed))
+		for runtime := range confirmed {
+			runtimes = append(runtimes, runtime)
+		}
+		slices.Sort(runtimes)
+		for _, runtime := range runtimes {
+			canonical, err := config.Canonical(runtime)
+			if err != nil {
+				return err
+			}
+			if canonical != runtime || filepath.Dir(runtime) != base {
+				return errors.New("confirmed prune runtime identity changed")
+			}
+			var reg config.Registry
+			if err = config.ReadJSON(filepath.Join(runtime, "registry.json"), &reg); err != nil {
+				return err
+			}
+			if err = validateObservedRegistry(reg, runtime); err != nil {
+				return err
+			}
+			scope := confirmed[runtime]
+			count := len(reg.Profiles)
+			if count == 0 {
+				count = 1
+			}
+			if len(scope) != count {
+				return errors.New("confirmed prune registry scope changed")
+			}
+			seen := map[string]bool{}
+			for _, t := range scope {
+				if t.Workspace != reg.Workspace || seen[t.Profile] {
+					return errors.New("confirmed prune workspace changed")
+				}
+				seen[t.Profile] = true
+				if len(reg.Profiles) == 0 {
+					if t.Profile != "" || t.Entry != (config.Entry{}) {
+						return errors.New("confirmed prune empty registry changed")
+					}
+				} else if entry, ok := reg.Profiles[t.Profile]; !ok || t.Entry == (config.Entry{}) || entry != t.Entry {
+					return errors.New("confirmed prune entry changed")
+				}
+			}
+			installed = append(installed, config.Installed{Runtime: runtime, Registry: reg})
+		}
+	}
 	var missing []config.Installed
 	var sandboxes []string
 	for _, i := range installed {
 		if !i.Missing() {
 			continue
+		}
+		if err = validateObservedRegistry(i.Registry, i.Runtime); err != nil {
+			return err
 		}
 		missing = append(missing, i)
 		profiles := sortedProfiles(i.Registry.Profiles)
@@ -331,6 +387,21 @@ func (a *execution) prune(home string, dryRun bool) error {
 		}
 		releases = append(releases, release)
 	}
+	// Sandbox acquisition may take place after a workspace or registry was edited.
+	checked := missing[:0]
+	for _, i := range missing {
+		valid, err := pruneStillMissing(i)
+		if err != nil {
+			return err
+		}
+		if valid {
+			checked = append(checked, i)
+		}
+	}
+	missing = checked
+	if len(missing) == 0 {
+		return nil
+	}
 	// Providers already ignore missing workspaces; sync first so a failure
 	// leaves every registry in place.
 	if err = a.syncProviders(home, true); err != nil {
@@ -342,17 +413,50 @@ func (a *execution) prune(home string, dryRun bool) error {
 		}
 		// Forget launch routing and saved selection, retaining update history and
 		// lock files because the underlying sandboxes are deliberately preserved.
-		for _, name := range []string{"registry.json", "selection.json", "agent-wrapper"} {
+		for _, name := range []string{"selection.json", "agent-wrapper", "registry.json"} {
+			if err = a.ctx.Err(); err != nil {
+				return err
+			}
+			valid, err := pruneStillMissing(i)
+			if err != nil {
+				return err
+			}
+			if !valid {
+				break
+			}
 			if err = os.Remove(filepath.Join(i.Runtime, name)); err != nil && !os.IsNotExist(err) {
 				return err
 			}
+			a.changed = true
+			if name == "registry.json" {
+				fmt.Fprintln(a.Out, "Removed registry:", i.Runtime)
+			}
 		}
-		a.changed = true
-		fmt.Fprintln(a.Out, "Removed registry:", i.Runtime)
 	}
 	if len(sandboxes) > 0 {
 		fmt.Fprintln(a.Out, "Sandboxes were kept. To delete them (irreversible):")
 		fmt.Fprintln(a.Out, "  sbx rm", strings.Join(sandboxes, " "))
 	}
 	return nil
+}
+
+func pruneStillMissing(i config.Installed) (bool, error) {
+	runtime, err := config.Canonical(i.Runtime)
+	if err != nil {
+		return false, err
+	}
+	if runtime != i.Runtime {
+		return false, errors.New("confirmed prune runtime path changed")
+	}
+	var current config.Registry
+	if err = config.ReadJSON(filepath.Join(runtime, "registry.json"), &current); err != nil {
+		return false, err
+	}
+	if err = validateObservedRegistry(current, runtime); err != nil {
+		return false, err
+	}
+	if current.Workspace != i.Registry.Workspace || !maps.Equal(current.Profiles, i.Registry.Profiles) {
+		return false, errors.New("confirmed prune registry identity changed")
+	}
+	return (config.Installed{Runtime: runtime, Registry: current}).Missing(), nil
 }

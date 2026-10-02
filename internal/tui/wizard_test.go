@@ -10,6 +10,46 @@ import (
 )
 
 func key(m *Model, code rune) { m.Update(tea.KeyPressMsg(tea.Key{Code: code})) }
+func TestEmbeddedWizardReturnsToDashboard(t *testing.T) {
+	for _, embedded := range []bool{true, false} {
+		for _, cancel := range []bool{true, false} {
+			var m *Model
+			if embedded {
+				m = NewEmbeddedModel(config.DefaultCatalog(), config.Selection{}, "/workspace", "2g")
+			} else {
+				m = NewModel(config.DefaultCatalog(), config.Selection{}, "/workspace", "2g")
+			}
+			code := rune(tea.KeyEscape)
+			if !cancel {
+				key(m, tea.KeySpace)
+				key(m, tea.KeyEnter)
+				key(m, tea.KeySpace)
+				key(m, tea.KeyEnter)
+				key(m, tea.KeyEnter)
+				code = tea.KeyEnter
+			}
+			_, cmd := m.Update(tea.KeyPressMsg(tea.Key{Code: code}))
+			if cmd == nil {
+				t.Fatal("completion missing")
+			}
+			msg := cmd()
+			if embedded {
+				result, ok := msg.(WizardFinishedMsg)
+				if !ok {
+					t.Fatalf("child terminated parent instead of returning: %T", msg)
+				}
+				if cancel && !errors.Is(result.Err, ErrCancelled) {
+					t.Fatal("cancel missing", result.Err)
+				}
+				if !cancel && (result.Err != nil || len(result.Result.Selection.Pairs) != 1) {
+					t.Fatal("result missing", result)
+				}
+			} else if _, ok := msg.(tea.QuitMsg); !ok {
+				t.Fatalf("standalone completion changed: %T", msg)
+			}
+		}
+	}
+}
 func TestWizardOnlyChosenCombinations(t *testing.T) {
 	m := NewModel(config.DefaultCatalog(), config.Selection{}, "/workspace", "2g")
 	key(m, tea.KeyEnter)

@@ -193,7 +193,11 @@ func fakeSBX() {
 	}
 	if len(args) == 0 || args[0] != "exec" {
 		if len(args) > 0 && args[0] == "ls" {
-			fmt.Println("[]")
+			if names := os.Getenv("SBX_TEST_NAMES"); names != "" {
+				fmt.Println(names)
+			} else {
+				fmt.Println("[]")
+			}
 		}
 		if len(args) > 0 && args[0] == "create" && os.Getenv("SBX_TEST_CREATE_FAIL") != "" && strings.Contains(command, os.Getenv("SBX_TEST_CREATE_FAIL")) {
 			os.Exit(1)

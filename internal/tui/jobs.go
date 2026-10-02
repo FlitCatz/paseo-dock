@@ -55,6 +55,8 @@ type confirmation struct {
 
 func freezeRequest(r operations.Request) operations.Request {
 	r.Targets = slices.Clone(r.Targets)
+	r.RestoreTargets = slices.Clone(r.RestoreTargets)
+	r.PruneTargets = slices.Clone(r.PruneTargets)
 	r.Selection.Pairs = slices.Clone(r.Selection.Pairs)
 	r.Selection.Utilities = slices.Clone(r.Selection.Utilities)
 	return r
@@ -181,6 +183,9 @@ func (m *Dashboard) jobMessage(msg tea.Msg) (bool, tea.Cmd) {
 			j.state = "cancelled"
 		}
 		m.runningJob = 0
+		if v.err == nil && j.request.Kind == operations.KindPrune && j.request.DryRun {
+			m.prunePreview(v.result)
+		}
 		if m.exitAfterJobs && !m.busy() {
 			m.cancel()
 			return true, tea.Quit
@@ -253,8 +258,13 @@ func (m *Dashboard) actions() []action {
 					active++
 				}
 			}
-			if (r.kind == operations.KindUpdate || r.kind == operations.KindRegister) && active == 0 {
+			if r.kind == operations.KindUpdate && active == 0 {
 				r.reason = "완료된 활성 조합 없음"
+			}
+			if r.kind == operations.KindRegister && active == 0 {
+				if _, err := m.restoreTargets(w); err != nil {
+					r.reason = err.Error()
+				}
 			}
 		}
 	}
@@ -293,6 +303,15 @@ func (m *Dashboard) chooseAction(a action) tea.Cmd {
 	}
 	if a.kind == operations.KindRegister {
 		r.Apply = true
+		if len(r.Targets) == 0 {
+			targets, err := m.restoreTargets(w)
+			if err != nil {
+				m.actionError = err.Error()
+				return nil
+			}
+			r.RestoreSelection = true
+			r.RestoreTargets = targets
+		}
 	}
 	m.confirm = &confirmation{freezeRequest(r), a.label, actionWarning(a.kind)}
 	m.modal.GotoTop()
@@ -366,6 +385,9 @@ func (m *Dashboard) managementKey(k string) (bool, tea.Cmd) {
 		}
 		return true, nil
 	}
+	if handled, cmd := m.advancedKey(k); handled {
+		return true, cmd
+	}
 	switch k {
 	case "enter":
 		m.actionMenu = true
@@ -403,6 +425,15 @@ func (m *Dashboard) managementContent() string {
 		for _, t := range c.request.Targets {
 			lines = append(lines, t.Profile+" → "+t.Entry.Sandbox+" / "+t.Entry.Image)
 		}
+		for _, t := range c.request.RestoreTargets {
+			lines = append(lines, "복원: "+t.Profile+" → "+t.Entry.Sandbox+" / "+t.Entry.Image)
+		}
+		for _, t := range c.request.PruneTargets {
+			lines = append(lines, "누락: "+t.Workspace+" / "+t.Runtime+" / "+t.Profile+" / "+t.Entry.Sandbox)
+		}
+		if c.request.Selection.Schema != 0 {
+			lines = append(lines, "Profiles: "+strings.Join(c.request.Selection.Profiles(), ", "), "Utilities: "+strings.Join(c.request.Selection.Utilities, ", "))
+		}
 		lines = append(lines, "Enter 실행 · Esc 취소 · ↑↓/jk 스크롤")
 		return strings.Join(lines, "\n")
 	}
@@ -420,6 +451,9 @@ func (m *Dashboard) managementContent() string {
 			lines = append(lines, line)
 		}
 		return strings.Join(lines, "\n")
+	}
+	if content := m.advancedContent(); content != "" {
+		return content
 	}
 	return ""
 }
@@ -497,7 +531,9 @@ func (l *jobLog) emit(e operations.Event) {
 		}
 		l.data = slices.Clone(l.data)
 	}
-	l.stage = safeText(e.Stage)
+	if e.Stage != "stdout" && e.Stage != "stderr" {
+		l.stage = safeText(e.Stage)
+	}
 	l.mu.Unlock()
 	select {
 	case l.wake <- struct{}{}:

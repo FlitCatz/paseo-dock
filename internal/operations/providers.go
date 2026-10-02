@@ -160,6 +160,60 @@ func (a *execution) register(runtime, home string, apply bool) error {
 	}
 	return a.syncProviders(home, apply)
 }
+
+// Restore is opt-in and requires both the prior active scope and the complete
+// desired saved selection to remain identical to what the dashboard confirmed.
+func (a *execution) restoreRegistration(runtime string, r Request) error {
+	if r.Targets == nil || r.RestoreTargets == nil || a.Selection == nil {
+		return errors.New("restore requires confirmed prior scope and saved selection entries")
+	}
+	var reg config.Registry
+	path := filepath.Join(runtime, "registry.json")
+	if err := config.ReadJSON(path, &reg); err != nil {
+		return err
+	}
+	if err := validateObservedRegistry(reg, runtime); err != nil {
+		return err
+	}
+	if reg.Selection == nil {
+		return errors.New("no completed saved selection")
+	}
+	saved, err := a.Catalog.Normalize(*reg.Selection)
+	if err != nil {
+		return err
+	}
+	if saved.Schema != a.Selection.Schema || !slices.Equal(saved.Pairs, a.Selection.Pairs) || !slices.Equal(saved.Utilities, a.Selection.Utilities) {
+		return errors.New("confirmed saved selection changed")
+	}
+	desired := saved.Profiles()
+	if len(r.RestoreTargets) != len(desired) {
+		return errors.New("incomplete confirmed saved selection entries")
+	}
+	seen := map[string]bool{}
+	for _, target := range r.RestoreTargets {
+		if target.Entry == (config.Entry{}) || seen[target.Profile] || !slices.Contains(desired, target.Profile) {
+			return errors.New("invalid confirmed restore scope")
+		}
+		seen[target.Profile] = true
+		validated, err := a.Service.resolveTarget(target)
+		if err != nil {
+			return err
+		}
+		if validated.Runtime != runtime || validated.Workspace != reg.Workspace {
+			return errors.New("confirmed restore workspace changed")
+		}
+		pair, ok := a.Catalog.Pair(target.Profile)
+		if !ok {
+			return errors.New("invalid saved profile")
+		}
+		adapter, ok := a.Catalog.Agent(pair.Agent)
+		if !ok || target.Entry.Agent != adapter.Adapter || target.Entry.Tool != pair.Methodology || target.Entry.Image == "" {
+			return errors.New("incomplete or incompatible saved profile entry")
+		}
+	}
+	reg.Active = desired
+	return a.writeJSON(path, reg)
+}
 func (a *execution) unregister(workspace, home string) error {
 	w, err := config.Canonical(workspace)
 	if err != nil {

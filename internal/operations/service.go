@@ -244,6 +244,8 @@ func (s *Service) Execute(ctx context.Context, r Request, emit func(Event)) (res
 		return result, err
 	}
 	r.Targets = slices.Clone(r.Targets)
+	r.RestoreTargets = slices.Clone(r.RestoreTargets)
+	r.PruneTargets = slices.Clone(r.PruneTargets)
 	a := s.execution(ctx, nil, emit)
 	if len(r.Selection.Pairs) > 0 || r.Selection.Schema != 0 {
 		normalized, e := s.Catalog.Normalize(r.Selection)
@@ -411,12 +413,17 @@ func (s *Service) Execute(ctx context.Context, r Request, emit func(Event)) (res
 			runtime, err = a.selectedRuntime(r.Target.Workspace)
 		}
 		if err == nil {
+			if r.RestoreSelection {
+				err = a.restoreRegistration(runtime, r)
+			}
+		}
+		if err == nil {
 			err = a.register(runtime, r.PaseoHome, r.Apply)
 		}
 	case KindUnregister:
 		err = a.unregister(r.Target.Workspace, r.PaseoHome)
 	case KindPrune:
-		err = a.prune(r.PaseoHome, r.DryRun)
+		err = a.prune(r.PaseoHome, r.DryRun, r.PruneTargets)
 	}
 	result.Changed = a.changed
 	result.Missing = a.missing

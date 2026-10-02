@@ -19,6 +19,11 @@ type Result struct {
 	Selection config.Selection
 	Apply     bool
 }
+type WizardFinishedMsg struct {
+	Result Result
+	Err    error
+	source *Model
+}
 type Model struct {
 	Catalog                  config.Catalog
 	Workspace, Memory        string
@@ -31,6 +36,23 @@ type Model struct {
 	Error                    string
 	Width, Height            int
 	Color                    bool
+	embedded                 bool
+}
+
+func NewEmbeddedModel(c config.Catalog, s config.Selection, workspace, memory string) *Model {
+	m := NewModel(c, s, workspace, memory)
+	m.embedded = true
+	return m
+}
+func (m *Model) finish() tea.Cmd {
+	if !m.embedded {
+		return tea.Quit
+	}
+	result := m.Result
+	result.Selection.Pairs = slices.Clone(result.Selection.Pairs)
+	result.Selection.Utilities = slices.Clone(result.Selection.Utilities)
+	err := m.Err
+	return func() tea.Msg { return WizardFinishedMsg{Result: result, Err: err, source: m} }
 }
 
 func NewModel(c config.Catalog, s config.Selection, workspace, memory string) *Model {
@@ -112,7 +134,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	if k.String() == "ctrl+c" {
 		m.Err = ErrCancelled
-		return m, tea.Quit
+		return m, m.finish()
 	}
 	if k.Code == 'x' && k.Mod == 0 {
 		k.Code = tea.KeySpace
@@ -130,7 +152,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch m.Step {
 		case 0:
 			m.Err = ErrCancelled
-			return m, tea.Quit
+			return m, m.finish()
 		case 1:
 			if m.agentIndex > 0 {
 				m.agentIndex--
@@ -226,7 +248,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.Result.Selection = s
 			m.Confirmed = true
-			return m, tea.Quit
+			return m, m.finish()
 		}
 	}
 	return m, nil
@@ -311,6 +333,8 @@ func (m *Model) View() tea.View {
 		for _, profile := range m.Result.Selection.Profiles() {
 			body = append(body, "┃    "+paint(green, "✓ "+profile))
 		}
+		body = append(body, "┃    Utilities: "+strings.Join(m.Result.Selection.Utilities, ", "))
+		body = append(body, "┃    Build → load · CPU: 2 · Memory: "+m.Memory)
 		if slices.Contains(m.Result.Selection.Utilities, "headroom") {
 			body = append(body, "┃    "+paint(muted, "Headroom: sandbox 내부 Python 런타임 + MCP 도구 연결"))
 		}
@@ -326,6 +350,9 @@ func (m *Model) View() tea.View {
 		}
 		focus = len(body)
 		body = append(body, "┃  "+paint(pink, "›")+" "+paint(green, mark+" Paseo provider 등록 및 reload"), "┃    "+paint(muted, "Enter: 이미지 빌드 → template 로드 → sandbox 생성"))
+		if m.embedded {
+			body = append(body, "┃    Paseo: ~/.paseo/config.json · backup / merge", "┃    다른 workspace provider 유지")
+		}
 	}
 	agents := strings.Join(chosen, ", ")
 	if agents == "" {
