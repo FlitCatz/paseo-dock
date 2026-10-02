@@ -50,11 +50,45 @@ func MergeConfig(c, g map[string]any)                  { operations.MergeConfig(
 func MergeManagedConfig(c, g map[string]any, b string) { operations.MergeManagedConfig(c, g, b) }
 func Run(root string, args []string, in io.Reader, out, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "usage: paseo-sbx {build|load|create|register|run|unregister|prune|list|shell|stop|update} [options]")
-		return 2
+		if terminalStreams(in, out) {
+			args = []string{"tui"}
+		} else {
+			fmt.Fprintln(stderr, "usage: paseo-sbx {build|load|create|register|run|unregister|prune|list|shell|stop|update} [options]")
+			return 2
+		}
 	}
 	if args[0] == "--help" || args[0] == "-h" || args[0] == "help" {
-		fmt.Fprintln(out, "usage: paseo-sbx {build|load|create|register|run|unregister|prune|list|shell|stop|update} [options]\nRun paseo-sbx COMMAND --help for command options.")
+		fmt.Fprintln(out, "usage: paseo-sbx {tui|build|load|create|register|run|unregister|prune|list|shell|stop|update} [options]\nRun paseo-sbx COMMAND --help for command options.")
+		return 0
+	}
+	if args[0] == "tui" {
+		f := flag.NewFlagSet("tui", flag.ContinueOnError)
+		f.SetOutput(out)
+		workspace := f.String("workspace", "", "initial workspace path")
+		if err := f.Parse(args[1:]); err != nil {
+			if errors.Is(err, flag.ErrHelp) {
+				return 0
+			}
+			fmt.Fprintln(stderr, "paseo-sbx:", err)
+			return 1
+		}
+		if f.NArg() != 0 {
+			fmt.Fprintln(stderr, "paseo-sbx: unexpected arguments")
+			return 1
+		}
+		if !terminalStreams(in, out) {
+			fmt.Fprintln(stderr, "paseo-sbx: tui requires terminal input and output")
+			return 1
+		}
+		app, err := NewApp(root)
+		if err == nil {
+			app.In, app.Out, app.Err = in, out, stderr
+			err = tui.RunDashboard(app.Service, app.Catalog, *workspace, in, out)
+		}
+		if err != nil {
+			fmt.Fprintln(stderr, "paseo-sbx:", err)
+			return 1
+		}
 		return 0
 	}
 	app, err := NewApp(root)
@@ -71,6 +105,14 @@ func Run(root string, args []string, in io.Reader, out, stderr io.Writer) int {
 		return 1
 	}
 	return 0
+}
+func terminalStreams(in io.Reader, out io.Writer) bool {
+	input, ok := in.(*os.File)
+	if !ok {
+		return false
+	}
+	output, ok := out.(*os.File)
+	return ok && term.IsTerminal(input.Fd()) && term.IsTerminal(output.Fd())
 }
 func (a *App) execute(args []string) error {
 	command := args[0]
