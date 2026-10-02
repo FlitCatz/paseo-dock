@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"paseo-sbx/internal/config"
+	"paseo-sbx/internal/sandboxupdate"
 	"paseo-sbx/internal/tui"
 	"path/filepath"
 	"slices"
@@ -272,6 +273,36 @@ func (a *App) create(workspace, namespace, memory string) error {
 		registry.Profiles[p] = entry
 		if err = config.WriteJSON(filepath.Join(runtime, "registry.json"), registry); err != nil {
 			return err
+		}
+	}
+	// OpenSpec writes project-specific integrations. Initialize the selected
+	// tools together, inside one selected sandbox, before committing activation.
+	var openspecSandbox string
+	var openspecTools []string
+	for _, p := range a.profiles() {
+		pair, _ := a.Catalog.Pair(p)
+		for _, method := range a.Catalog.Methodologies {
+			if method.ID != pair.Methodology || method.Installer != "openspec" {
+				continue
+			}
+			entry := planned[p]
+			tool := entry.Agent
+			if tool == "antigravity-cli" {
+				tool = "antigravity"
+			}
+			if !slices.Contains(openspecTools, tool) {
+				openspecTools = append(openspecTools, tool)
+			}
+			if openspecSandbox == "" {
+				openspecSandbox = entry.Sandbox
+			}
+		}
+	}
+	if openspecSandbox != "" {
+		slices.Sort(openspecTools)
+		fmt.Fprintln(a.Out, "Initializing OpenSpec in", w)
+		if err = a.run("sbx", "exec", "--env", "OPENSPEC_TELEMETRY=0", "--workdir", w, openspecSandbox, "openspec", "init", w, "--tools", strings.Join(openspecTools, ","), "--profile", "core", "--no-animation"); err != nil {
+			return fmt.Errorf("OpenSpec initialization failed; sandbox registry retained for retry: %w", err)
 		}
 	}
 	if err = a.installLauncher(base, []string{w}); err != nil {
@@ -594,11 +625,11 @@ func (a *App) syncProviders(home string, apply bool) error {
 }
 func Run(root string, args []string, in io.Reader, out, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "usage: paseo-sbx {build|load|create|register|run|unregister|prune|list|shell|stop} [options]")
+		fmt.Fprintln(stderr, "usage: paseo-sbx {build|load|create|register|run|unregister|prune|list|shell|stop|update} [options]")
 		return 2
 	}
 	if args[0] == "--help" || args[0] == "-h" || args[0] == "help" {
-		fmt.Fprintln(out, "usage: paseo-sbx {build|load|create|register|run|unregister|prune|list|shell|stop} [options]\nRun paseo-sbx COMMAND --help for command options.")
+		fmt.Fprintln(out, "usage: paseo-sbx {build|load|create|register|run|unregister|prune|list|shell|stop|update} [options]\nRun paseo-sbx COMMAND --help for command options.")
 		return 0
 	}
 	app, err := NewApp(root)
@@ -665,8 +696,11 @@ func (a *App) execute(args []string) error {
 	case "prune":
 		f.StringVar(&home, "paseo-home", home, "Paseo configuration home")
 		f.BoolVar(&dryRun, "dry-run", false, "show missing workspaces without removing registries")
-	case "list", "shell", "stop":
+	case "list", "shell", "stop", "update":
 		f.StringVar(&workspace, "workspace", "", "workspace path")
+		if command == "update" {
+			f.StringVar(&profile, "profile", "", "update one profile; omitted updates all active profiles")
+		}
 		if command == "list" {
 			f.BoolVar(&all, "all", false, "list every registered workspace")
 		}
@@ -675,14 +709,14 @@ func (a *App) execute(args []string) error {
 	}
 	// Accept flags before or after the positional profile.
 	rest := args[1:]
-	if (command == "shell" || command == "stop") && len(rest) > 0 && !strings.HasPrefix(rest[0], "-") {
+	if (command == "shell" || command == "stop" || command == "update") && len(rest) > 0 && !strings.HasPrefix(rest[0], "-") {
 		profile = rest[0]
 		rest = rest[1:]
 	}
 	if err := f.Parse(rest); err != nil {
 		return err
 	}
-	if command == "shell" || command == "stop" {
+	if command == "shell" || command == "stop" || command == "update" {
 		if profile == "" && f.NArg() == 1 {
 			profile = f.Arg(0)
 		} else if f.NArg() != 0 {
@@ -811,11 +845,32 @@ func (a *App) execute(args []string) error {
 			enc.SetIndent("", "  ")
 			return enc.Encode(reg)
 		}
+		if command == "update" {
+			profiles := reg.ActiveProfiles()
+			if profile != "" {
+				profiles = []string{profile}
+			}
+			var failures []error
+			for _, p := range profiles {
+				e, ok := reg.Profiles[p]
+				if !ok {
+					failures = append(failures, fmt.Errorf("profile %s missing from registry", p))
+					continue
+				}
+				if err := sandboxupdate.Update(runtime, e, true, a.Err); err != nil {
+					failures = append(failures, fmt.Errorf("%s: %w", p, err))
+				}
+			}
+			return errors.Join(failures...)
+		}
 		e, ok := reg.Profiles[profile]
 		if !ok {
 			return errors.New("profile missing from registry")
 		}
 		if command == "shell" {
+			if err := sandboxupdate.Update(runtime, e, false, a.Err); err != nil {
+				fmt.Fprintln(a.Err, "paseo-sbx: update failed; opening shell:", err)
+			}
 			return a.run("sbx", "exec", "-it", "--workdir", e.Workspace, e.Sandbox, "bash")
 		}
 		return a.run("sbx", "stop", e.Sandbox)

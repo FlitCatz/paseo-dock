@@ -4,10 +4,10 @@ agent_kind=${1:?agent required}
 utilities=${2:-}
 lock_file=${3:-/opt/paseo-sbx/install/versions.lock.json}
 [[ -n "$utilities" ]] || exit 0
-case "$agent_kind" in codex|claude) ;; *) echo "unsupported utility agent: $agent_kind" >&2; exit 1 ;; esac
+case "$agent_kind" in codex|claude|antigravity-cli) ;; *) echo "unsupported utility agent: $agent_kind" >&2; exit 1 ;; esac
 
 # Validate the complete request before downloading or changing agent settings.
-node - "$lock_file" "$utilities" <<'NODE'
+node - "$lock_file" "$utilities" "$agent_kind" <<'NODE'
 const fs = require('fs');
 const lock = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
 for (const id of process.argv[3].split(',')) {
@@ -16,6 +16,9 @@ for (const id of process.argv[3].split(',')) {
     throw new Error(`unsupported utility: ${id}`);
   }
   if (!entry.version) throw new Error(`missing version for utility: ${id}`);
+  if (process.argv[4] === 'antigravity-cli' && (entry.installer || id) === 'headroom') {
+    throw new Error('Headroom integration for antigravity-cli is not configured');
+  }
 }
 NODE
 
@@ -61,6 +64,14 @@ for utility in "${selected_utilities[@]}"; do
       rtk --version
       if [[ "$agent_kind" == codex ]]; then
         rtk init -g --codex
+      elif [[ "$agent_kind" == antigravity-cli ]]; then
+        # RTK 0.50.0 generates project-scoped rules without frontmatter.
+        # Reuse its official content in Antigravity's always-active global file.
+        rtk_rules_dir="$temp_dir/antigravity-rtk"
+        mkdir -p "$rtk_rules_dir" "$HOME/.gemini"
+        (cd "$rtk_rules_dir" && rtk init --agent antigravity)
+        printf '\n' >> "$HOME/.gemini/GEMINI.md"
+        cat "$rtk_rules_dir/.agents/rules/antigravity-rtk-rules.md" >> "$HOME/.gemini/GEMINI.md"
       else
         rtk init -g --auto-patch
       fi

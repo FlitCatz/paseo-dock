@@ -47,8 +47,14 @@ make build
   빌드한 이미지를 재사용하므로 `--build`를 생략했습니다.
 - utilities(RTK, Headroom)를 쓰려면 `--utilities rtk,headroom`을 추가합니다. utilities가
   다르면 이미지가 달라지므로 그 조합으로 처음 만들 때 `--build`를 붙입니다.
+  Antigravity에서는 RTK를 선택할 수 있습니다. Headroom 연동은 아직 구현하지 않았습니다.
 - `--profiles` 없이 터미널에서 `create --workspace <path>`를 실행하면 선택 화면(TUI)이 열립니다.
+  Agent·방법론·utility 목록이 함께 표시되고 현재 그룹을 강조합니다. ↑/↓로 이동,
+  Space/x로 체크, Enter/Tab으로 다음 그룹, Esc/Shift+Tab으로 이전 그룹을 선택합니다.
+  작은 터미널에서는 현재 항목을 따라 스크롤합니다. `NO_COLOR=1`로 색상을 끌 수 있습니다.
   마지막 화면에서 **Paseo에 선택한 provider 등록 및 reload**를 체크하면 `--apply`와 같습니다.
+  최종 확인은 Enter로 확정합니다. OpenSpec도 세 에이전트의 방법론 목록에서 선택할 수 있으며,
+  선택하면 workspace에 `openspec/` 및 에이전트별 스킬·workflow 파일을 초기화합니다.
 - `--apply`는 Paseo 설정을 백업한 뒤 provider를 등록하고 Paseo를 reload합니다.
 
 등록 결과는 다음 명령으로 확인합니다.
@@ -63,7 +69,8 @@ sandbox는 프로젝트와 조합마다 따로 있으므로 로그인도 각각 
 
 - **Codex:** `sbx secret set openai --oauth`로 한 번 등록하면 모든 Codex sandbox에 적용됩니다.
 - **Claude API key:** `sbx secret set anthropic`으로 한 번 등록하면 모든 Claude sandbox에 적용됩니다.
-- **Antigravity CLI:** `antigravity-cli-native` 또는 `antigravity-cli-superpowers`를 생성하고,
+- **Antigravity CLI:** `antigravity-cli-native`, `antigravity-cli-superpowers`,
+  `antigravity-cli-gsd-core`, `antigravity-cli-ponytail`, `antigravity-cli-openspec` 중 필요한 조합을 생성하고,
   각 sandbox shell에서 공식 `agy`로 로그인합니다. `paseo-sbx run --workspace … --profile …`으로
   기존 플러그인에 SBX 에이전트를 생성한 뒤 앱에서 사용합니다. 별도 SBX 공급자 항목은
   추가되지 않습니다. [Antigravity 인증·실행 절차](README.md#antigravity-cli)를 참고하세요.

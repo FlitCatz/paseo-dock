@@ -7,12 +7,13 @@
   ],
   "methodologies": [
     {"id":"superpowers","label":"Superpowers","installer":"git-plugin","agents":["codex","claude","antigravity-cli"]},
-    {"id":"gsd-core","label":"GSD Core","installer":"gsd-core","agents":["codex","claude"]},
-    {"id":"ponytail","label":"Ponytail","installer":"git-plugin","agents":["codex","claude"]},
+    {"id":"gsd-core","label":"GSD Core","installer":"gsd-core","agents":["codex","claude","antigravity-cli"]},
+    {"id":"ponytail","label":"Ponytail","installer":"git-plugin","agents":["codex","claude","antigravity-cli"]},
+    {"id":"openspec","label":"OpenSpec","installer":"openspec","agents":["codex","claude","antigravity-cli"],"note":"프로젝트별 spec·workflow 파일을 초기화합니다."},
     {"id":"native","label":"Native (no methodology)","installer":"none","agents":["antigravity-cli"]}
   ],
   "utilities": [
-    {"id":"rtk","label":"RTK","installer":"rtk","agents":["codex","claude"],"note":"Command output compression + agent hooks"},
+    {"id":"rtk","label":"RTK","installer":"rtk","agents":["codex","claude","antigravity-cli"],"note":"Command output compression · Codex/Claude hooks · Antigravity instructions"},
     {"id":"headroom","label":"Headroom","installer":"headroom","agents":["codex","claude"],"note":"MCP compression tools; installs an isolated Python runtime inside the sandbox"}
   ]
 }

@@ -5,7 +5,9 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"errors"
 	"fmt"
+	"github.com/charmbracelet/x/ansi"
 	"io"
+	"os"
 	"paseo-sbx/internal/config"
 	"slices"
 	"strings"
@@ -27,10 +29,13 @@ type Model struct {
 	Confirmed                bool
 	Err                      error
 	Error                    string
+	Width, Height            int
+	Color                    bool
 }
 
 func NewModel(c config.Catalog, s config.Selection, workspace, memory string) *Model {
-	m := &Model{Catalog: c, Workspace: workspace, Memory: memory, agents: map[string]bool{}, pairs: map[string]bool{}, utilities: map[string]bool{}}
+	_, noColor := os.LookupEnv("NO_COLOR")
+	m := &Model{Catalog: c, Workspace: workspace, Memory: memory, Color: !noColor, agents: map[string]bool{}, pairs: map[string]bool{}, utilities: map[string]bool{}}
 	for _, p := range s.Pairs {
 		m.agents[p.Agent] = true
 		m.pairs[p.Agent+"-"+p.Methodology] = true
@@ -80,14 +85,27 @@ func (m *Model) compatible(i config.Item) bool {
 	if m.Step != 2 {
 		return true
 	}
-	for _, a := range m.selectedAgents {
+	for _, a := range m.chosenAgents() {
 		if !slices.Contains(i.Agents, a) {
 			return false
 		}
 	}
 	return true
 }
+func (m *Model) chosenAgents() []string {
+	var chosen []string
+	for _, agent := range m.Catalog.Agents {
+		if m.agents[agent.ID] {
+			chosen = append(chosen, agent.ID)
+		}
+	}
+	return chosen
+}
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if size, ok := msg.(tea.WindowSizeMsg); ok {
+		m.Width, m.Height = size.Width, size.Height
+		return m, nil
+	}
 	k, ok := msg.(tea.KeyPressMsg)
 	if !ok {
 		return m, nil
@@ -95,6 +113,16 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if k.String() == "ctrl+c" {
 		m.Err = ErrCancelled
 		return m, tea.Quit
+	}
+	if k.Code == 'x' && k.Mod == 0 {
+		k.Code = tea.KeySpace
+	}
+	if k.Code == tea.KeyTab {
+		if k.Mod&tea.ModShift != 0 {
+			k.Code = tea.KeyEscape
+		} else if m.Step < 3 {
+			k.Code = tea.KeyEnter
+		}
 	}
 	m.Error = ""
 	switch k.Code {
@@ -204,67 +232,129 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 func (m *Model) View() tea.View {
-	var b strings.Builder
-	fmt.Fprint(&b, "Paseo SBX · 선택한 조합만 생성\n\n")
-	fmt.Fprintf(&b, "Workspace: %s\nMemory: %s / sandbox · CPU: 2\n\n", m.Workspace, m.Memory)
-	if m.Step == 3 {
-		fmt.Fprintln(&b, "생성할 sandbox:")
-		for _, p := range m.Result.Selection.Profiles() {
-			fmt.Fprintln(&b, "  •", p)
+	paint := func(code, text string) string {
+		if !m.Color {
+			return text
 		}
-		us := strings.Join(m.Result.Selection.Utilities, ", ")
-		if us == "" {
-			us = "없음"
+		return "\x1b[" + code + "m" + text + "\x1b[0m"
+	}
+	const purple = "38;5;141;1"
+	const green = "38;5;84"
+	const pink = "38;5;213;1"
+	const muted = "38;5;245"
+	var body []string
+	focus := 0
+	section := func(title, hint string, items []config.Item, active bool, selected func(config.Item) bool, compatible func(config.Item) bool) {
+		if len(body) > 0 {
+			body = append(body, "")
 		}
-		fmt.Fprintln(&b, "\nUtilities:", us)
-		if slices.Contains(m.Result.Selection.Utilities, "headroom") {
-			fmt.Fprintln(&b, "Headroom: sandbox 내부 Python 런타임 + MCP 도구 연결")
+		border := paint(muted, "│")
+		if active {
+			border = paint(purple, "┃")
+			focus = len(body)
 		}
-		mark := " "
-		if m.Result.Apply {
-			mark = "x"
+		body = append(body, border+"  "+paint(purple, title))
+		if hint != "" {
+			body = append(body, border+"  "+paint(muted, hint))
 		}
-		fmt.Fprintf(&b, "\n[%s] Paseo에 선택한 provider 등록 및 reload (Space로 변경)\n", mark)
-		fmt.Fprintln(&b, "\nEnter: 이미지 빌드 → template 로드 → sandbox 생성")
+		for index, item := range items {
+			mark, cursor, color := "○", " ", ""
+			if selected(item) {
+				mark, color = "✓", green
+			}
+			label := item.Label
+			if !compatible(item) {
+				color = muted
+				label += " · 지원 대상 아님"
+			}
+			if active && index == m.Cursor {
+				cursor = paint(pink, "›")
+				focus = len(body)
+				if compatible(item) {
+					color = green
+				}
+			}
+			body = append(body, border+"  "+cursor+" "+paint(color, mark+" "+label))
+			if active && index == m.Cursor && item.Note != "" {
+				body = append(body, border+"      "+paint(muted, item.Note))
+			}
+		}
+	}
+	allow := func(config.Item) bool { return true }
+	section("1  Agent", "사용할 에이전트를 선택하세요. 여러 개 선택할 수 있습니다.", m.Catalog.Agents, m.Step == 0, func(i config.Item) bool { return m.agents[i.ID] }, allow)
+	chosen := m.chosenAgents()
+	if len(chosen) == 0 {
+		section("2  Methodology", "Agent를 선택하면 에이전트별로 방법론을 고릅니다.", m.Catalog.Methodologies, false, func(config.Item) bool { return false }, allow)
 	} else {
-		title := []string{"Agent 선택", "Methodology 선택", "Utility 선택 (선택 사항)"}[m.Step]
-		if m.Step == 1 {
-			title += " · " + m.selectedAgents[m.agentIndex]
-		}
-		fmt.Fprintln(&b, title)
-		for idx, i := range m.items() {
-			selected := false
-			switch m.Step {
-			case 0:
-				selected = m.agents[i.ID]
-			case 1:
-				selected = m.pairs[m.selectedAgents[m.agentIndex]+"-"+i.ID]
-			case 2:
-				selected = m.utilities[i.ID]
+		for index, agentID := range chosen {
+			agent, _ := m.Catalog.Agent(agentID)
+			var methods []config.Item
+			for _, method := range m.Catalog.Methodologies {
+				if slices.Contains(method.Agents, agentID) {
+					methods = append(methods, method)
+				}
 			}
-			cursor := " "
-			if idx == m.Cursor {
-				cursor = "›"
-			}
-			mark := " "
-			if selected {
-				mark = "x"
-			}
-			label := i.Label
-			if !m.compatible(i) {
-				label += " (지원하지 않는 agent 포함)"
-			}
-			fmt.Fprintf(&b, "%s [%s] %s\n", cursor, mark, label)
-			if m.Step == 2 && idx == m.Cursor && i.Note != "" {
-				fmt.Fprintln(&b, "      "+i.Note)
-			}
+			section("2  Methodology · "+agent.Label, "필요한 방법론을 하나씩 선택하세요. 여러 개 선택할 수 있습니다.", methods, m.Step == 1 && index == m.agentIndex, func(i config.Item) bool { return m.pairs[agentID+"-"+i.ID] }, allow)
 		}
 	}
+	utilityCompatible := func(i config.Item) bool {
+		for _, agent := range chosen {
+			if !slices.Contains(i.Agents, agent) {
+				return false
+			}
+		}
+		return true
+	}
+	section("3  Utility", "선택 사항 · 모든 에이전트가 지원하는 항목만 선택할 수 있습니다.", m.Catalog.Utilities, m.Step == 2, func(i config.Item) bool { return m.utilities[i.ID] }, utilityCompatible)
+	if m.Step == 3 {
+		body = append(body, "", paint(purple, "┃  4  최종 확인"))
+		for _, profile := range m.Result.Selection.Profiles() {
+			body = append(body, "┃    "+paint(green, "✓ "+profile))
+		}
+		if slices.Contains(m.Result.Selection.Utilities, "headroom") {
+			body = append(body, "┃    "+paint(muted, "Headroom: sandbox 내부 Python 런타임 + MCP 도구 연결"))
+		}
+		for _, pair := range m.Result.Selection.Pairs {
+			if pair.Methodology == "openspec" {
+				body = append(body, "┃    "+paint(muted, "OpenSpec: workspace에 spec·workflow 파일 초기화"))
+				break
+			}
+		}
+		mark := "○"
+		if m.Result.Apply {
+			mark = "✓"
+		}
+		focus = len(body)
+		body = append(body, "┃  "+paint(pink, "›")+" "+paint(green, mark+" Paseo provider 등록 및 reload"), "┃    "+paint(muted, "Enter: 이미지 빌드 → template 로드 → sandbox 생성"))
+	}
+	agents := strings.Join(chosen, ", ")
+	if agents == "" {
+		agents = "선택 전"
+	}
+	header := []string{paint("38;5;81;1", "PASEO SBX") + "  " + paint(muted, fmt.Sprintf("STEP %d / 4", m.Step+1)), paint(muted, "Workspace: "+m.Workspace), paint(muted, fmt.Sprintf("Memory: %s / sandbox · CPU: 2 · Agent: %s", m.Memory, agents))}
+	footer := []string{"", paint(muted, "↑/↓ 이동 · Space/x 선택 · Enter/Tab 다음 · Esc/Shift+Tab 이전"), paint(muted, "Ctrl+C 취소 · 최종 확인 화면에서 Enter로 생성")}
 	if m.Error != "" {
-		fmt.Fprintln(&b, "\n"+m.Error)
+		footer = append([]string{paint("38;5;203", m.Error)}, footer...)
 	}
-	fmt.Fprintln(&b, "\n↑/↓ 이동 · Space 선택 · Enter 다음 · Esc 이전 · Ctrl+C 취소")
-	v := tea.NewView(b.String())
+	if m.Height > 0 {
+		// Keep the active row visible even in a very short terminal.
+		if m.Height < len(header)+len(footer)+1 {
+			header = header[:min(1, max(0, m.Height-2))]
+			footer = footer[len(footer)-min(1, max(0, m.Height-len(header)-1)):]
+		}
+		available := max(1, m.Height-len(header)-len(footer))
+		if len(body) > available {
+			start := min(max(0, focus-available+min(3, available)), len(body)-available)
+			body = body[start : start+available]
+		}
+	}
+	lines := append(append(header, body...), footer...)
+	if m.Width > 0 {
+		for i, line := range lines {
+			lines[i] = ansi.Truncate(line, m.Width, "…")
+		}
+	}
+	v := tea.NewView(strings.Join(lines, "\n"))
 	v.AltScreen = true
 	return v
 }

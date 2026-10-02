@@ -109,7 +109,7 @@ func (c Catalog) Normalize(s Selection) (Selection, error) {
 		if !ok || !slices.Contains(m.Agents, p.Agent) {
 			return s, fmt.Errorf("unsupported pair %s/%s", p.Agent, p.Methodology)
 		}
-		if m.Installer != "git-plugin" && m.Installer != "gsd-core" && m.Installer != "none" {
+		if m.Installer != "git-plugin" && m.Installer != "gsd-core" && m.Installer != "openspec" && m.Installer != "none" {
 			return s, fmt.Errorf("unsupported methodology installer %q", m.Installer)
 		}
 		pairs[p.Agent+"-"+p.Methodology] = p

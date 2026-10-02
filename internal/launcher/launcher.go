@@ -13,6 +13,7 @@ import (
 	"os/signal"
 	"paseo-sbx/internal/config"
 	"paseo-sbx/internal/gateway"
+	"paseo-sbx/internal/sandboxupdate"
 	"path/filepath"
 	"strings"
 	"syscall"
@@ -453,6 +454,9 @@ func LaunchIO(runtime, profile string, args []string, in io.Reader, out, stderr 
 			return 1, err
 		}
 		defer cleanup()
+	}
+	if err := sandboxupdate.Update(runtime, entry, false, stderr); err != nil {
+		fmt.Fprintln(stderr, "paseo-sbx: update failed; launching installed agent:", err)
 	}
 	command := []string{"exec", "-i"}
 	for _, name := range []string{"PASEO_AGENT_ID", "PASEO_PARENT_AGENT_ID", "NO_BROWSER"} {

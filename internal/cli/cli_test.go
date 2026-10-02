@@ -121,6 +121,9 @@ func TestCommandLifecycle(t *testing.T) {
 	}
 	agy := reg.Profiles["antigravity-cli-native"]
 	commands, _ := os.ReadFile(filepath.Join(home, "sbx-commands"))
+	if strings.Count(string(commands), " openspec init ") != 1 || !strings.Contains(string(commands), "openspec init "+reg.Workspace+" --tools antigravity,claude,codex --profile core --no-animation") {
+		t.Fatalf("selected OpenSpec integrations were not initialized together: %s", commands)
+	}
 	if agy.Agent != "antigravity-cli" || !strings.Contains(string(commands), agy.Image+" --env GEMINI_API_KEY=proxy-managed shell "+reg.Workspace) {
 		t.Fatalf("Antigravity was not created as a shell sandbox: %s", commands)
 	}
@@ -142,7 +145,7 @@ func TestCommandLifecycle(t *testing.T) {
 	var current map[string]any
 	config.ReadJSON(filepath.Join(paseoHome, "config.json"), &current)
 	providers := current["agents"].(map[string]any)["providers"].(map[string]any)
-	if len(providers) != len(config.Profiles)-1 {
+	if len(providers) != 9 {
 		t.Fatal(providers)
 	}
 	if _, exists := providers["antigravity-cli-native"]; exists {

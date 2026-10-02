@@ -2,18 +2,42 @@
   "group": {
     "default": {
       "targets": [
+        "antigravity-cli-gsd-core",
         "antigravity-cli-native",
+        "antigravity-cli-openspec",
+        "antigravity-cli-ponytail",
         "antigravity-cli-superpowers",
         "claude-gsd-core",
+        "claude-openspec",
         "claude-ponytail",
         "claude-superpowers",
         "codex-gsd-core",
+        "codex-openspec",
         "codex-ponytail",
         "codex-superpowers"
       ]
     }
   },
   "target": {
+    "antigravity-cli-gsd-core": {
+      "args": {
+        "AGENT": "antigravity-cli",
+        "AGENT_VERSION": "1.2.14",
+        "BASE_IMAGE": "docker.io/docker/sandbox-templates:codex@sha256:a68b972a59148c6359ade441387159033f6d196d48aef9dda06d2d4bb26eb41e",
+        "METHOD_INSTALLER": "gsd-core",
+        "TOOL": "gsd-core",
+        "UTILITIES": ""
+      },
+      "context": ".",
+      "dockerfile": "Dockerfile",
+      "platforms": [
+        "linux/amd64",
+        "linux/arm64"
+      ],
+      "tags": [
+        "paseo-sbx/antigravity-cli-gsd-core:2026.09.30-e0d6401e0639"
+      ]
+    },
     "antigravity-cli-native": {
       "args": {
         "AGENT": "antigravity-cli",
@@ -30,7 +54,45 @@
         "linux/arm64"
       ],
       "tags": [
-        "paseo-sbx/antigravity-cli-native:2026.09.30-4ceb7cbcbe04"
+        "paseo-sbx/antigravity-cli-native:2026.09.30-66b7c678f967"
+      ]
+    },
+    "antigravity-cli-openspec": {
+      "args": {
+        "AGENT": "antigravity-cli",
+        "AGENT_VERSION": "1.2.14",
+        "BASE_IMAGE": "docker.io/docker/sandbox-templates:codex@sha256:a68b972a59148c6359ade441387159033f6d196d48aef9dda06d2d4bb26eb41e",
+        "METHOD_INSTALLER": "openspec",
+        "TOOL": "openspec",
+        "UTILITIES": ""
+      },
+      "context": ".",
+      "dockerfile": "Dockerfile",
+      "platforms": [
+        "linux/amd64",
+        "linux/arm64"
+      ],
+      "tags": [
+        "paseo-sbx/antigravity-cli-openspec:2026.09.30-98c7e8126768"
+      ]
+    },
+    "antigravity-cli-ponytail": {
+      "args": {
+        "AGENT": "antigravity-cli",
+        "AGENT_VERSION": "1.2.14",
+        "BASE_IMAGE": "docker.io/docker/sandbox-templates:codex@sha256:a68b972a59148c6359ade441387159033f6d196d48aef9dda06d2d4bb26eb41e",
+        "METHOD_INSTALLER": "git-plugin",
+        "TOOL": "ponytail",
+        "UTILITIES": ""
+      },
+      "context": ".",
+      "dockerfile": "Dockerfile",
+      "platforms": [
+        "linux/amd64",
+        "linux/arm64"
+      ],
+      "tags": [
+        "paseo-sbx/antigravity-cli-ponytail:2026.09.30-26c7b2a9c5eb"
       ]
     },
     "antigravity-cli-superpowers": {
@@ -49,7 +111,7 @@
         "linux/arm64"
       ],
       "tags": [
-        "paseo-sbx/antigravity-cli-superpowers:2026.09.30-141ea661f5be"
+        "paseo-sbx/antigravity-cli-superpowers:2026.09.30-1ce70f410c73"
       ]
     },
     "claude-gsd-core": {
@@ -68,7 +130,26 @@
         "linux/arm64"
       ],
       "tags": [
-        "paseo-sbx/claude-gsd-core:2026.09.30-16178c2233ec"
+        "paseo-sbx/claude-gsd-core:2026.09.30-4dbfc2b22c13"
+      ]
+    },
+    "claude-openspec": {
+      "args": {
+        "AGENT": "claude",
+        "AGENT_VERSION": "2.1.285",
+        "BASE_IMAGE": "docker.io/docker/sandbox-templates:claude-code@sha256:868e3f5ef10579e06903d42e86448851ed59319ab8b9fba6dea2772c449bb2a6",
+        "METHOD_INSTALLER": "openspec",
+        "TOOL": "openspec",
+        "UTILITIES": ""
+      },
+      "context": ".",
+      "dockerfile": "Dockerfile",
+      "platforms": [
+        "linux/amd64",
+        "linux/arm64"
+      ],
+      "tags": [
+        "paseo-sbx/claude-openspec:2026.09.30-0c113aa4e755"
       ]
     },
     "claude-ponytail": {
@@ -87,7 +168,7 @@
         "linux/arm64"
       ],
       "tags": [
-        "paseo-sbx/claude-ponytail:2026.09.30-b224f8b80696"
+        "paseo-sbx/claude-ponytail:2026.09.30-a46c7ba0a828"
       ]
     },
     "claude-superpowers": {
@@ -106,7 +187,7 @@
         "linux/arm64"
       ],
       "tags": [
-        "paseo-sbx/claude-superpowers:2026.09.30-bfbd9d90ca87"
+        "paseo-sbx/claude-superpowers:2026.09.30-8bf283c91b82"
       ]
     },
     "codex-gsd-core": {
@@ -125,7 +206,26 @@
         "linux/arm64"
       ],
       "tags": [
-        "paseo-sbx/codex-gsd-core:2026.09.30-497b8ba6581f"
+        "paseo-sbx/codex-gsd-core:2026.09.30-459845e93691"
+      ]
+    },
+    "codex-openspec": {
+      "args": {
+        "AGENT": "codex",
+        "AGENT_VERSION": "0.159.2",
+        "BASE_IMAGE": "docker.io/docker/sandbox-templates:codex@sha256:a68b972a59148c6359ade441387159033f6d196d48aef9dda06d2d4bb26eb41e",
+        "METHOD_INSTALLER": "openspec",
+        "TOOL": "openspec",
+        "UTILITIES": ""
+      },
+      "context": ".",
+      "dockerfile": "Dockerfile",
+      "platforms": [
+        "linux/amd64",
+        "linux/arm64"
+      ],
+      "tags": [
+        "paseo-sbx/codex-openspec:2026.09.30-5714ba35cef4"
       ]
     },
     "codex-ponytail": {
@@ -144,7 +244,7 @@
         "linux/arm64"
       ],
       "tags": [
-        "paseo-sbx/codex-ponytail:2026.09.30-8cd0d60a6b08"
+        "paseo-sbx/codex-ponytail:2026.09.30-15925245109e"
       ]
     },
     "codex-superpowers": {
@@ -163,7 +263,7 @@
         "linux/arm64"
       ],
       "tags": [
-        "paseo-sbx/codex-superpowers:2026.09.30-2a5c502f8c23"
+        "paseo-sbx/codex-superpowers:2026.09.30-2136aa539fe6"
       ]
     }
   }

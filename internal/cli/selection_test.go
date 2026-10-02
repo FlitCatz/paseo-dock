@@ -6,8 +6,69 @@ import (
 	"os"
 	"paseo-sbx/internal/config"
 	"path/filepath"
+	"strings"
 	"testing"
 )
+
+func TestOpenSpecFailurePreservesActivationAndCanRetry(t *testing.T) {
+	root, home, workspace, fake := t.TempDir(), t.TempDir(), t.TempDir(), t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("PATH", fake+":"+os.Getenv("PATH"))
+	b, err := os.ReadFile("../../versions.lock.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "versions.lock.json"), b, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(root, "bin"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "bin", "agent-wrapper"), []byte("wrapper"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	// The marker simulates a project initialization failure, not a create failure.
+	script := "#!/bin/sh\nif [ \"$1\" = ls ]; then echo '[]'; fi\nif [ \"$1\" = exec ] && [ -f \"$HOME/fail-init\" ]; then exit 1; fi\n"
+	if err := os.WriteFile(filepath.Join(fake, "sbx"), []byte(script), 0700); err != nil {
+		t.Fatal(err)
+	}
+	invoke := func(profile string) (int, string) {
+		t.Helper()
+		var stderr bytes.Buffer
+		code := Run(root, []string{"create", "--workspace", workspace, "--profile", profile}, &bytes.Buffer{}, &bytes.Buffer{}, &stderr)
+		return code, stderr.String()
+	}
+	if code, stderr := invoke("codex-superpowers"); code != 0 {
+		t.Fatal(stderr)
+	}
+	if err := os.WriteFile(filepath.Join(home, "fail-init"), nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if code, stderr := invoke("antigravity-cli-openspec"); code == 0 || !strings.Contains(stderr, "OpenSpec initialization failed") {
+		t.Fatalf("%d %s", code, stderr)
+	}
+	w, _ := config.Canonical(workspace)
+	runtime, _ := config.RuntimePath(w)
+	var registry config.Registry
+	if err := config.ReadJSON(filepath.Join(runtime, "registry.json"), &registry); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(registry.ActiveProfiles(), ",") != "codex-superpowers" || registry.Profiles["antigravity-cli-openspec"].Sandbox == "" {
+		t.Fatal(registry)
+	}
+	if err := os.Remove(filepath.Join(home, "fail-init")); err != nil {
+		t.Fatal(err)
+	}
+	if code, stderr := invoke("antigravity-cli-openspec"); code != 0 {
+		t.Fatal(stderr)
+	}
+	if err := config.ReadJSON(filepath.Join(runtime, "registry.json"), &registry); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(registry.ActiveProfiles(), ",") != "antigravity-cli-openspec" {
+		t.Fatal(registry)
+	}
+}
 
 func TestBuildUsesOnlySelectedPairs(t *testing.T) {
 	var out, stderr bytes.Buffer

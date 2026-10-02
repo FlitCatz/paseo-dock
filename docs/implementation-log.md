@@ -219,3 +219,85 @@ native image의 sbx 로드·공식 CLI 실행도 확인했다.
 checksum을 확인한 뒤 플러그인 → 공용 launcher → sbx의 native 응답을 확인했다.
 cwd는 등록한 workspace, HOME은 `/home/agent`였고 plugin 파일은 guest 임시 경로로
 전달됐다. 실제 Google 로그인과 모델 요청은 수행하지 않았다.
+
+## 2026-10-01 Antigravity의 GSD Core·Ponytail 선택 제한 수정
+
+지원 여부를 확인하지 않고 두 방법론을 catalog에서 제외한 판단을 바로잡았다.
+현재 고정 버전 GSD Core 1.15.0은 `--antigravity --global`을 지원하고,
+Ponytail 4.10.0의 고정 revision에는 `gemini-extension.json`이 포함되어 있다.
+catalog·TUI·CLI·Bake 목록에 두 조합을 추가하고 공용 설치 script를 수정했다.
+GSD config는 `antigravity-cli`로 지정하며 생성된 스킬의 기본 runtime 참조가
+해석되도록 guest 안에 `antigravity` 경로를 연결한다. Ponytail은 고정 local checkout을
+공식 `agy plugin install`로 설치한다.
+
+검증: Go race 테스트·vet 통과, 두 arm64 이미지 실제 빌드 성공.
+GSD의 skill·agent·workflow 참조·CLI settings·MCP config와 runtime marker를 확인했다.
+Ponytail은 agy plugin list에 등록되어 있고 공식 validator가 skills·commands를 확인했다.
+GSD upstream 설치기는 일부 파일의 `.claude` 참조 잔존 경고를 출력한다.
+실제 계정 인증 및 모델을 통한 GSD·Ponytail workflow 실행은 검증하지 않았다.
+
+## 2026-10-01 OpenSpec 선택과 전체 목록을 유지하는 컬러 TUI
+
+사용자가 제시한 Charm 선택 화면처럼 Agent·Methodology·Utility를 연속으로 표시하고
+현재 그룹만 강조한다. 선택한 agent마다 방법론 그룹을 표시하며 이전 단계에서도
+체크 상태를 유지한다. 보라색 제목·초록색 체크·분홍색 커서·회색 안내를 사용하고
+NO_COLOR를 존중한다. 80×24 터미널에서 초기 항목을 모두 표시하며 더 작은 화면에서는
+현재 항목을 따라 스크롤하고 ANSI·한글 너비를 고려해 자른다.
+Space/x로 체크, Enter/Tab으로 다음 그룹, Esc/Shift+Tab으로 이전 그룹으로 이동한다.
+최종 확인에서는 Enter로만 생성하며 Tab이 실수로 자원을 생성하지 않는다.
+
+OpenSpec 1.14.0을 lock에 추가하고 Codex·Claude·Antigravity의 선택 및 Bake target에
+연결했다. 기존 이미지 설치 script에서 공식 npm 패키지를 설치하고, Go create가
+sandbox 안에서 공식 init을 실행한다. 선택한 도구를 한 번에 전달하고 core profile을
+사용한다. workspace의 openspec/과 에이전트별 skills·commands/workflows를 초기화하며
+telemetry는 끈다. 초기화 실패 시 기존 활성 조합을 보존하고 sandbox 기록을 남긴다.
+호스트 구현 및 테스트는 Go이며 호스트 Node/OpenSpec 런타임을 추가하지 않았다.
+
+검증: 전체 Go race 테스트·vet·make build 통과. 선택 보존·Tab/Shift+Tab·색상 및
+NO_COLOR·24줄 화면과 작은 화면·OpenSpec 실패 후 활성화 보존 및 재시도를 검증했다.
+실제 PTY에서 전체 목록·체크·컬러·그룹 이동 및 취소를 확인했다.
+세 OpenSpec arm64 이미지를 실제 빌드하고 각 에이전트의 프로젝트 초기화를 확인했다.
+복수 도구 초기화에서 Antigravity/Codex 공유 skills와 Claude 전용 commands를 확인했다.
+Antigravity OpenSpec 이미지를 sbx에 로드하고 임시 프로젝트에서 Go create → sbx →
+OpenSpec 파일 생성까지 검증했다. 임시 sandbox와 등록 기록은 검증 후 정리했다.
+실제 모델 요청·계정 인증 및 amd64 이미지 실행은 수행하지 않았다.
+
+## 2026-10-01 Antigravity RTK 선택 제한 수정
+
+RTK 미지원을 확인 없이 단정했던 catalog·설치 제한을 수정했다.
+고정된 RTK 0.50.0 소스와 실제 바이너리는 `rtk init --agent antigravity`를
+지원한다. 이 버전은 전역 옵션을 거부하고 project-scoped 지침을 생성하며
+자동 명령 변경 hook은 제공하지 않는다. 생성한 rule에는 frontmatter가 없어서
+현재 Antigravity의 modular rules 요구사항을 그대로 충족하지 않는다.
+
+기존 utility 설치 script가 guest의 임시 디렉터리에서 공식 RTK 지침을 생성한 뒤,
+항상 활성인 `~/.gemini/GEMINI.md`에 내용을 추가하도록 변경했다.
+기존 sandbox 지침을 보존하며 호스트 설정이나 사용자 project 파일을 변경하지 않는다.
+catalog에서 모든 Antigravity 방법론에 RTK를 허용하고 TUI·Go 설치 테스트를 수정했다.
+Headroom은 공급자 자체의 미지원으로 단정하지 않고, 현재 프로젝트에 Antigravity
+MCP 연동이 구현되지 않은 상태임을 명시한다. 해당 요청은 설치 전에 거부한다.
+
+근거: [RTK 0.50.0 설치 소스](https://github.com/rtk-ai/rtk/blob/v0.50.0/src/hooks/init.rs),
+[Antigravity 전역 규칙](https://www.antigravity.google/docs/rules/).
+검증: 전체 Go race 테스트·vet·make build·diff check 통과.
+Antigravity native·OpenSpec + RTK arm64 이미지를 실제 빌드했다.
+각 이미지에서 global GEMINI 지침의 RTK 부분을 공식 awareness 파일과 바이트 단위로
+비교하고, 기존 delegation 지침 및 설치 marker와 `rtk git status` 실행을 확인했다.
+실제 계정 인증·모델 호출·모델의 지침 준수 여부 및 amd64 이미지 실행은 검증하지 않았다.
+
+## 2026-10-02 기존 sandbox 내부 업데이트
+
+Go launcher와 shell 진입에 sandbox별 하루 한 번 자동 업데이트를 연결하고,
+workspace 전체 또는 단일 profile을 즉시 갱신하는 `update` 명령을 추가했다.
+Codex·Claude·OpenSpec npm 패키지, Antigravity 공식 release manifest,
+Superpowers·Ponytail Git checkout과 plugin, GSD 전역 installer, RTK·Headroom을 처리한다.
+별도 설치·검증 후 실행 파일을 전환하고, 자동 실패 시 기존 agent로 실행을 계속한다.
+중복 설치 lock, 실패 후 한 시간 재시도, 실제 버전·실패 기록을 추가했다.
+Node·Python·uv·OS·base image는 이미지 고정 구성을 유지한다.
+
+검증: 전체 Go race 테스트·vet·build·diff check 통과. 폐기용 Docker 컨테이너에서
+Codex·Claude의 최신 설치 및 실행 전환, 실제 Git revision 변경 후 Codex·Claude plugin
+재설치, GSD·OpenSpec·Antigravity·RTK·Headroom 설치와 검증을 확인했다.
+Codex plugin cache의 overlay rename 오류는 제거·재설치로 처리한다.
+Antigravity는 공식 installer의 manifest를 Go에서 처리하여 shell profile을 변경하지 않는다.
+기존 사용자 sandbox나 Paseo 설정에는 검증 결과를 배포하지 않았다.

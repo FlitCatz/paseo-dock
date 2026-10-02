@@ -9,10 +9,21 @@ mkdir -p "$marketplace_dir/plugins" "$HOME/.codex" "$HOME/.claude"
 
 if [[ "$method_installer" == none ]]; then
   :
+elif [[ "$method_installer" == openspec ]]; then
+  openspec_package=$(node -e 'console.log(require(process.argv[1]).tools[process.argv[2]].package)' "$lock_file" "$tool_kind")
+  openspec_version=$(node -e 'console.log(require(process.argv[1]).tools[process.argv[2]].version)' "$lock_file" "$tool_kind")
+  npm install --global --prefix "$HOME/.local" "$openspec_package@$openspec_version"
 elif [[ "$method_installer" == gsd-core || ( -z "$method_installer" && "$tool_kind" == gsd-core ) ]]; then
   gsd_version=$(node -e 'console.log(require(process.argv[1]).tools[process.argv[2]].version)' "$lock_file" "$tool_kind")
   gsd_package=$(node -e 'console.log(require(process.argv[1]).tools[process.argv[2]].package)' "$lock_file" "$tool_kind")
-  npx --yes "$gsd_package@$gsd_version" "--$agent_kind" --global
+  if [[ "$agent_kind" == antigravity-cli ]]; then
+    ANTIGRAVITY_CONFIG_DIR="$HOME/.gemini/antigravity-cli" \
+      npx --yes "$gsd_package@$gsd_version" --antigravity --global
+    # GSD 1.15.0's generated @ references retain its default runtime root.
+    ln -s antigravity-cli "$HOME/.gemini/antigravity"
+  else
+    npx --yes "$gsd_package@$gsd_version" "--$agent_kind" --global
+  fi
 else
   repo_url=$(node -e 'console.log(require(process.argv[1]).tools[process.argv[2]].repository)' "$lock_file" "$tool_kind")
   revision=$(node -e 'console.log(require(process.argv[1]).tools[process.argv[2]].revision)' "$lock_file" "$tool_kind")
@@ -38,6 +49,8 @@ NODE
   elif [[ "$agent_kind" == claude ]]; then
     claude plugin marketplace add "$marketplace_dir"
     claude plugin install "$tool_kind@paseo-sbx" --scope user
+  elif [[ "$agent_kind" == antigravity-cli && "$tool_kind" == ponytail ]]; then
+    agy plugin install "$marketplace_dir/plugins/$tool_kind"
   elif [[ "$agent_kind" == antigravity-cli && "$tool_kind" == superpowers ]]; then
     for dir in "$HOME/.gemini/antigravity-cli/skills"; do
       mkdir -p "$dir"

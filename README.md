@@ -10,11 +10,16 @@ TUI에서 agent·methodology·utility를 선택하고 해당 조합만 생성하
 | codex-superpowers | Codex | Superpowers |
 | codex-gsd-core | Codex | GSD Core |
 | codex-ponytail | Codex | Ponytail |
+| codex-openspec | Codex | OpenSpec |
 | claude-superpowers | Claude Code | Superpowers |
 | claude-gsd-core | Claude Code | GSD Core |
 | claude-ponytail | Claude Code | Ponytail |
+| claude-openspec | Claude Code | OpenSpec |
 | antigravity-cli-native | Antigravity CLI / Paseo native plugin | Native (methodology 없음) |
 | antigravity-cli-superpowers | Antigravity CLI / Paseo native plugin | Superpowers skills |
+| antigravity-cli-gsd-core | Antigravity CLI / Paseo native plugin | GSD Core |
+| antigravity-cli-ponytail | Antigravity CLI / Paseo native plugin | Ponytail plugin |
+| antigravity-cli-openspec | Antigravity CLI / Paseo native plugin | OpenSpec |
 
 ## 새 머신에 설치
 
@@ -42,9 +47,13 @@ TUI의 최종 확인 화면에서 **Paseo에 선택한 provider 등록 및 reloa
 ```
 
 터미널에서 선택 옵션 없이 `create`를 실행하면 Charmbracelet Bubble Tea TUI가 열립니다.
+Agent·methodology·utility 목록을 한 화면에 표시하고, 현재 선택 그룹을 강조합니다.
 Agent를 복수 선택하고, 각 agent에 사용할 methodology를 복수 선택한 뒤, 유틸리티를
-선택합니다. 방향키로 이동, Space로 선택, Enter로 다음 단계, Esc로 이전 단계,
-Ctrl+C로 취소합니다. 마지막 화면에 실제 생성할 조합과 Paseo 등록 여부가 표시됩니다.
+선택합니다. 방향키로 이동, Space 또는 x로 선택, Enter 또는 Tab으로 다음 그룹,
+Esc 또는 Shift+Tab으로 이전 그룹, Ctrl+C로 취소합니다. 체크 상태는 이전 그룹으로
+돌아가도 유지됩니다. 작은 터미널에서는 현재 항목을 따라 스크롤하고, `NO_COLOR=1`로
+색상을 끌 수 있습니다. 마지막 화면에 실제 생성할 조합과 Paseo 등록 여부가 표시되며,
+이 화면에서는 Enter로만 생성을 확정합니다.
 확정하면 선택한 이미지 빌드 → sbx template 로드 → sandbox 생성 순서로 실행합니다.
 이미 로드된 template을 사용하려면 `--skip-build`를 전달합니다.
 선택 옵션을 지정한 상태에서도 TUI를 열려면 `--interactive`를 전달합니다.
@@ -53,6 +62,21 @@ Ctrl+C로 취소합니다. 마지막 화면에 실제 생성할 조합과 Paseo 
 예를 들어 Codex에 Superpowers·Ponytail을 선택하면 sandbox 두 개만 생성합니다.
 모델 작업은 시작하지 않습니다. 기본 자원은 sandbox당 2 CPU와 2 GiB입니다.
 필요하면 `--memory 4g`로 늘립니다.
+
+OpenSpec은 세 에이전트 모두 지원합니다. 선택한 이미지에 `@fission-ai/openspec` 1.14.0을
+설치하고, sandbox 생성 후 공식 CLI로 해당 workspace의 프로젝트 파일을 초기화합니다.
+`openspec/`과 선택한 에이전트용 skills·commands/workflows를 생성하며 기존 프로젝트
+설정을 재사용합니다. 여러 OpenSpec 에이전트를 선택하면 한 번에 통합 초기화합니다.
+호스트에 Node/OpenSpec을 설치하지 않으며 telemetry는 끕니다. 초기화 실패 시 기존
+활성 선택을 유지하고, 생성한 sandbox 기록을 남겨 재시도할 수 있습니다.
+
+```bash
+./paseo-sbx create --workspace /path/to/project \
+  --profiles codex-openspec,claude-openspec,antigravity-cli-openspec --build
+```
+
+기본 workflow는 공식 `core` profile입니다. 사용법은
+[OpenSpec 공식 문서](https://github.com/Fission-AI/OpenSpec/blob/main/docs/cli.md)를 참고하세요.
 
 비대화형 실행에는 명시적인 선택 또는 해당 workspace에 저장된 선택이 필요합니다.
 선택 없이 전체 조합을 자동 생성하지 않습니다.
@@ -120,6 +144,50 @@ make build
 Go Node 설치 도구를 포함한 새 이미지가 필요하면 `build`와 `load`를 실행합니다.
 이미 실행 중인 sandbox의 이미지는 자동 교체하지 않습니다.
 
+## 기존 sandbox 내부 자동 업데이트
+
+Paseo launcher가 agent 세션을 시작하거나 `paseo-sbx shell`로 들어갈 때,
+sandbox별로 하루 한 번 agent·설치된 methodology·선택한 utility를 업데이트합니다.
+이미지를 다시 만들거나 sandbox를 삭제하지 않으므로 기존 로그인과 세션을 유지합니다.
+버전 조회(`--version`)는 업데이트를 실행하지 않습니다. 변경된 launcher를 기존 설치에
+적용하려면 `make build` 후 위의 `register --workspace /project --apply`를 실행합니다.
+
+즉시 갱신하려면 다음 명령을 사용합니다. profile을 생략하면 해당 workspace의 모든
+활성 조합을 갱신합니다. 일부 조합이 실패해도 나머지는 처리하고 실패 종료 코드를 반환합니다.
+
+```bash
+./paseo-sbx update --workspace /path/to/project
+./paseo-sbx update --workspace /path/to/project --profile codex-superpowers
+```
+
+Codex·Claude·OpenSpec은 npm의 `latest` 버전을 조회합니다. 새 버전은 사용자 소유의
+별도 디렉터리에 설치하고 `--version` 검증 후 `~/.local/bin`의 실행 파일을 원자적으로
+전환합니다. 이미 최신 버전이면 다시 설치하지 않습니다. GSD Core는 최신 npm 버전의
+공식 전역 설치기를 실행합니다. Superpowers·Ponytail은 설치된 Git repository의 기본
+branch HEAD로 갱신하고 agent별 plugin 등록을 갱신합니다. checkout에 로컬 변경이 있으면
+덮어쓰지 않고 해당 methodology의 업데이트 실패를 기록합니다.
+
+Antigravity는 [공식 설치기](https://antigravity.google/docs/cli/install/)가 사용하는 최신
+release manifest에서 바이너리를 다운로드하여 SHA512 검증 후 전환합니다. shell profile은
+변경하지 않습니다. RTK는 최신 GitHub release의 아키텍처별 바이너리를 SHA256 검증 후
+전환합니다. Headroom은 하위 의존성까지 새 버전을 확인하고 변경이 있으면 기존 Python으로
+새 가상환경에 최신 패키지를 설치하고 검증 후 전환합니다.
+Node·Python·uv·OS 패키지·base image는 이 업데이트 대상이 아니며 이미지의 고정 구성을
+사용합니다. OpenSpec의 프로젝트 파일은 자동 재생성하지 않습니다.
+
+같은 sandbox의 중복 업데이트는 호스트 파일 lock으로 막습니다. 업데이트는 sandbox당
+최대 3분이며, 자동 업데이트 실패 시 설치된 agent로 실행을 계속하고 한 시간 뒤 재시도합니다.
+npm agent·Antigravity·OpenSpec·RTK·Headroom의 설치·검증 실패는 기존 실행 파일을 보존합니다.
+GSD·plugin 설치기는 자체 설정을 변경하므로 전체 구성의 transaction을 보장하지
+않습니다. 이미 실행 중인 agent는 다음 세션부터 새 버전을 사용합니다.
+
+업데이트 확인 시각·실제 버전·실패 정보는 호스트 runtime의 `updates/*.json`에 저장합니다.
+guest의 기존 `installed.json`과 `versions.lock.json`은 이미지 최초 설치 기록입니다.
+업데이트 로그는 stderr로만 출력하며 Paseo 통신 stdout에 섞지 않습니다.
+이전의 별도 설치 디렉터리는 실행 중 세션을 위해 보존합니다.
+호스트 launcher 환경에 `PASEO_SBX_AUTO_UPDATE=0`을 설정하면 자동 갱신을 끕니다.
+수동 `update`는 이 설정과 확인 간격에 관계없이 실행합니다.
+
 선택 기능 도입 전에 생성한 workspace에는 저장된 선택이 없습니다. 최초 빌드·생성에는
 TUI 또는 `--profiles` 등으로 조합을 지정해야 합니다. 기존 날짜만 포함한 이미지 태그와
 새 구성 hash 태그가 다르면 `create`가 재사용을 거부합니다. 새 workspace에 필요한 조합을
@@ -140,6 +208,10 @@ Docker 실행 없이 생성할 Bake 설정을 확인하려면 다음 명령을 �
 ## 유틸리티와 확장
 
 RTK는 고정 버전 바이너리를 설치하고 Codex·Claude의 공식 agent integration을 설정합니다.
+Antigravity에서도 모든 방법론과 함께 선택할 수 있습니다. RTK 0.50.0의 공식
+Antigravity 지침을 생성하여 sandbox 내부 `~/.gemini/GEMINI.md`에 추가합니다.
+이 연동은 에이전트가 `rtk` 명령을 사용하도록 안내하는 방식입니다. 기존 sandbox 지침은
+보존하고 호스트 설정과 프로젝트 파일은 변경하지 않습니다.
 Headroom은 고정 버전 uv로 sandbox 내부에 전용 Python 런타임과 가상환경을 설치합니다.
 호스트 CLI·launcher는 Go이며 호스트에 Headroom용 Python을 설치하지 않습니다.
 Headroom을 선택하지 않은 이미지에는 이 전용 런타임을 추가하지 않습니다.
@@ -225,8 +297,14 @@ Paseo 플러그인의 계정 화면은 호스트 계정을 관리하므로 sandb
 Antigravity 공급자를 직접 선택하면 호스트 CLI가 실행됩니다. SBX 에이전트는 위 `run`
 명령으로 생성하고 이후 앱에서 사용합니다. daemon을 재시작하거나 플러그인 코드를 수정하지 않습니다.
 
-Superpowers는 `antigravity-cli-superpowers`로 선택하며 스킬은
-`~/.gemini/antigravity-cli/skills`에 설치합니다. GSD Core·Ponytail·RTK·Headroom은 지원하지 않습니다.
+방법론은 `antigravity-cli-superpowers`, `antigravity-cli-gsd-core`,
+`antigravity-cli-ponytail`, `antigravity-cli-openspec` 중에서 선택합니다. Superpowers 스킬은
+`~/.gemini/antigravity-cli/skills`에 설치합니다. GSD Core는 고정 버전의 공식
+`--antigravity --global` 설치기를 사용하고 CLI config 경로를 명시합니다.
+GSD가 생성하는 기본 경로 참조는 sandbox 안의 `~/.gemini/antigravity`를
+`antigravity-cli`에 연결하여 해석합니다.
+Ponytail은 고정 revision의 local checkout을 `agy plugin install`로 설치합니다.
+RTK는 `--utilities rtk`로 선택합니다. Headroom의 Antigravity MCP 연동은 아직 구현하지 않았습니다.
 첨부·schema·명령용 스킬 파일은 플러그인 data 디렉터리에서 임시 guest 디렉터리로 복사합니다.
 workspace 밖의 일반 추가 디렉터리는 거부합니다. 플러그인의 모델 목록·호스트 전역 설정은
 호스트 기준이며 sandbox 계정과 다를 수 있습니다. guest의 대화 기록 파일을 호스트에
@@ -359,7 +437,7 @@ Git에서 제외됩니다. Workflow의 `publish`를 켜서 수동 실행하면 �
 이미지 이름은 `ghcr.io/<owner>/<repository>/<profile>:2026.09.30-<config-hash>`입니다.
 정확한 이름은 같은 선택으로 `build --print-bake`를 실행해 확인합니다.
 CI는 카탈로그에서 지원하는 조합을 읽어 유틸리티 없는 이미지를 각각 빌드합니다.
-현재 기본 카탈로그에는 여섯 조합이 있습니다. utilities를 포함해 게시하려면 아래처럼
+현재 기본 카탈로그에는 열세 조합이 있습니다. utilities를 포함해 게시하려면 아래처럼
 호스트 CLI의 `--utilities`로 지정합니다.
 
 이미지는 `linux/amd64`, `linux/arm64` 두 플랫폼으로 빌드합니다. 호스트에서 직접

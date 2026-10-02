@@ -35,6 +35,10 @@
       "package": "@opengsd/gsd-core",
       "version": "1.15.0"
     },
+    "openspec": {
+      "package": "@fission-ai/openspec",
+      "version": "1.14.0"
+    },
     "native": {
       "version": "builtin"
     }
