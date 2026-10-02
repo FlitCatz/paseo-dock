@@ -46,7 +46,7 @@ func TestVersionsDoesNotInstall(t *testing.T) {
 	if !warningBeforeProbe || len(result.Warnings) == 0 {
 		t.Fatal("guest-start warning missing before first exec")
 	}
-	if result.Versions["agent"] != "codex-cli 2.0.0" || result.Versions["methodology"] != "aabbccdd" || result.Versions["rtk"] != "rtk 0.99.0" || len(result.VersionErrors) != 0 {
+	if result.Versions["agent"] != "codex-cli 2.0.0" || result.Versions["methodology"] != "aabbccdd" || result.Versions["utility:rtk"] != "rtk 0.99.0" || len(result.VersionErrors) != 0 {
 		t.Fatalf("probes lost: %+v", result)
 	}
 	if result.VersionCheckedAt.Before(began) || result.VersionCheckedAt.After(time.Now()) {
@@ -148,5 +148,73 @@ func TestVersionsMalformedUtilityManifestIsErrorWithEmptySelection(t *testing.T)
 	result, err := s.Execute(context.Background(), Request{Kind: KindVersions, Target: target}, nil)
 	if err == nil || result.VersionErrors["utilities"] == "" {
 		t.Fatalf("malformed installed manifest suppressed: %+v %v", result, err)
+	}
+}
+
+// Utility IDs are valid custom names but must not overwrite reserved confirmations or errors.
+func TestVersionsUtilityIDsCannotOverwriteComponentProvenance(t *testing.T) {
+	for _, tc := range []struct {
+		name, manifest    string
+		rtk, headroom     observedResponse
+		wantVersions      map[string]string
+		wantUtilityErrors []string
+	}{
+		{name: "success", manifest: `{"agent":"codex","utilities":{"agent":{"installer":"rtk"},"methodology":{"installer":"headroom"}}}`, rtk: observedResponse{Output: "rtk 0.99.0"}, headroom: observedResponse{Output: "headroom 3.0.0"}, wantVersions: map[string]string{"agent": "codex-cli 2.0.0", "utility:agent": "rtk 0.99.0", "utility:methodology": "headroom 3.0.0"}},
+		{name: "probe-errors", manifest: `{"agent":"codex","utilities":{"agent":{"installer":"rtk"},"methodology":{"installer":"headroom"}}}`, rtk: observedResponse{Error: true}, headroom: observedResponse{Error: true}, wantVersions: map[string]string{"agent": "codex-cli 2.0.0"}, wantUtilityErrors: []string{"utility:agent", "utility:methodology"}},
+		{name: "metadata-errors", manifest: `{"agent":"codex","utilities":{"agent":[],"methodology":{"installer":"unsupported"}}}`, wantVersions: map[string]string{"agent": "codex-cli 2.0.0"}, wantUtilityErrors: []string{"utility:agent", "utility:methodology"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s, target, log := observationFixture(t)
+			target.Profile = "codex-gsd-core"
+			target.Entry.Tool = "gsd-core"
+			writeTarget(t, target)
+			observationResponses(t, map[string]observedResponse{
+				"sbx exec --workdir /tmp one printenv HOME":                                                   {Output: "/home/agent"},
+				"sbx exec --workdir /tmp one codex --version":                                                 {Output: "codex-cli 2.0.0"},
+				"sbx exec --workdir /tmp one cat /home/agent/.local/share/paseo-sbx/installed.json":           {Output: `{"agent":"codex","tool":"gsd-core","lock":{"schema":1,"tools":{"gsd-core":{"package":"gsd-core","version":"image-only"}}}}`},
+				"sbx exec --workdir /tmp one cat /home/agent/.local/share/paseo-sbx/utilities/installed.json": {Output: tc.manifest},
+				"sbx exec --workdir /tmp one rtk --version":                                                   tc.rtk,
+				"sbx exec --workdir /tmp one headroom --version":                                              tc.headroom,
+				"sbx ls --json": {Output: `[]`},
+			})
+			var warnedBeforeExec bool
+			result, err := s.Execute(context.Background(), Request{Kind: KindVersions, Target: target}, func(e Event) {
+				if e.Stage == "warning" {
+					b, _ := os.ReadFile(log)
+					warnedBeforeExec = len(b) == 0 && strings.Contains(e.Text, "start")
+				}
+			})
+			if err == nil {
+				t.Fatal("GSD unconfirmed error lost")
+			}
+			if !reflect.DeepEqual(result.Versions, tc.wantVersions) {
+				t.Fatalf("utility ID overwrote component confirmation: got %v want %v", result.Versions, tc.wantVersions)
+			}
+			if result.VersionErrors["agent"] != "" || !strings.Contains(result.VersionErrors["methodology"], "unconfirmed") {
+				t.Fatalf("utility ID overwrote component error: %v", result.VersionErrors)
+			}
+			if len(result.VersionErrors) != 1+len(tc.wantUtilityErrors) {
+				t.Fatalf("unscoped utility errors: %v", result.VersionErrors)
+			}
+			for _, key := range tc.wantUtilityErrors {
+				if result.VersionErrors[key] == "" || !strings.Contains(err.Error(), key+":") {
+					t.Fatalf("utility error missing namespace: %v; %v", result.VersionErrors, err)
+				}
+			}
+			if !warnedBeforeExec || len(result.Warnings) == 0 || result.VersionCheckedAt.IsZero() {
+				t.Fatal("warning or actual confirmation timestamp lost")
+			}
+			// A fresh Service poll reads the actual persisted ledger, including the namespace.
+			restarted := *s
+			_, row := snapshotRow(t, &restarted, Query{PaseoHome: t.TempDir()})
+			if row.VersionCheck == nil || !reflect.DeepEqual(row.VersionCheck.Versions, tc.wantVersions) || row.VersionCheck.Errors["agent"] != "" || !strings.Contains(row.VersionCheck.Errors["methodology"], "unconfirmed") || len(row.VersionCheck.Errors) != 1+len(tc.wantUtilityErrors) {
+				t.Fatalf("persisted provenance collision: %+v", row.VersionCheck)
+			}
+			for _, key := range tc.wantUtilityErrors {
+				if row.VersionCheck.Errors[key] == "" {
+					t.Fatalf("persisted utility error lacks namespace: %+v", row.VersionCheck)
+				}
+			}
+		})
 	}
 }

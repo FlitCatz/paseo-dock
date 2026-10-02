@@ -135,12 +135,15 @@ func (a *execution) checkVersions(target Target) (Result, error) {
 		} else {
 			ids := sortedRawKeys(utilities.Utilities)
 			for _, id := range ids {
+				// Utility IDs may equal component names; reserve those keys for
+				// their actual probes in results, errors and the persisted ledger.
+				key := "utility:" + id
 				var utility struct {
 					Installer string `json:"installer"`
 				}
 				err = json.Unmarshal(utilities.Utilities[id], &utility)
 				if err != nil {
-					fail(id, err)
+					fail(key, err)
 					continue
 				}
 				if utility.Installer == "" {
@@ -148,9 +151,9 @@ func (a *execution) checkVersions(target Target) (Result, error) {
 				}
 				switch utility.Installer {
 				case "rtk", "headroom":
-					confirm(id, utility.Installer, "--version")
+					confirm(key, utility.Installer, "--version")
 				default:
-					fail(id, fmt.Errorf("unsupported utility version probe %s", utility.Installer))
+					fail(key, fmt.Errorf("unsupported utility version probe %s", utility.Installer))
 				}
 			}
 		}
