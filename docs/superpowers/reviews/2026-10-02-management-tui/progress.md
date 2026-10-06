@@ -127,3 +127,26 @@ Task 6: implementation commit 3155087; review /root/review_task_6 clean on spec 
 Task 6: minor (deferred): task-6-report.md overstates isolation/path checks as before every mutation; live-verify.go preflights once and proxies enforce per-call target/home guards. Final reviewer must triage.
 Task 6: live criterion partially unverified: disposable create/stop/shell/register/unregister succeeded; explicit update failed on upstream Antigravity manifest HTTP 403, while isolated managed Codex/Claude provider install lacked an exact matching loaded template. PTY, bounds, NO_COLOR, required make test/vet/build passed. Live disposable sandbox and isolated daemon remain reported.
 Task 6: complete (commits e485597..3155087, review clean; upstream live-update criterion unverified).
+
+## 2026-10-06 final review disposition
+
+Final whole-branch review at `.superpowers/sdd/2026-10-02-management-tui/final-review.md`
+identified I1–I3 and M1–M2. The preserved working-tree fixes and regression tests were
+verified and committed as `89c92fb`. I1 covers actual CLI/launcher signal entrypoints and
+host descendant cleanup; I2 restores the explicit CLI stop-profile requirement; I3 lets
+existing targets be managed despite an obsolete saved image selection. M1 retains provider
+configuration causes; M2 displays failed version-check errors without fabricating a
+successful check time. A separate independent read-only re-review found no concrete
+remaining regression in these scoped changes.
+
+Focused regression tests passed for signal cancellation, omitted stop profile, historical
+selection management, provider diagnostics and failed-version persistence. The full
+`make test` race suite, `make vet` and `make build` each exited 0 with a writable temporary
+Go cache and local socket access. The restricted first attempt could not open the Go cache;
+a second restricted focused run could not bind the launcher relay socket. Both were
+environment restrictions, and the same focused suite passed with the needed access.
+
+No new live sandbox/container operation was performed for this disposition. The historical
+Antigravity update HTTP 403 and managed Codex/Claude provider live-verification limits remain.
+The approved category split has its own plan at
+`docs/superpowers/plans/2026-10-06-runtime-categories.md`; implementation awaits plan review.
