@@ -13,7 +13,7 @@ No production behavior needed changing. Added terminal characterization tests an
 - `internal/process/process_test.go`: readiness/PID are acknowledged by the actual child through an inherited pipe; the parent forwards the confirmed PID; test verifies its process group before cancellation and verifies prompt termination of the stdout-holding group. This resolves the deferred Task 1 weakness without changing product code.
 - `go.mod`, `go.sum`: test-only `github.com/creack/pty v1.1.24`, exact version. Existing pinned UI dependencies retained. `go mod tidy` completed.
 - README, `docs/2026-10-02-management-tui-plan.md`, `docs/superpowers/plans/2026-10-02-management-tui.md`: actual user workflows and evidence/status.
-- Local artifacts in this directory: report, raw checks/PTY/live output, reproducible Go `live-verify.go` evidence helper. These are execution evidence, not a new production CLI.
+- Preserved artifacts in this directory: report, raw checks/PTY output and encoded live output. Reproducible Go evidence helpers are in [`internal/tui/testdata/management-tui-live/`](../../../../internal/tui/testdata/management-tui-live/). These are execution evidence, not a new production CLI. Command strings below retain their historical scratch paths; see [record-report.md](record-report.md) for the relocation record.
 
 ## Test-first / characterization evidence
 
@@ -162,7 +162,7 @@ rtk proxy docker info --format '{{.ServerVersion}}'
 exit 0
 ```
 
-Controller authorized child-only isolation with Go authentic external proxies and target/home guards. Before every mutation the helper verifies BaseDir/LauncherPath/root/PaseoConfig inside a new temp tree, distinct caller default base, and that the computed sandbox name is absent. Template choice required an exact match to current Lock/Catalog/normalized Selection; no live rebuild or retag. The matching selection was Antigravity CLI + Superpowers + RTK. SBX authentic child restores captured original HOME/PATH for authentication without modifying caller environment; Paseo authentic child retains isolated HOME and explicit isolated --home. No credentials are written or printed. The Go helper itself is preserved as `live-verify.go`.
+Controller authorized child-only isolation with Go authentic external proxies and target/home guards. Before the lifecycle sequence, the helper performs a one-time preflight verifying BaseDir/LauncherPath/root/PaseoConfig inside a new temp tree, distinct caller default base, and that the computed sandbox name is absent. Each subsequent proxy call enforces the permitted command and target/workspace/home guards; it does not repeat the absent-name or base/path preflight. Template choice required an exact match to current Lock/Catalog/normalized Selection; no live rebuild or retag. The matching selection was Antigravity CLI + Superpowers + RTK. SBX authentic child restores captured original HOME/PATH for authentication without modifying caller environment; Paseo authentic child retains isolated HOME and explicit isolated --home. No credentials are written or printed. The Go helper itself is preserved as [`live-verify.go`](../../../../internal/tui/testdata/management-tui-live/live-verify.go).
 
 ```text
 rtk proxy env GOCACHE=/private/tmp/paseo-sbx-management-go-cache go build -o /private/tmp/paseo-sbx-task6-live-verify .superpowers/sdd/2026-10-02-management-tui/live-verify.go
@@ -181,9 +181,9 @@ PREFLIGHT ONLY; no live resources mutated
 exit 0
 ```
 
-Actual run, authorized escalation, complete raw command/output trace in `task-6-live.log`:
+Actual run, authorized escalation, complete raw command/output trace preserved in [`task-6-live.json`](task-6-live.json):
 
-The byte-exact raw log is retained locally. Its complete UTF-8 content is also committed as the JSON string in `task-6-live.json`, preserving PTY carriage returns and terminal escapes while avoiding Git whitespace errors. `encode-live-log.go` records that reversible encoding; no output was dropped.
+The byte-exact raw log was retained locally in the scratch directory. Its complete UTF-8 content is committed as the JSON string in `task-6-live.json`, preserving PTY carriage returns and terminal escapes while avoiding Git whitespace errors. [`encode-live-log.go`](../../../../internal/tui/testdata/management-tui-live/encode-live-log.go) records that reversible encoding; no output was dropped. The redundant untracked raw live log is not part of this preserved record.
 
 ```text
 rtk proxy /private/tmp/paseo-sbx-task6-live-verify --run > .superpowers/sdd/2026-10-02-management-tui/task-6-live.log 2>&1

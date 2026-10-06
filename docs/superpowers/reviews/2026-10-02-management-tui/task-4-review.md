@@ -1,0 +1,42 @@
+### Spec Compliance
+
+- ❌ Issues found: workspace registration/unregistration does not revalidate the full confirmed mutation scope. `internal/tui/jobs.go:280` and `internal/tui/jobs.go:285` submit a frozen selected target and active target list, but the shared execution path checks only the selected target (`internal/operations/service.go:367`) and rereads current registry activation when applying provider changes (`internal/operations/providers.go:94`, `internal/operations/providers.go:104`). See Important I1.
+- ✅ Checked the other task contracts: request slices are copied before confirmation/enqueue/dispatch (`internal/tui/jobs.go:56`, `internal/tui/jobs.go:91`, `internal/tui/jobs.go:109`); FIFO dispatch permits one execution while snapshots remain independent (`internal/tui/jobs.go:96`, `internal/tui/dashboard.go:73`); stop and guest-start warnings identify the effect and registration identifies workspace/Paseo configuration scope (`internal/tui/jobs.go:298`). Active-only registration follows the Task 4 ledger ruling (`internal/tui/jobs.go:249`); no Task 5 restoration producer was added.
+- ✅ Cancellation is immediately represented, queued jobs are cancelled without dispatch, and typed context errors are distinguished from guest verification requirements (`internal/tui/jobs.go:141`, `internal/tui/jobs.go:178`). Busy quit offers keep-running or cancel-and-wait (`internal/tui/jobs.go:309`); read-only snapshot handling does not clear job verification state (`internal/tui/dashboard.go:109`).
+- ✅ Shell is blocked by queued/running mutations, uses a captured target and `tea.ExecProcess`, and handles preparation/callback failures with refresh (`internal/tui/jobs.go:243`, `internal/tui/jobs.go:274`, `internal/tui/jobs.go:189`). Completion during an in-flight observation retains a fresh-query request without creating an extra polling chain (`internal/tui/jobs.go:206`, `internal/tui/dashboard.go:167`).
+- ⚠️ Cannot verify from this diff: actual PTY terminal restoration and disposable sbx/Docker/Paseo lifecycle. `internal/tui/jobs_test.go:463` exercises a real ExecProcess callback with rendering disabled, not a PTY. The implementer correctly reserves those acceptance checks for Task 6 (`.superpowers/sdd/2026-10-02-management-tui/task-4-report.md:161`).
+
+### Strengths
+
+- Model state transitions stay in message handling; worker callbacks touch synchronized bounded storage and nonblocking coalesced wakeups (`internal/tui/jobs.go:110`, `internal/tui/jobs.go:153`, `internal/tui/jobs.go:477`). Finished workers stop rearming pulse waiters (`internal/tui/jobs.go:155`, `internal/tui/jobs_test.go:327`).
+- Logs preserve fragmented UTF-8, separate stdout/stderr parser state, strip terminal controls across writes, and retain at most 256 KiB; only finished history can be evicted to keep the 20-job bound (`internal/tui/jobs.go:75`, `internal/tui/jobs.go:479`, `internal/tui/jobs.go:490`, `internal/tui/jobs.go:514`). Tests cover floods, concurrent fragmented streams, and untrusted structured result metadata (`internal/tui/jobs_test.go:342`, `internal/tui/jobs_test.go:383`, `internal/tui/jobs_test.go:418`).
+- Tests exercise genuine queue/model transitions, a real Go helper subprocess through operations.Service, stale registry rejection, failure recovery, and retained-request retry (`internal/tui/jobs_test.go:212`, `internal/tui/jobs_test.go:522`, `internal/tui/jobs_test.go:544`). Background stdin isolation changes only the execution copy, with a real subprocess regression covering both observer and existing CLI paths (`internal/operations/service.go:65`, `internal/operations/service_test.go:237`).
+
+### Issues
+
+#### Critical (Must Fix)
+
+- None found in the task scope reviewed.
+
+#### Important (Should Fix)
+
+- **I1 — Frozen workspace provider scope is ignored at execution.** `internal/tui/jobs.go:285` includes each confirmed active profile in `Request.Targets`, but `internal/operations/service.go:367` validates only `Request.Target`, and `internal/operations/service.go:403` / `internal/operations/service.go:411` call provider functions that reread the current active set (`internal/operations/providers.go:94`, `internal/operations/providers.go:104`). Reproduction by source: confirm register or unregister with A selected and A/B active; leave it queued behind another job; change B's registry entry or add/remove an active profile while leaving A unchanged. A's validation passes, and registration uses the changed active set or unregistration clears that changed set. The mutation therefore applies outside the confirmed scope rather than rejecting a stale confirmation. This violates the binding per-job freeze/revalidate requirement; the active-only registration ruling does not exempt scope validation. Add a narrow shared-service validation of the explicitly supplied target list and selected workspace activation baseline under the existing mutation locks, rejecting changed entries or activation before any registry/provider write. Preserve the existing cross-workspace union and CLI behavior when no confirmed baseline is supplied. Cover both register and unregister with queued nonselected-entry and Active changes.
+
+#### Minor (Nice to Have)
+
+- **M1 — Stream output replaces the meaningful progress stage.** `internal/tui/jobs.go:497` assigns every event's `Stage` to the stored current stage. The existing output writers use `stdout`/`stderr` as stream identifiers (`internal/operations/service.go:69`, `internal/operations/service.go:87`), so output immediately after an install/verify stage changes the displayed stage to a stream name. Preserve the last semantic stage when an event belongs to stdout/stderr. Extend `internal/tui/jobs_test.go:665` with an install event followed by stream output and assert that the delivered stage remains install.
+
+### Review Evidence and Scope
+
+- Checked the supplied `30e182c..3c568a7` review package and task brief, verbatim global constraints, implementer report, ledger rulings, and task-relevant binding spec. The initial combined tool response truncated the middle of the package; the missing package ranges were read in bounded portions. No second git diff, git state commands, or test suites were run.
+- Focused outside-diff contract check: possible shallow request aliasing. Inspected `internal/operations/requests.go:22`, `internal/config/config.go:31`, and `internal/config/catalog.go:32`; Target/Entry/Pair contain values, and the request's mutable selection/target slices are the ones cloned in `internal/tui/jobs.go:56`.
+- Focused outside-diff contract check: frozen provider targets being ignored. Inspected `internal/operations/service.go:246`, `internal/operations/service.go:367`, and `internal/operations/providers.go:94`; this established I1 rather than relying on the implementer's claim.
+- Focused cut-off-function check: completion refresh interacting with an existing observation/poll timer. Read the full `refresh`/snapshot handling boundary in `internal/tui/dashboard.go:73` and `internal/tui/dashboard.go:109` because the dashboard diff hunks did not include the complete functions. The completion flag is consumed after a matching observation without scheduling a duplicate timer (`internal/tui/dashboard.go:167`).
+- Focused outside-diff contract check: observer stdin/event semantics and shell validation. Inspected the existing execution-copy/event-writer boundary at `internal/operations/service.go:53` and shell target validation at `internal/operations/service.go:144` / `internal/operations/service.go:196`; the observed stdin change is private, shell builds an argument-array command, and stream stage semantics establish M1.
+- Verification evidence inspected, not rerun: final full race suite, vet, and diff-check are reported successful after the final production change (`.superpowers/sdd/2026-10-02-management-tui/task-4-report.md:123`, `.superpowers/sdd/2026-10-02-management-tui/task-4-report.md:143`). Earlier listener/cache restrictions and an earlier fixed vet diagnostic are documented separately; no unresolved diagnostic appears in the reported final checks.
+
+### Assessment
+
+**Task quality:** Needs fixes.
+
+**Reasoning:** The queue, cancellation, safe logs, and shell callback integration have strong source and behavioral-test evidence. The workspace provider mutation path still accepts a scope that changed after confirmation, so the task cannot pass its immutable-target contract until I1 is fixed; M1 is a smaller progress-display issue.

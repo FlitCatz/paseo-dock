@@ -301,5 +301,6 @@ test dependency, if needed, is fixed to an exact version and limited to test use
   Native plugin provider is unmanaged, so managed provider live installation is unverified.
 - Isolation and detailed remaining state are in the binding spec's execution status.
   Exact commands/output and self-review are in
-  `.superpowers/sdd/2026-10-02-management-tui/task-6-report.md`; raw PTY/live logs and
-  the Go lifecycle evidence helper are retained alongside it.
+  `docs/superpowers/reviews/2026-10-02-management-tui/task-6-report.md`; raw PTY/check logs
+  and byte-exact encoded live output are retained alongside it. The Go evidence helpers are
+  in `internal/tui/testdata/management-tui-live/`.
