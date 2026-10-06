@@ -1,5 +1,36 @@
 # 상태 기반 sandbox 관리 TUI 계획
 
+> **2026-10-06 범위 개정:** 아래 2026-10-02 기록은 구현 당시의 sandbox 전용 기준과
+> 검증 증거로 보존한다. 새 작업의 기준은 승인된
+> `docs/superpowers/specs/2026-10-06-runtime-categories-design.md`이며,
+> 세부 실행 순서는 `docs/superpowers/plans/2026-10-06-runtime-categories.md`에 둔다.
+> 이 개정은 과거 sandbox를 소급해서 container라고 부르지 않는다.
+
+## 2026-10-06 category별 후속 계획
+
+관리 TUI의 대상은 `sandbox`(최신 안정 Codex/Claude Code 등 agent만 설치한 테스트
+환경)와 `container`(기존 agent + 고정된 methodology 한 가지 + 선택형 utility를
+설치한 Docker 개발 환경)로 확장한다. 기존 도구 포함 sandbox는 `legacy sandbox`로
+읽고 이름과 provider ID를 유지한다. 기존 profile 기반 create/build 명령은
+container 설치 구성을 뜻하며, 새 agent-only sandbox 생성은 category와 agent를
+명시한다.
+
+workspace 아래 두 category를 별개 행으로 표시한다. 생성 wizard의 첫 단계에서
+category를 선택하고, 확인 화면에 설치물·검증된 버전·workspace mount·네트워크·
+포트·Paseo 등록 범위를 표시한다. SBX 상태와 Docker 상태는 독립 조회하며, 선택한
+정확한 registry 대상만 shell·stop·update·versions·register/unregister에 전달한다.
+관리 대상이 아닌 Docker 자원은 조회 결과를 섞거나 변경하지 않는다.
+
+구현은 저장 형식과 legacy 읽기, category별 이미지 레시피와 backend, 공통 작업
+dispatch 및 재검증, launcher·중계, CLI/TUI 흐름, 실환경 검증 순으로 진행한다.
+각 작업은 Go 회귀 테스트와 독립 review를 통과한 뒤 다음 작업으로 넘어간다.
+Docker bridge에서 outbound DNS/HTTPS, 동일 절대 경로 workspace bind mount,
+명시 포트의 host `127.0.0.1` bind, 세션 보존, Paseo 중계 접근성을 폐기용
+container로 확인한다. 외부 인증·배포 조회가 막힌 결과는 성공으로 기록하지 않는다.
+
+기존 최종 branch review의 I1–I3와 M1–M2 수정분은 별도로 보존해 검증·재리뷰한다.
+그 수정분의 미완료 상태나 과거 live 결과를 새 category의 완료 증거로 사용하지 않는다.
+
 날짜: 2026-10-02
 상태: 관리 TUI 구현·Tasks 1–5 review·PTY 및 최종 test/vet/build 검증 완료. Task 6 독립 review와 Live 업데이트 성공은 미완료 (HTTP 403).
 기준 commit: `a8f6588` (origin/main에 push 완료)
