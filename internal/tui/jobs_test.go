@@ -30,6 +30,10 @@ type jobBackend struct {
 }
 
 func TestMain(m *testing.M) {
+	if os.Getenv("TUI_REVIEW_PROCESS") == "1" && (filepath.Base(os.Args[0]) == "sbx" || filepath.Base(os.Args[0]) == "paseo") {
+		reviewExternal()
+		os.Exit(0)
+	}
 	if filepath.Base(os.Args[0]) == "sbx" && os.Getenv("TUI_JOB_PROCESS") == "1" {
 		args := os.Args[1:]
 		f, err := os.OpenFile(os.Getenv("TUI_JOB_COMMANDS"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
@@ -251,7 +255,7 @@ func TestOneMutationAtATime(t *testing.T) {
 		t.Fatal("failure wedged queue or lost retry resource")
 	}
 }
-func TestJobWorkspaceTargetsAndSelectionFrozen(t *testing.T) {
+func TestJobWorkspaceTargetsFrozenWithoutBuildSelection(t *testing.T) {
 	b := &jobBackend{snapshot: managementFixture()}
 	m := NewDashboard(b, config.DefaultCatalog(), "")
 	defer m.cancel()
@@ -269,7 +273,7 @@ func TestJobWorkspaceTargetsAndSelectionFrozen(t *testing.T) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	r := b.requests[0]
-	if len(r.Targets) != 1 || r.Targets[0].Entry.Sandbox != "sandbox-one" || r.Selection.Pairs[0].Agent != "codex" || r.Selection.Utilities[0] != "rtk" {
+	if len(r.Targets) != 1 || r.Targets[0].Entry.Sandbox != "sandbox-one" || len(r.Selection.Pairs) != 0 || len(r.Selection.Utilities) != 0 {
 		t.Fatalf("workspace confirmation was mutable: %+v", r)
 	}
 }

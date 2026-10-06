@@ -291,9 +291,6 @@ func (m *Dashboard) chooseAction(a action) tea.Cmd {
 		return func() tea.Msg { cmd, err := b.ShellCommand(ctx, target); return shellReadyMsg{cmd, err} }
 	}
 	r := operations.Request{Kind: a.kind, Target: s.Target, PaseoHome: "~/.paseo"}
-	if w.Selection != nil {
-		r.Selection = *w.Selection
-	}
 	if a.workspace {
 		// A nonnil empty slice is an explicit inactive baseline, distinct from
 		// omitted CLI targets that resolve activation at execution time.
@@ -313,6 +310,7 @@ func (m *Dashboard) chooseAction(a action) tea.Cmd {
 				return nil
 			}
 			r.RestoreSelection = true
+			r.Selection = *w.Selection
 			r.RestoreTargets = targets
 		}
 	}

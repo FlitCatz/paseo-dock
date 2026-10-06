@@ -9,12 +9,14 @@ import (
 	"github.com/charmbracelet/x/term"
 	"io"
 	"os"
+	"os/signal"
 	"paseo-sbx/internal/config"
 	"paseo-sbx/internal/operations"
 	"paseo-sbx/internal/sandboxupdate"
 	"paseo-sbx/internal/tui"
 	"path/filepath"
 	"strings"
+	"syscall"
 )
 
 type App struct {
@@ -39,7 +41,9 @@ func (a *App) submit(r operations.Request) error {
 	if a.Selection != nil {
 		r.Selection = *a.Selection
 	}
-	_, err := a.Service.Execute(context.Background(), r, nil)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	_, err := a.Service.Execute(ctx, r, nil)
 	return err
 }
 func ActiveAdapters(i []config.Installed) map[string]string { return operations.ActiveAdapters(i) }
@@ -195,6 +199,9 @@ func (a *App) execute(args []string) error {
 	if _, ok := a.Catalog.Pair(profile); profile != "" && !ok && command != "shell" && command != "stop" {
 		return fmt.Errorf("invalid profile %q", profile)
 	}
+	if command == "stop" && profile == "" {
+		return errors.New("stop requires an explicit profile")
+	}
 	if command == "build" || command == "load" || command == "create" {
 		setUtilities := false
 		f.Visit(func(flag *flag.Flag) {
@@ -291,7 +298,16 @@ func (a *App) execute(args []string) error {
 		if !ok {
 			return errors.New("profile missing from registry")
 		}
-		if err = sandboxupdate.Update(runtime, entry, false, a.Err); err != nil {
+		// Catch signals only during the background update. The interactive shell
+		// retains the terminal's signal/process-group ownership afterward.
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		err = sandboxupdate.UpdateContext(ctx, runtime, entry, false, a.Err, nil)
+		cancelErr := ctx.Err()
+		stop()
+		if cancelErr != nil {
+			return cancelErr
+		}
+		if err != nil {
 			fmt.Fprintln(a.Err, "paseo-sbx: update failed; opening shell:", err)
 		}
 		cmd, err := a.Service.ShellCommand(context.Background(), operations.Target{Workspace: reg.Workspace, Runtime: runtime, Profile: profile, Entry: entry})

@@ -247,7 +247,8 @@ func (s *Service) Execute(ctx context.Context, r Request, emit func(Event)) (res
 	r.RestoreTargets = slices.Clone(r.RestoreTargets)
 	r.PruneTargets = slices.Clone(r.PruneTargets)
 	a := s.execution(ctx, nil, emit)
-	if len(r.Selection.Pairs) > 0 || r.Selection.Schema != 0 {
+	consumesSelection := r.Kind == KindBuild || r.Kind == KindLoad || r.Kind == KindCreate || (r.Kind == KindRegister && r.RestoreSelection)
+	if consumesSelection && (len(r.Selection.Pairs) > 0 || r.Selection.Schema != 0) {
 		normalized, e := s.Catalog.Normalize(r.Selection)
 		if e != nil {
 			return result, e

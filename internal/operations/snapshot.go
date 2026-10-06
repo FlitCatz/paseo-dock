@@ -44,12 +44,13 @@ type Workspace struct {
 	Error             string
 }
 type Sandbox struct {
-	Target        Target
-	RuntimeState  string
-	Active        bool
-	Registration  string
-	ImageMismatch bool
-	Update        *sandboxupdate.State
+	Target            Target
+	RuntimeState      string
+	Active            bool
+	Registration      string
+	RegistrationError string
+	ImageMismatch     bool
+	Update            *sandboxupdate.State
 	// InitialVersions holds configured image-lock provenance, never confirmed guest versions.
 	InitialVersions map[string]string
 	VersionCheck    *VersionCheck
@@ -228,6 +229,9 @@ func (s *Service) Snapshot(ctx context.Context, q Query) (Snapshot, error) {
 			entry := reg.Profiles[profile]
 			managed[entry.Sandbox] = true
 			row := Sandbox{Target: Target{Workspace: w.Path, Runtime: runtime, Profile: profile, Entry: entry}, Active: reg.IsActive(profile), RuntimeState: "unknown", Registration: providerRegistration(providers, providerErr, base, profile, entry.Agent), InitialVersions: s.initialVersions(reg, profile, entry)}
+			if providerErr != nil {
+				row.RegistrationError = fmt.Sprintf("%s: %v", filepath.Join(home, "config.json"), providerErr)
+			}
 			if sbxErr == nil {
 				row.RuntimeState = "missing"
 				if r, ok := byName[entry.Sandbox]; ok {

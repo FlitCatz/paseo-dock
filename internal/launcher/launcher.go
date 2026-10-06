@@ -3,6 +3,7 @@ package launcher
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -455,8 +456,17 @@ func LaunchIO(runtime, profile string, args []string, in io.Reader, out, stderr 
 		}
 		defer cleanup()
 	}
-	if err := sandboxupdate.Update(runtime, entry, false, stderr); err != nil {
-		fmt.Fprintln(stderr, "paseo-sbx: update failed; launching installed agent:", err)
+	// Automatic updates use detached host process groups, so bridge the same
+	// launcher signals to cancellation before any update subprocess starts.
+	ctx, stopUpdateSignals := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
+	updateErr := sandboxupdate.UpdateContext(ctx, runtime, entry, false, stderr, nil)
+	cancelErr := ctx.Err()
+	stopUpdateSignals()
+	if cancelErr != nil {
+		return 1, cancelErr
+	}
+	if updateErr != nil {
+		fmt.Fprintln(stderr, "paseo-sbx: update failed; launching installed agent:", updateErr)
 	}
 	command := []string{"exec", "-i"}
 	for _, name := range []string{"PASEO_AGENT_ID", "PASEO_PARENT_AGENT_ID", "NO_BROWSER"} {
@@ -474,13 +484,13 @@ func LaunchIO(runtime, profile string, args []string, in io.Reader, out, stderr 
 	if err != nil {
 		return 1, errors.New("cannot open sandbox stdin")
 	}
+	signals := make(chan os.Signal, 8)
+	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
+	defer signal.Stop(signals)
 	if err = child.Start(); err != nil {
 		stdin.Close()
 		return 1, errors.New("cannot start sbx agent process")
 	}
-	signals := make(chan os.Signal, 8)
-	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
-	defer signal.Stop(signals)
 	done := make(chan struct{})
 	defer close(done)
 	go func() {

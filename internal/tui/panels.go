@@ -116,6 +116,9 @@ func (m *Dashboard) detailContent() string {
 			continue
 		}
 		lines = append(lines, "Profile: "+sandboxID(s), "Sandbox: "+s.Target.Entry.Sandbox, "Image: "+s.Target.Entry.Image, "Runtime: "+s.RuntimeState, "Paseo 등록: "+s.Registration)
+		if s.RegistrationError != "" {
+			lines = append(lines, "Paseo 등록 확인 오류: "+s.RegistrationError)
+		}
 		if m.Unmanaged {
 			lines = append(lines, "읽기 전용 · 관리 registry에 등록되지 않음")
 		}
@@ -123,9 +126,11 @@ func (m *Dashboard) detailContent() string {
 			lines = append(lines, "이미지 구성 불일치 · 재사용 불가")
 		}
 		lines = append(lines, versionLines("이미지 기준 (guest 미확인)", s.InitialVersions)...)
-		if s.VersionCheck != nil && !s.VersionCheck.CheckedAt.IsZero() {
-			lines = append(lines, "버전 마지막 확인: "+s.VersionCheck.CheckedAt.Format(time.RFC3339))
-			lines = append(lines, versionLines("마지막 확인", s.VersionCheck.Versions)...)
+		if s.VersionCheck != nil {
+			if !s.VersionCheck.CheckedAt.IsZero() {
+				lines = append(lines, "버전 마지막 확인: "+s.VersionCheck.CheckedAt.Format(time.RFC3339))
+				lines = append(lines, versionLines("마지막 확인", s.VersionCheck.Versions)...)
+			}
 			lines = append(lines, versionLines("버전 확인 오류", s.VersionCheck.Errors)...)
 		}
 		if s.Update != nil {
