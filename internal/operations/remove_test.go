@@ -204,3 +204,56 @@ func TestRemoveFailureKeepsRegistryAndRetryCleansAbsent(t *testing.T) {
 		})
 	}
 }
+
+func TestRemoveRefusesSandboxStartedAfterProviderSync(t *testing.T) {
+	s, r, path, _ := removalFixture(t)
+	s.Backends[r.Target.Entry.EffectiveCategory()] = &SBXBackend{Root: s.Root}
+	t.Setenv("SBX_TEST_NAMES", `[{"name":"one","status":"stopped"}]`)
+	var reg config.Registry
+	if err := config.ReadJSON(path, &reg); err != nil {
+		t.Fatal(err)
+	}
+	reg.Active = []string{r.Target.Profile}
+	if err := config.WriteJSON(path, reg); err != nil {
+		t.Fatal(err)
+	}
+	flipped := false
+	result, err := s.Execute(context.Background(), r, func(e Event) {
+		if e.Stage == "remove-resource" {
+			flipped = true
+			t.Setenv("SBX_TEST_NAMES", `[{"name":"one","status":"running"}]`)
+		}
+	})
+	if !flipped || err == nil || !strings.Contains(err.Error(), "stop first") || !strings.Contains(err.Error(), "provider") || len(result.Remaining) != 1 {
+		t.Fatal(result, err, flipped)
+	}
+	if err := config.ReadJSON(path, &reg); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := reg.Profiles[r.Target.Profile]; !ok {
+		t.Fatal("running sandbox's registry entry was removed")
+	}
+	log, err := os.ReadFile(os.Getenv("SBX_TEST_LOG"))
+	if err != nil || strings.Contains(string(log), "rm ") || strings.Contains(string(log), "stop ") || strings.Count(string(log), "ls --json") != 2 {
+		t.Fatal("unsafe sbx argv", string(log), err)
+	}
+}
+
+func TestRemoveCancellationDuringBackendRemoveNeedsVerification(t *testing.T) {
+	s, r, path, b := removalFixture(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	b.onRemove = cancel
+	b.removeErr = context.Canceled
+	result, err := s.Execute(ctx, r, nil)
+	if !errors.Is(err, context.Canceled) || !result.NeedsVerification || len(result.Remaining) != 1 || b.removed != 1 {
+		t.Fatal(result, err, b.removed)
+	}
+	var reg config.Registry
+	if err := config.ReadJSON(path, &reg); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := reg.Profiles[r.Target.Profile]; !ok {
+		t.Fatal("cancellation forgot the registry entry")
+	}
+}

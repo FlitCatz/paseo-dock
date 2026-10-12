@@ -62,6 +62,33 @@ func TestPruneRemoveRuntimesRefusesAllForAnyBlocker(t *testing.T) {
 	}
 }
 
+func TestPruneRemoveRuntimesRetainsWorkspaceWhenSandboxStartsAfterPreflight(t *testing.T) {
+	s, r, path, _, docker := pruneRemovalFixture(t)
+	s.Backends[config.CategorySandbox] = &SBXBackend{Root: s.Root}
+	t.Setenv("SBX_TEST_NAMES", `[{"name":"one","status":"stopped"}]`)
+	flipped := false
+	result, err := s.Execute(context.Background(), r, func(e Event) {
+		if e.Stage == "remove-resource" && strings.Contains(e.Text, "one") {
+			flipped = true
+			t.Setenv("SBX_TEST_NAMES", `[{"name":"one","status":"running"}]`)
+		}
+	})
+	if !flipped || err == nil || !strings.Contains(err.Error(), "stop first") || !strings.Contains(err.Error(), "provider") || len(result.Remaining) != 1 || result.Remaining[0].Entry.Sandbox != "one" {
+		t.Fatal(result, err, flipped)
+	}
+	var reg config.Registry
+	if err := config.ReadJSON(path, &reg); err != nil {
+		t.Fatal("workspace registry removed", err)
+	}
+	if len(reg.Profiles) != 2 || docker.removed != 1 {
+		t.Fatal("partial workspace removal did not retain registry", reg.Profiles, docker.removed)
+	}
+	log, err := os.ReadFile(os.Getenv("SBX_TEST_LOG"))
+	if err != nil || strings.Contains(string(log), "rm ") || strings.Contains(string(log), "stop ") || strings.Count(string(log), "ls --json") != 2 {
+		t.Fatal("unsafe sbx argv", string(log), err)
+	}
+}
+
 func TestPruneRemoveRuntimesDispatchAndPartialRetry(t *testing.T) {
 	for _, fail := range []bool{false, true} {
 		t.Run(map[bool]string{false: "success", true: "partial failure"}[fail], func(t *testing.T) {

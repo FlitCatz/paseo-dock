@@ -30,9 +30,6 @@ func (a *execution) removalState(t Target) (bool, error) {
 }
 
 func (a *execution) removeResource(t Target, absent bool) error {
-	if absent {
-		return nil
-	}
 	b, err := a.backend(t.Entry.EffectiveCategory())
 	if err != nil {
 		return err
@@ -41,6 +38,18 @@ func (a *execution) removeResource(t Target, absent bool) error {
 		return err
 	}
 	a.stage("remove-resource", "Removing "+t.ResourceIdentity())
+	// A sandbox can start outside our entry lock after the first inspection.
+	// Inspect after the event callback and immediately before the command.
+	confirmedAbsent, err := a.removalState(t)
+	if err != nil {
+		return fmt.Errorf("provider may already be deactivated; %w", err)
+	}
+	if confirmedAbsent {
+		return nil
+	}
+	if absent {
+		return fmt.Errorf("resource %s appeared after preflight; provider may already be deactivated", t.ResourceIdentity())
+	}
 	err = b.Remove(a.ctx, t.Entry)
 	a.changed = true
 	if a.ctx.Err() != nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
