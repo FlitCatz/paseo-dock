@@ -62,6 +62,7 @@ type Dashboard struct {
 	advancedMenu                                          bool
 	advancedIndex                                         int
 	flowGeneration                                        uint64
+	pruneBlocked                                          []operations.Target
 }
 
 func NewDashboard(b Backend, c config.Catalog, w string) *Dashboard {
@@ -186,7 +187,7 @@ func (m *Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyPressMsg:
 		k := v.String()
 		if k == "ctrl+c" {
-			_, cmd := m.managementKey(k)
+			_, cmd := m.managementKey(k, v.Text)
 			return m, cmd
 		}
 		if m.Searching {
@@ -209,7 +210,7 @@ func (m *Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.syncLists()
 			return m, nil
 		}
-		if handled, cmd := m.managementKey(k); handled {
+		if handled, cmd := m.managementKey(k, v.Text); handled {
 			m.syncLists()
 			return m, cmd
 		}

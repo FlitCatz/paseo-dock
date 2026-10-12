@@ -35,7 +35,10 @@ type savedSelectionMsg struct {
 // Async confirmations belong to the input flow that requested them. Navigation
 // into another action or abandonment advances the generation independently of
 // job execution, so an old preview still finishes without taking over a modal.
-func (m *Dashboard) newFlow() { m.flowGeneration++ }
+func (m *Dashboard) newFlow() {
+	m.flowGeneration++
+	m.pruneBlocked = nil
+}
 func (m *Dashboard) ownsFlow(flow uint64) bool {
 	return flow == m.flowGeneration && m.confirm == nil && m.creating == nil && !m.actionMenu && !m.advancedMenu && !m.exitPrompt
 }
@@ -102,7 +105,7 @@ func (m *Dashboard) creationMessage(msg tea.Msg) (bool, tea.Cmd) {
 			return true, nil
 		}
 		v.request.Selection = s
-		m.confirm = &confirmation{freezeRequest(v.request), "저장된 선택으로 " + string(v.request.Kind), "선택된 조합과 utilities의 이미지 작업"}
+		m.confirm = &confirmation{request: freezeRequest(v.request), label: "저장된 선택으로 " + string(v.request.Kind), warning: "선택된 조합과 utilities의 이미지 작업"}
 		m.modal.GotoTop()
 		return true, nil
 	}
@@ -231,9 +234,9 @@ func (m *Dashboard) advancedKey(k string) (bool, tea.Cmd) {
 		case "esc":
 			m.advancedMenu = false
 		case "up", "k":
-			m.advancedIndex = (m.advancedIndex + 3) % 4
+			m.advancedIndex = (m.advancedIndex + 4) % 5
 		case "down", "j":
-			m.advancedIndex = (m.advancedIndex + 1) % 4
+			m.advancedIndex = (m.advancedIndex + 1) % 5
 		case "enter":
 			m.advancedMenu = false
 			if m.advancedIndex == 2 {
@@ -242,8 +245,8 @@ func (m *Dashboard) advancedKey(k string) (bool, tea.Cmd) {
 				m.templatesWanted = true
 				return true, m.refresh(time.Now(), false)
 			}
-			if m.advancedIndex == 3 {
-				return true, m.enqueue(operations.Request{Kind: operations.KindPrune, DryRun: true, PaseoHome: "~/.paseo"})
+			if m.advancedIndex >= 3 {
+				return true, m.enqueue(operations.Request{Kind: operations.KindPrune, DryRun: true, RemoveRuntimes: m.advancedIndex == 4, PaseoHome: "~/.paseo"})
 			}
 			w := m.selectedWorkspace()
 			if w == nil || w.Missing || w.Error != "" {
@@ -281,7 +284,7 @@ func (m *Dashboard) advancedContent() string {
 		return ""
 	}
 	lines := []string{"고급 작업 · Enter 선택 · Esc 닫기"}
-	for i, label := range []string{"저장된 선택 이미지 build", "저장된 선택 template load", "templates 읽기 전용 보기", "누락 workspace prune 미리보기"} {
+	for i, label := range []string{"저장된 선택 이미지 build", "저장된 선택 template load", "templates 읽기 전용 보기", "누락 workspace prune 미리보기", "정리 + 남은 환경 삭제"} {
 		mark := "  "
 		if i == m.advancedIndex {
 			mark = "› "
@@ -290,15 +293,29 @@ func (m *Dashboard) advancedContent() string {
 	}
 	return strings.Join(lines, "\n")
 }
-func (m *Dashboard) prunePreview(r operations.Result, flow uint64) {
+func (m *Dashboard) prunePreview(r operations.Result, flow uint64, removeRuntimes bool) {
 	if !m.ownsFlow(flow) {
+		return
+	}
+	if removeRuntimes && len(r.Remaining) > 0 {
+		m.pruneBlocked = freezeTargets(r.Remaining)
+		m.actionError = "남은 환경 삭제 불가 · 실행하지 않음"
+		return
+	}
+	if removeRuntimes && len(r.Missing) == 0 {
+		m.actionError = "정리할 누락 workspace가 없습니다"
 		return
 	}
 	targets := r.Missing
 	if targets == nil {
 		targets = make([]operations.Target, 0)
 	}
-	m.confirm = &confirmation{request: freezeRequest(operations.Request{Kind: operations.KindPrune, PruneTargets: targets, PaseoHome: "~/.paseo"}), label: "확정된 누락 workspace registry 정리", warning: "registry / selection / launch routing만 정리합니다. Sandbox 및 update 기록과 lock은 보존됩니다."}
+	request := operations.Request{Kind: operations.KindPrune, RemoveRuntimes: removeRuntimes, PruneTargets: targets, PaseoHome: "~/.paseo"}
+	label, warning := "확정된 누락 workspace registry 정리", "registry / selection / launch routing만 정리합니다. Sandbox 및 update 기록과 lock은 보존됩니다."
+	if removeRuntimes {
+		label, warning = "정리 + 남은 환경 삭제", "삭제 후 되돌릴 수 없습니다."
+	}
+	m.confirm = &confirmation{request: freezeRequest(request), label: label, warning: warning}
 	m.modal.GotoTop()
 }
 

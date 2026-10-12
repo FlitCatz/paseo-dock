@@ -53,6 +53,17 @@ type action struct {
 type confirmation struct {
 	request        operations.Request
 	label, warning string
+	typed          string
+}
+
+func (c *confirmation) requiredText() string {
+	if c.request.Kind == operations.KindRemove {
+		return c.request.Target.Profile
+	}
+	if c.request.Kind == operations.KindPrune && c.request.RemoveRuntimes {
+		return "prune"
+	}
+	return ""
 }
 
 func freezeRequest(r operations.Request) operations.Request {
@@ -199,7 +210,7 @@ func (m *Dashboard) jobMessage(msg tea.Msg) (bool, tea.Cmd) {
 		}
 		m.runningJob = 0
 		if v.err == nil && j.request.Kind == operations.KindPrune && j.request.DryRun {
-			m.prunePreview(v.result, j.previewFlow)
+			m.prunePreview(v.result, j.previewFlow, j.request.RemoveRuntimes)
 		}
 		if m.exitAfterJobs && !m.busy() {
 			m.cancel()
@@ -239,7 +250,7 @@ func (m *Dashboard) selectedSandbox() *operations.Sandbox {
 	return nil
 }
 func (m *Dashboard) actions() []action {
-	a := []action{{label: "대상 업데이트", kind: operations.KindUpdate}, {label: "workspace 활성 조합 업데이트", kind: operations.KindUpdate, workspace: true}, {label: "shell / 로그인", shell: true}, {label: "대상 중지", kind: operations.KindStop}, {label: "guest 버전 확인", kind: operations.KindVersions}, {label: "Paseo 등록", kind: operations.KindRegister, workspace: true}, {label: "Paseo 해제", kind: operations.KindUnregister, workspace: true}}
+	a := []action{{label: "대상 업데이트", kind: operations.KindUpdate}, {label: "workspace 활성 조합 업데이트", kind: operations.KindUpdate, workspace: true}, {label: "shell / 로그인", shell: true}, {label: "대상 중지", kind: operations.KindStop}, {label: "guest 버전 확인", kind: operations.KindVersions}, {label: "Paseo 등록", kind: operations.KindRegister, workspace: true}, {label: "Paseo 해제", kind: operations.KindUnregister, workspace: true}, {label: "대상 삭제", kind: operations.KindRemove}}
 	w, s := m.selectedWorkspace(), m.selectedSandbox()
 	for i := range a {
 		r := &a[i]
@@ -252,14 +263,18 @@ func (m *Dashboard) actions() []action {
 			r.reason = "workspace 선택 필요"
 		case w.Error != "":
 			r.reason = "registry 확인 불가"
-		case w.Missing:
+		case w.Missing && r.kind != operations.KindStop && r.kind != operations.KindRemove:
 			r.reason = "workspace 경로 없음"
 		case s == nil:
 			r.reason = "sandbox 선택 필요"
 		case s.Target.Entry.Sandbox == "" && s.Target.Entry.ContainerID == "":
 			r.reason = "sandbox 대상 없음"
-		case !r.workspace && s.RuntimeState == "missing":
+		case !r.workspace && s.RuntimeState == "missing" && r.kind != operations.KindRemove:
 			r.reason = "sandbox 없음"
+		case r.kind == operations.KindRemove && s.RuntimeState == "running":
+			r.reason = "먼저 중지(x) 필요"
+		case r.kind == operations.KindRemove && s.RuntimeState != "stopped" && s.RuntimeState != "missing":
+			r.reason = "상태 확인 불가 · 삭제 불가"
 		case r.shell && s.Target.Entry.EffectiveCategory() == config.CategoryContainer && s.RuntimeState != "running":
 			r.reason = "container shell requires an explicitly started running container"
 		case r.shell && m.busy():
@@ -267,6 +282,9 @@ func (m *Dashboard) actions() []action {
 		}
 		if r.reason != "" {
 			continue
+		}
+		if r.kind == operations.KindRemove && s.RuntimeState == "missing" {
+			r.label = "registry 항목만 정리"
 		}
 		if r.workspace {
 			active := 0
@@ -331,10 +349,10 @@ func (m *Dashboard) chooseAction(a action) tea.Cmd {
 		}
 	}
 	warning := actionWarning(a.kind)
-	if s.Target.Entry.EffectiveCategory() == config.CategoryContainer {
+	if a.kind != operations.KindRemove && s.Target.Entry.EffectiveCategory() == config.CategoryContainer {
 		warning = "Docker exec requires a running container; stopped containers are not automatically started."
 	}
-	m.confirm = &confirmation{freezeRequest(r), a.label, warning}
+	m.confirm = &confirmation{request: freezeRequest(r), label: a.label, warning: warning}
 	m.modal.GotoTop()
 	return nil
 }
@@ -342,6 +360,8 @@ func actionWarning(kind operations.Kind) string {
 	switch kind {
 	case operations.KindStop:
 		return "중지는 실행 중인 세션에 영향을 줍니다."
+	case operations.KindRemove:
+		return "삭제 후 되돌릴 수 없습니다. 실패 시 provider가 이미 비활성화되었을 수 있습니다."
 	case operations.KindUpdate, operations.KindVersions:
 		return "sbx exec는 중지된 sandbox를 시작할 수 있습니다."
 	case operations.KindRegister, operations.KindUnregister:
@@ -349,8 +369,8 @@ func actionWarning(kind operations.Kind) string {
 	}
 	return ""
 }
-func (m *Dashboard) managementKey(k string) (bool, tea.Cmd) {
-	if k == "esc" || k == "q" || k == "ctrl+c" {
+func (m *Dashboard) managementKey(k string, input ...string) (bool, tea.Cmd) {
+	if k == "esc" || k == "ctrl+c" {
 		m.newFlow()
 	}
 	if m.exitPrompt {
@@ -368,7 +388,7 @@ func (m *Dashboard) managementKey(k string) (bool, tea.Cmd) {
 		}
 		return true, nil
 	}
-	if k == "q" || k == "ctrl+c" {
+	if m.confirm == nil && (k == "q" || k == "ctrl+c") {
 		if m.busy() {
 			m.exitPrompt = true
 			m.modal.GotoTop()
@@ -378,6 +398,38 @@ func (m *Dashboard) managementKey(k string) (bool, tea.Cmd) {
 		return true, tea.Quit
 	}
 	if m.confirm != nil {
+		c := m.confirm
+		if required := c.requiredText(); required != "" {
+			switch k {
+			case "esc":
+				m.confirm = nil
+			case "backspace":
+				r := []rune(c.typed)
+				if len(r) > 0 {
+					c.typed = string(r[:len(r)-1])
+				}
+			case "enter":
+				if c.typed == required {
+					r := c.request
+					m.confirm = nil
+					m.newFlow()
+					return true, m.enqueue(r)
+				}
+			case "down":
+				m.modal.ScrollDown(1)
+			case "up":
+				m.modal.ScrollUp(1)
+			case "pgdown":
+				m.modal.ScrollDown(max(1, m.modal.Height()-1))
+			case "pgup":
+				m.modal.ScrollUp(max(1, m.modal.Height()-1))
+			default:
+				if len(input) > 0 && input[0] != "" && strings.IndexFunc(input[0], unicode.IsControl) < 0 {
+					c.typed += input[0]
+				}
+			}
+			return true, nil
+		}
 		switch k {
 		case "down", "j":
 			m.modal.ScrollDown(1)
@@ -424,6 +476,16 @@ func (m *Dashboard) managementKey(k string) (bool, tea.Cmd) {
 		return true, m.chooseAction(m.actions()[0])
 	case "s":
 		return true, m.chooseAction(m.actions()[2])
+	case "x", "d":
+		kind := operations.KindStop
+		if k == "d" {
+			kind = operations.KindRemove
+		}
+		for _, a := range m.actions() {
+			if a.kind == kind && !a.workspace {
+				return true, m.chooseAction(a)
+			}
+		}
 	case "c":
 		m.cancelJobs()
 		return true, nil
@@ -432,7 +494,7 @@ func (m *Dashboard) managementKey(k string) (bool, tea.Cmd) {
 			j := m.jobs[i]
 			if j.state == "failed" || j.state == "needs verification" || j.state == "cancelled" {
 				m.newFlow()
-				m.confirm = &confirmation{freezeRequest(j.request), "고정된 실패 작업 재시도", actionWarning(j.request.Kind)}
+				m.confirm = &confirmation{request: freezeRequest(j.request), label: "고정된 실패 작업 재시도", warning: actionWarning(j.request.Kind)}
 				m.modal.GotoTop()
 				return true, nil
 			}
@@ -448,6 +510,18 @@ func (m *Dashboard) managementContent() string {
 	}
 	if m.confirm != nil {
 		c := m.confirm
+		if c.request.Kind == operations.KindRemove {
+			t := c.request.Target
+			lines := []string{"확인: " + c.label, "Category: " + string(t.Entry.EffectiveCategory()), "Workspace: " + t.Workspace, "Profile: " + t.Profile, "Sandbox: " + t.Entry.Sandbox, "Container ID: " + t.Entry.ContainerID, "Image: " + t.Entry.Image, "삭제되는 것: sandbox/container 및 로그인 상태·세션·guest 파일, sandbox 범위 secret(SBX)", "registry 항목, 업데이트·버전 기록, 해당 Paseo provider", "보존되는 것: workspace 폴더(bind mount 원본), image·template, 다른 profile", c.warning, "정확히 입력: " + t.Profile, "> " + c.typed, "Enter 실행(일치할 때만) · Esc 취소 · ↑↓ 스크롤"}
+			return strings.Join(lines, "\n")
+		}
+		if c.request.Kind == operations.KindPrune && c.request.RemoveRuntimes {
+			lines := []string{"확인: " + c.label, "삭제되는 것: 남은 sandbox/container와 로그인 상태·세션·guest 파일, sandbox 범위 secret(SBX)", "registry 항목, 업데이트·버전 기록, 해당 Paseo provider", "보존되는 것: workspace 폴더(bind mount 원본), image·template, 다른 profile", "삭제 후 되돌릴 수 없습니다."}
+			for _, t := range c.request.PruneTargets {
+				lines = append(lines, t.Workspace+" / "+t.Profile+" / "+t.ResourceIdentity())
+			}
+			return strings.Join(append(lines, "정확히 입력: prune", "> "+c.typed, "Enter 실행(일치할 때만) · Esc 취소 · ↑↓ 스크롤"), "\n")
+		}
 		lines := []string{"확인: " + c.label, "Workspace: " + c.request.Target.Workspace, "Runtime: " + c.request.Target.Runtime, "Sandbox: " + c.request.Target.Entry.Sandbox, "Image: " + c.request.Target.Entry.Image, c.warning}
 		lines = append(lines, runtimeSettings(c.request.Target.Entry)...)
 		for _, t := range c.request.Targets {
@@ -464,6 +538,13 @@ func (m *Dashboard) managementContent() string {
 			lines = append(lines, "Profiles: "+strings.Join(c.request.Selection.Profiles(), ", "), "Utilities: "+strings.Join(c.request.Selection.Utilities, ", "))
 		}
 		lines = append(lines, "Enter 실행 · Esc 취소 · ↑↓/jk 스크롤")
+		return strings.Join(lines, "\n")
+	}
+	if len(m.pruneBlocked) > 0 {
+		lines := []string{"정리 + 남은 환경 삭제 불가 · 실행하지 않음", "먼저 중지(x)하거나 상태를 확인하세요."}
+		for _, t := range m.pruneBlocked {
+			lines = append(lines, t.Workspace+" / "+t.Profile+" / "+t.ResourceIdentity())
+		}
 		return strings.Join(lines, "\n")
 	}
 	if m.actionMenu {
@@ -507,6 +588,9 @@ func (m *Dashboard) logContent() string {
 		lines = append(lines, fmt.Sprintf("#%d %s %s · %s · %s · %s", j.id, j.request.Kind, j.request.Target.ResourceIdentity(), status, j.stage, elapsed.Round(time.Second)))
 		if j.errorText != "" {
 			lines = append(lines, j.errorText, "대상/선택 보존 · R 키로 확인 후 재시도")
+			if j.request.Kind == operations.KindRemove || j.request.Kind == operations.KindPrune && j.request.RemoveRuntimes && !j.request.DryRun {
+				lines = append(lines, "provider가 이미 비활성화되었을 수 있습니다 · 남은 대상 확인 후 R 재시도")
+			}
 		}
 		for _, t := range j.result.Remaining {
 			lines = append(lines, "남은 대상: "+t.Profile+" / "+t.ResourceIdentity()+" · registry: "+filepath.Join(t.Runtime, "registry.json"))
@@ -517,7 +601,11 @@ func (m *Dashboard) logContent() string {
 		lines = append(lines, versionLines("확인 버전", j.result.Versions)...)
 		lines = append(lines, versionLines("확인 오류", j.result.VersionErrors)...)
 		if j.result.NeedsVerification {
-			lines = append(lines, "guest 중단/부분 설치 확인 필요 · 상태 조회로 증명되지 않음")
+			if j.request.Kind == operations.KindRemove || j.request.Kind == operations.KindPrune && j.request.RemoveRuntimes {
+				lines = append(lines, "삭제 결과 확인 필요 · registry 항목 보존")
+			} else {
+				lines = append(lines, "guest 중단/부분 설치 확인 필요 · 상태 조회로 증명되지 않음")
+			}
 		}
 		lines = append(lines, j.log.text())
 	}
