@@ -21,7 +21,7 @@ import (
 // The external host command and its descendant are Go subprocesses. Only the
 // descendant writes readiness, so signals cannot race ahead of group creation.
 func TestMain(m *testing.M) {
-	if os.Getenv("CLI_SIGNAL_FAKE") == "1" && filepath.Base(os.Args[0]) == "sbx" {
+	if os.Getenv("CLI_SIGNAL_FAKE") == "1" && (filepath.Base(os.Args[0]) == "sbx" || filepath.Base(os.Args[0]) == "docker") {
 		ready := os.Getenv("CLI_SIGNAL_READY")
 		if os.Getenv("CLI_SIGNAL_ENTRY") == "" {
 			_ = os.WriteFile(ready, []byte("unexpected external call"), 0600)
@@ -34,6 +34,11 @@ func TestMain(m *testing.M) {
 		}
 		args := strings.Join(os.Args[1:], " ")
 		if strings.Contains(args, "-it") || strings.Contains(args, "-i ") {
+			if os.Getenv("CLI_SIGNAL_SHELL_BLOCK") == "1" {
+				_ = os.WriteFile(ready+"-launched", []byte(strconv.Itoa(os.Getpid())), 0600)
+				time.Sleep(time.Minute)
+				os.Exit(0)
+			}
 			_ = os.WriteFile(ready+"-launched", []byte(args), 0600)
 			os.Exit(0)
 		}

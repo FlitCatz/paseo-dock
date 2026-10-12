@@ -186,3 +186,44 @@ func TestRestorePreservesSharedWorkspaceProvider(t *testing.T) {
 		}
 	}
 }
+
+func TestLegacyRestoreUsesPersistedCatalogAfterHostUtilityRemoval(t *testing.T) {
+	for _, change := range []string{"none", "saved selection", "entry"} {
+		t.Run(change, func(t *testing.T) {
+			s, r, path := restoreFixture(t)
+			var reg config.Registry
+			if err := config.ReadJSON(path, &reg); err != nil {
+				t.Fatal(err)
+			}
+			historical := config.DefaultCatalog()
+			reg.Catalog = &historical
+			reg.Selection.Utilities = []string{"rtk"}
+			r.Selection.Utilities = []string{"rtk"}
+			for i := range r.RestoreTargets {
+				r.RestoreTargets[i].Entry.Utilities = []string{"rtk"}
+				reg.Profiles[r.RestoreTargets[i].Profile] = r.RestoreTargets[i].Entry
+			}
+			r.Target = r.RestoreTargets[0]
+			if change == "saved selection" {
+				reg.Selection.Utilities = []string{}
+			}
+			if change == "entry" {
+				e := reg.Profiles[r.RestoreTargets[1].Profile]
+				e.Image = "replacement"
+				reg.Profiles[r.RestoreTargets[1].Profile] = e
+			}
+			if err := config.WriteJSON(path, reg); err != nil {
+				t.Fatal(err)
+			}
+			s.Catalog.Utilities = nil
+			s.Lock.Utilities = nil
+			_, err := s.Execute(context.Background(), r, nil)
+			if change == "none" && err != nil {
+				t.Fatal("host catalog removal stranded saved legacy restore", err)
+			}
+			if change != "none" && err == nil {
+				t.Fatal("changed stored restoration accepted")
+			}
+		})
+	}
+}

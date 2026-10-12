@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"github.com/charmbracelet/x/ansi"
-	"os/exec"
 	"paseo-sbx/internal/config"
 	"paseo-sbx/internal/operations"
 	"paseo-sbx/internal/sandboxupdate"
@@ -30,7 +29,7 @@ func (b *dashboardBackend) Snapshot(ctx context.Context, q operations.Query) (op
 func (b *dashboardBackend) Execute(context.Context, operations.Request, func(operations.Event)) (operations.Result, error) {
 	panic("dashboard must not mutate")
 }
-func (b *dashboardBackend) ShellCommand(context.Context, operations.Target) (*exec.Cmd, error) {
+func (b *dashboardBackend) ShellCommand(context.Context, operations.Target) (operations.ShellProcess, error) {
 	panic("dashboard must not shell")
 }
 func (b *dashboardBackend) SavedSelection(string) (config.Selection, error) {

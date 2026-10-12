@@ -103,16 +103,28 @@ func TestDashboardPTYRestore(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	for _, exitKey := range []string{"q", "\x03"} {
-		t.Run(fmt.Sprintf("exit-%x", exitKey), func(t *testing.T) {
-			home := filepath.Join(temp, fmt.Sprintf("home-%x", exitKey))
-			workspace := filepath.Join(temp, fmt.Sprintf("한국어-workspace-%x", exitKey))
+	for _, scenario := range []struct {
+		category config.Category
+		exitKey  string
+	}{{config.CategoryLegacySandbox, "q"}, {config.CategoryLegacySandbox, "\x03"}, {config.CategorySandbox, "q"}, {config.CategorySandbox, "\x03"}} {
+		exitKey := scenario.exitKey
+		t.Run(fmt.Sprintf("%s-exit-%x", scenario.category, exitKey), func(t *testing.T) {
+			home := filepath.Join(temp, fmt.Sprintf("home-%s-%x", scenario.category, exitKey))
+			workspace := filepath.Join(temp, fmt.Sprintf("한국어-workspace-%s-%x", scenario.category, exitKey))
 			if err := os.MkdirAll(workspace, 0700); err != nil {
 				t.Fatal(err)
 			}
 			sum := sha256.Sum256([]byte(workspace))
 			runtime := filepath.Join(home, ".local", "share", "paseo-sbx", fmt.Sprintf("%x", sum)[:10])
 			reg := config.Registry{Workspace: workspace, Active: []string{"codex-superpowers"}, Profiles: map[string]config.Entry{"codex-superpowers": {Agent: "codex", Tool: "superpowers", Workspace: workspace, Sandbox: "pty-sandbox", Image: "paseo-sbx/codex-superpowers:test"}}}
+			rowLabel := "codex-superpowers"
+			if scenario.category == config.CategorySandbox {
+				entry := config.Entry{Category: config.CategorySandbox, Agent: "codex", Workspace: workspace, Sandbox: "pty-sandbox", Image: "paseo-sbx/sandbox/codex:test"}
+				reg.Schema = 2
+				reg.Active = []string{entry.Key()}
+				reg.Profiles = map[string]config.Entry{entry.Key(): entry}
+				rowLabel = entry.Key()
+			}
 			if err := config.WriteJSON(filepath.Join(runtime, "registry.json"), reg); err != nil {
 				t.Fatal(err)
 			}
@@ -181,7 +193,7 @@ func TestDashboardPTYRestore(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			wait("codex-superpowers", 0)
+			wait(rowLabel, 0)
 			during, err := term.GetState(slave.Fd())
 			if err != nil {
 				t.Fatal(err)

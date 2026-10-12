@@ -6,6 +6,8 @@ import (
 	"paseo-sbx/internal/config"
 	"paseo-sbx/internal/operations"
 	"regexp"
+	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -17,11 +19,11 @@ import (
 
 // Creation owns only input and selection. Execution always uses the dashboard queue.
 type creation struct {
-	path, memory textinput.Model
-	picker       filepicker.Model
-	focus        int
-	wizard       *Model
-	request      operations.Request
+	path, memory, ports textinput.Model
+	picker              filepicker.Model
+	focus               int
+	wizard              *Model
+	request             operations.Request
 }
 type savedSelectionMsg struct {
 	request   operations.Request
@@ -42,7 +44,8 @@ var memoryPattern = regexp.MustCompile(`^[1-9][0-9]*[kKmMgG]?[bB]?$`)
 
 func (m *Dashboard) startCreation() tea.Cmd {
 	m.newFlow()
-	path, memory := textinput.New(), textinput.New()
+	path, memory, ports := textinput.New(), textinput.New(), textinput.New()
+	ports.Prompt = "Container ports (host:container, optional): "
 	path.Prompt = "Workspace 경로: "
 	memory.Prompt = "Memory / sandbox: "
 	memory.SetValue("2g")
@@ -54,7 +57,7 @@ func (m *Dashboard) startCreation() tea.Cmd {
 		path.SetValue(w.Path)
 		picker.CurrentDirectory = w.Path
 	}
-	m.creating = &creation{path: path, memory: memory, picker: picker}
+	m.creating = &creation{path: path, memory: memory, ports: ports, picker: picker}
 	m.advancedMenu = false
 	m.actionMenu = false
 	m.actionError = ""
@@ -76,6 +79,8 @@ func (m *Dashboard) creationMessage(msg tea.Msg) (bool, tea.Cmd) {
 		}
 		r := c.request
 		r.Selection = v.Result.Selection
+		r.Target.Category = v.Result.Category
+		r.Ports = v.Result.Ports
 		r.Apply = v.Result.Apply
 		return true, m.enqueue(r)
 	}
@@ -85,6 +90,10 @@ func (m *Dashboard) creationMessage(msg tea.Msg) (bool, tea.Cmd) {
 		}
 		if v.err != nil {
 			m.actionError = safeText(v.err.Error())
+			return true, nil
+		}
+		if v.request.Kind == operations.KindLoad && v.selection.Category == config.CategoryContainer {
+			m.actionError = "container images are already in Docker store; template load is sandbox-only"
 			return true, nil
 		}
 		s, err := m.Catalog.Normalize(v.selection)
@@ -110,6 +119,7 @@ func (m *Dashboard) creationMessage(msg tea.Msg) (bool, tea.Cmd) {
 			c.wizard.Update(size)
 		}
 		c.path.SetWidth(max(1, size.Width-20))
+		c.ports.SetWidth(max(1, size.Width-20))
 		c.memory.SetWidth(max(1, size.Width-20))
 		c.picker.SetHeight(max(1, size.Height-8))
 		return false, nil
@@ -128,21 +138,25 @@ func (m *Dashboard) creationMessage(msg tea.Msg) (bool, tea.Cmd) {
 			return true, nil
 		case "tab", "shift+tab":
 			if k.String() == "tab" {
-				c.focus = (c.focus + 1) % 3
+				c.focus = (c.focus + 1) % 4
 			} else {
-				c.focus = (c.focus + 2) % 3
+				c.focus = (c.focus + 3) % 4
 			}
 			c.path.Blur()
 			c.memory.Blur()
+			c.ports.Blur()
 			if c.focus == 0 {
 				return true, c.path.Focus()
 			}
 			if c.focus == 1 {
 				return true, c.memory.Focus()
 			}
+			if c.focus == 2 {
+				return true, c.ports.Focus()
+			}
 			return true, nil
 		case "enter":
-			if c.focus != 2 {
+			if c.focus != 3 {
 				w, err := config.Canonical(strings.TrimSpace(c.path.Value()))
 				if strings.TrimSpace(c.path.Value()) == "" {
 					err = fmt.Errorf("Workspace 경로를 입력하세요")
@@ -154,7 +168,13 @@ func (m *Dashboard) creationMessage(msg tea.Msg) (bool, tea.Cmd) {
 					m.actionError = safeText(err.Error())
 					return true, nil
 				}
+				ports, portErr := parsePorts(c.ports.Value())
+				if portErr != nil {
+					m.actionError = portErr.Error()
+					return true, nil
+				}
 				c.wizard = NewEmbeddedModel(m.Catalog, config.Selection{}, w, c.memory.Value())
+				c.wizard.Ports = ports
 				c.request = operations.Request{Kind: operations.KindCreate, Target: operations.Target{Workspace: w}, Memory: c.memory.Value(), BuildFirst: true, PaseoHome: "~/.paseo"}
 				c.wizard.Width, c.wizard.Height = m.Width, m.Height
 				m.actionError = ""
@@ -167,6 +187,8 @@ func (m *Dashboard) creationMessage(msg tea.Msg) (bool, tea.Cmd) {
 		c.path, cmd = c.path.Update(msg)
 	} else if c.focus == 1 {
 		c.memory, cmd = c.memory.Update(msg)
+	} else if c.focus == 2 {
+		c.ports, cmd = c.ports.Update(msg)
 	} else {
 		c.picker, cmd = c.picker.Update(msg)
 		if ok, path := c.picker.DidSelectFile(msg); ok {
@@ -188,7 +210,7 @@ func (m *Dashboard) creationView() tea.View {
 	if c.wizard != nil {
 		return c.wizard.View()
 	}
-	content := "새 sandbox 생성 · CPU: 2\n" + c.path.View() + "\n" + c.memory.View() + "\nTab: 경로 / Memory / directory picker · Enter: 선택 wizard · Esc: 취소\n" + c.picker.View()
+	content := "새 환경 생성 · CPU: 2\n" + c.path.View() + "\n" + c.memory.View() + "\n" + c.ports.View() + "\nTab: 경로 / Memory / ports / directory picker · Enter: 선택 wizard · Esc: 취소\n" + c.picker.View()
 	if m.actionError != "" {
 		content = m.actionError + "\n" + content
 	}
@@ -284,20 +306,37 @@ func (m *Dashboard) restoreTargets(w *operations.Workspace) ([]operations.Target
 	if w.Selection == nil {
 		return nil, fmt.Errorf("완료된 saved selection 없음")
 	}
-	saved, err := m.Catalog.Normalize(*w.Selection)
-	if err != nil {
-		return nil, err
-	}
+	saved := *w.Selection
+	saved.Pairs = slices.Clone(saved.Pairs)
+	slices.SortFunc(saved.Pairs, func(a, b config.Pair) int {
+		return strings.Compare(a.Agent+"-"+a.Methodology, b.Agent+"-"+b.Methodology)
+	})
 	targets := make([]operations.Target, 0, len(saved.Pairs))
 	for _, profile := range saved.Profiles() {
 		found := false
 		for _, s := range w.Sandboxes {
 			if s.Target.Profile == profile {
-				pair, _ := m.Catalog.Pair(profile)
-				agent, _ := m.Catalog.Agent(pair.Agent)
-				if s.Target.Entry.Agent != agent.Adapter || s.Target.Entry.Tool != pair.Methodology || s.Target.Entry.Image == "" || s.Target.Entry.Sandbox == "" {
+				entry := s.Target.Entry
+				if entry.Image == "" || (entry.Sandbox == "" && entry.ContainerID == "") {
 					return nil, fmt.Errorf("saved profile entry 확인 필요: %s", profile)
 				}
+				if saved.Category == config.CategorySandbox {
+					if entry.Agent != saved.Agent || entry.EffectiveCategory() != saved.Category {
+						return nil, fmt.Errorf("saved agent entry changed: %s", profile)
+					}
+				} else {
+					matches := false
+					for _, pair := range saved.Pairs {
+						candidate := config.Entry{Category: saved.Category, Agent: pair.Agent, Tool: pair.Methodology}
+						if candidate.Key() == profile && entry.Agent == pair.Agent && entry.Tool == pair.Methodology {
+							matches = true
+						}
+					}
+					if !matches {
+						return nil, fmt.Errorf("saved profile entry changed: %s", profile)
+					}
+				}
+
 				targets = append(targets, s.Target)
 				found = true
 				break
@@ -308,4 +347,21 @@ func (m *Dashboard) restoreTargets(w *operations.Workspace) ([]operations.Target
 		}
 	}
 	return targets, nil
+}
+
+func parsePorts(text string) ([]config.PortMapping, error) {
+	if strings.TrimSpace(text) == "" {
+		return nil, nil
+	}
+	var ports []config.PortMapping
+	for _, pair := range strings.Split(text, ",") {
+		h, c, ok := strings.Cut(strings.TrimSpace(pair), ":")
+		hp, he := strconv.Atoi(h)
+		cp, ce := strconv.Atoi(c)
+		if !ok || he != nil || ce != nil || hp < 1 || hp > 65535 || cp < 1 || cp > 65535 {
+			return nil, fmt.Errorf("Ports: host:container (1–65535)")
+		}
+		ports = append(ports, config.PortMapping{HostAddress: "127.0.0.1", HostPort: hp, ContainerPort: cp})
+	}
+	return ports, nil
 }

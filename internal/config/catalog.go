@@ -34,6 +34,8 @@ type Pair struct {
 	Methodology string `json:"methodology"`
 }
 type Selection struct {
+	Category  Category `json:"category,omitempty"`
+	Agent     string   `json:"agent,omitempty"`
 	Schema    int      `json:"schema"`
 	Pairs     []Pair   `json:"pairs"`
 	Utilities []string `json:"utilities"`
@@ -96,8 +98,18 @@ func (c Catalog) Pair(profile string) (Pair, bool) {
 	return Pair{}, false
 }
 func (c Catalog) Normalize(s Selection) (Selection, error) {
-	if s.Schema != 1 || len(s.Pairs) == 0 {
-		return s, fmt.Errorf("select at least one agent/methodology pair (selection schema must be 1)")
+	if err := s.validateFormat(); err != nil {
+		return s, err
+	}
+	if s.Category == CategorySandbox {
+		a, ok := c.Agent(s.Agent)
+		if !ok || (a.Adapter != "codex" && a.Adapter != "claude") {
+			return s, fmt.Errorf("unsupported agent-only adapter for %q", s.Agent)
+		}
+		return s, nil
+	}
+	if len(s.Pairs) == 0 {
+		return s, fmt.Errorf("select at least one agent/methodology pair")
 	}
 	pairs := map[string]Pair{}
 	for _, p := range s.Pairs {
@@ -146,7 +158,10 @@ func (c Catalog) Normalize(s Selection) (Selection, error) {
 func (s Selection) Profiles() []string {
 	out := make([]string, 0, len(s.Pairs))
 	for _, p := range s.Pairs {
-		out = append(out, p.Agent+"-"+p.Methodology)
+		out = append(out, Entry{Category: s.Category, Agent: p.Agent, Tool: p.Methodology}.Key())
+	}
+	if s.Category == CategorySandbox {
+		out = append(out, Entry{Category: s.Category, Agent: s.Agent}.Key())
 	}
 	return out
 }

@@ -96,7 +96,7 @@ func (a *execution) installLauncher(base string, workspaces []string) error {
 	}
 	return os.Rename(f.Name(), target)
 }
-func (a *execution) create(workspace, namespace, memory string) error {
+func (a *execution) create(workspace, namespace, memory string, verifyRelay ...bool) error {
 	w, err := config.Canonical(workspace)
 	if err != nil {
 		return err
@@ -125,6 +125,9 @@ func (a *execution) create(workspace, namespace, memory string) error {
 	err = config.ReadJSON(filepath.Join(runtime, "registry.json"), &saved)
 	if err != nil && !os.IsNotExist(err) {
 		return err
+	}
+	if a.Selection != nil && a.Selection.Schema == 2 {
+		return a.createCategory(w, runtime, namespace, memory, saved, verifyRelay...)
 	}
 	b, err := a.capture("sbx", "ls", "--json")
 	if err != nil {
@@ -162,7 +165,7 @@ func (a *execution) create(workspace, namespace, memory string) error {
 		name := "paseo-" + p + "-" + filepath.Base(runtime)
 		entry := config.Entry{Agent: adapter.Adapter, Tool: tool, Workspace: w, Sandbox: name, Image: a.image(p, namespace)}
 		planned[p] = entry
-		if names[name] && saved.Profiles[p] != entry {
+		if names[name] && !saved.Profiles[p].EqualIdentity(entry) {
 			return fmt.Errorf("existing sandbox %s does not match the selected image/settings; stop and replace it explicitly or use another workspace (existing sandbox preserved)", name)
 		}
 		if prior, exists := saved.Profiles[p]; exists {
@@ -318,10 +321,10 @@ func (a *execution) prune(home string, dryRun bool, targets []Target) error {
 				}
 				seen[t.Profile] = true
 				if len(reg.Profiles) == 0 {
-					if t.Profile != "" || t.Entry != (config.Entry{}) {
+					if t.Profile != "" || !t.Entry.EqualIdentity(config.Entry{}) {
 						return errors.New("confirmed prune empty registry changed")
 					}
-				} else if entry, ok := reg.Profiles[t.Profile]; !ok || t.Entry == (config.Entry{}) || entry != t.Entry {
+				} else if entry, ok := reg.Profiles[t.Profile]; !ok || t.Entry.EqualIdentity(config.Entry{}) || !entry.EqualIdentity(t.Entry) {
 					return errors.New("confirmed prune entry changed")
 				}
 			}
@@ -377,8 +380,8 @@ func (a *execution) prune(home string, dryRun bool, targets []Target) error {
 		}
 		var keys []string
 		for _, entry := range i.Registry.Profiles {
-			if entry.Sandbox != "" {
-				keys = append(keys, operationlock.SandboxKey(entry.Sandbox))
+			if entry.Sandbox != "" || entry.ContainerID != "" {
+				keys = append(keys, operationlock.EntryKey(entry))
 			}
 		}
 		release, err := operationlock.Acquire(a.ctx, i.Runtime, keys)
@@ -455,8 +458,183 @@ func pruneStillMissing(i config.Installed) (bool, error) {
 	if err = validateObservedRegistry(current, runtime); err != nil {
 		return false, err
 	}
-	if current.Workspace != i.Registry.Workspace || !maps.Equal(current.Profiles, i.Registry.Profiles) {
+	if current.Workspace != i.Registry.Workspace || !maps.EqualFunc(current.Profiles, i.Registry.Profiles, config.Entry.EqualIdentity) {
 		return false, errors.New("confirmed prune registry identity changed")
 	}
 	return (config.Installed{Runtime: runtime, Registry: current}).Missing(), nil
+}
+
+// createCategory preserves other categories and only activates a completed selection.
+// Execute holds the workspace lock; exact existing resources also take their target lock.
+func (a *execution) createCategory(w, runtime, namespace, memory string, saved config.Registry, verifyRelay ...bool) error {
+	if saved.Workspace != "" && saved.Workspace != w {
+		return errors.New("registry workspace mismatch")
+	}
+	backend, err := a.backend(a.Selection.Category)
+	if err != nil {
+		return err
+	}
+	if sbx, ok := backend.(*SBXBackend); ok {
+		copy := *sbx
+		copy.Memory = memory
+		backend = &copy
+	}
+	registry := saved
+	registry.Schema = 2
+	registry.Workspace = w
+	if registry.Profiles == nil {
+		registry.Profiles = map[string]config.Entry{}
+	}
+	registry.Active = slices.Clone(saved.ActiveProfiles())
+	if registry.Active == nil {
+		registry.Active = []string{}
+	}
+	planned := map[string]config.Entry{}
+	for _, profile := range a.profiles() {
+		entry := config.Entry{Category: a.Selection.Category, Workspace: w, Utilities: slices.Clone(a.Selection.Utilities), Image: a.image(profile, namespace)}
+		if entry.Image == "" {
+			return fmt.Errorf("no resolved image for %s; build first", profile)
+		}
+		if entry.Category == config.CategorySandbox {
+			entry.Agent = a.Selection.Agent
+			entry.Sandbox = "paseo-" + strings.ReplaceAll(profile, "/", "-") + "-" + filepath.Base(runtime)
+		} else {
+			for _, pair := range a.Selection.Pairs {
+				candidate := config.Entry{Category: entry.Category, Agent: pair.Agent, Tool: pair.Methodology}
+				if candidate.Key() == profile {
+					entry.Agent = pair.Agent
+					entry.Tool = pair.Methodology
+					break
+				}
+			}
+			entry.Network = "bridge"
+			entry.Ports = slices.Clone(a.ports)
+			entry, err = validateDockerEntry(entry, true)
+			if err != nil {
+				return err
+			}
+		}
+		if prior, ok := saved.Profiles[profile]; ok {
+			entry.ContainerID = prior.ContainerID
+			entry.ImageID = prior.ImageID
+			if !entry.EqualIdentity(prior) {
+				return fmt.Errorf("existing target %s does not match selected image/settings; existing resource preserved", profile)
+			}
+		}
+		planned[profile] = entry
+	}
+	// Only SBX needs the name inventory; a Docker outage cannot block sandbox creation.
+	names := map[string]bool{}
+	if a.Selection.Category == config.CategorySandbox {
+		rows, err := backend.List(a.ctx)
+		if err != nil {
+			return err
+		}
+		for _, row := range rows {
+			names[row.ID] = true
+		}
+		for profile, entry := range planned {
+			if names[entry.Sandbox] && !saved.Profiles[profile].EqualIdentity(entry) {
+				return fmt.Errorf("sandbox name %s is not owned by this registry", entry.Sandbox)
+			}
+		}
+	}
+	for _, profile := range a.profiles() {
+		entry := planned[profile]
+		release, err := operationlock.Acquire(a.ctx, runtime, []string{operationlock.EntryKey(entry)})
+		if err != nil {
+			return err
+		}
+		// Re-read trusted registry after acquiring the resource lock.
+		var current config.Registry
+		readErr := config.ReadJSON(filepath.Join(runtime, "registry.json"), &current)
+		if prior, exists := saved.Profiles[profile]; exists {
+			if readErr != nil {
+				release()
+				return readErr
+			}
+			if err := current.ValidateIdentity(profile, prior); err != nil {
+				release()
+				return err
+			}
+		} else if readErr == nil {
+			if _, exists := current.Profiles[profile]; exists {
+				release()
+				return errors.New("target appeared during creation")
+			}
+		} else if !os.IsNotExist(readErr) {
+			release()
+			return readErr
+		}
+		if !names[entry.Sandbox] {
+			created, createErr := backend.Create(a.ctx, entry)
+			a.changed = true
+			if created.Category == config.CategoryContainer && created.ContainerID != "" {
+				a.remaining = append(a.remaining, Target{Category: created.Category, Workspace: w, Runtime: runtime, Profile: profile, Entry: created})
+			}
+			if createErr != nil {
+				// A recovered CID is retained for diagnosis/retry without activating it.
+				if created.Category == config.CategoryContainer && created.ContainerID != "" {
+					registry.Profiles[profile] = created
+					a.uncertain = true
+					createErr = errors.Join(createErr, a.writeJSON(filepath.Join(runtime, "registry.json"), registry))
+				}
+				release()
+				return createErr
+			}
+			entry = created
+		}
+		registry.Profiles[profile] = entry
+		err = a.writeJSON(filepath.Join(runtime, "registry.json"), registry)
+		if err != nil && entry.Category == config.CategoryContainer {
+			a.uncertain = true
+		}
+		if err == nil && entry.Tool == "openspec" {
+			tool := entry.Agent
+			if tool == "antigravity-cli" {
+				tool = "antigravity"
+			}
+			err = backend.Exec(a.ctx, entry, []string{"env", "OPENSPEC_TELEMETRY=0", "openspec", "init", w, "--tools", tool, "--profile", "core", "--no-animation"}, nil, a.Out, a.Err)
+			if err != nil {
+				err = fmt.Errorf("OpenSpec initialization failed; resource retained: %w", err)
+			}
+		}
+		release()
+		if err != nil {
+			return err
+		}
+	}
+	if len(verifyRelay) > 0 && verifyRelay[0] && a.Selection.Category == config.CategoryContainer {
+		proposed := registry
+		proposed.Active = slices.Clone(registry.Active)
+		for _, key := range a.profiles() {
+			if !slices.Contains(proposed.Active, key) {
+				proposed.Active = append(proposed.Active, key)
+			}
+		}
+		if err := a.checkProspectiveDockerRelays(runtime, proposed); err != nil {
+			a.uncertain = true
+			return err
+		}
+	}
+	if err := a.installLauncher(filepath.Dir(runtime), []string{w}); err != nil {
+		return err
+	}
+	if err := a.writeJSON(filepath.Join(runtime, "selection.json"), a.Selection); err != nil {
+		return err
+	}
+	// Keep active targets belonging to the other runtime category.
+	active := []string{}
+	for _, profile := range registry.Active {
+		if registry.Profiles[profile].EffectiveCategory() != a.Selection.Category {
+			active = append(active, profile)
+		}
+	}
+	registry.Active = append(active, a.profiles()...)
+	registry.Selection = a.Selection
+	registry.Catalog = &a.Catalog
+	if err := a.writeJSON(filepath.Join(runtime, "registry.json"), registry); err != nil {
+		return err
+	}
+	return a.writeJSON(filepath.Join(a.Root, ".generated", "runtime.json"), map[string]string{"path": runtime})
 }

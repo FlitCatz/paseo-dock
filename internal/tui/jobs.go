@@ -4,8 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os/exec"
+	"paseo-sbx/internal/config"
 	"paseo-sbx/internal/operations"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -39,7 +40,7 @@ type jobPulseMsg struct {
 	finished bool
 }
 type shellReadyMsg struct {
-	command *exec.Cmd
+	command operations.ShellProcess
 	err     error
 }
 type shellDoneMsg struct{ err error }
@@ -55,12 +56,24 @@ type confirmation struct {
 }
 
 func freezeRequest(r operations.Request) operations.Request {
-	r.Targets = slices.Clone(r.Targets)
-	r.RestoreTargets = slices.Clone(r.RestoreTargets)
-	r.PruneTargets = slices.Clone(r.PruneTargets)
+	r.Ports = slices.Clone(r.Ports)
+	r.Target.Entry.Ports = slices.Clone(r.Target.Entry.Ports)
+	r.Target.Entry.Utilities = slices.Clone(r.Target.Entry.Utilities)
+	r.Targets = freezeTargets(r.Targets)
+	r.RestoreTargets = freezeTargets(r.RestoreTargets)
+	r.PruneTargets = freezeTargets(r.PruneTargets)
+
 	r.Selection.Pairs = slices.Clone(r.Selection.Pairs)
 	r.Selection.Utilities = slices.Clone(r.Selection.Utilities)
 	return r
+}
+func freezeTargets(targets []operations.Target) []operations.Target {
+	targets = slices.Clone(targets)
+	for i := range targets {
+		targets[i].Entry.Ports = slices.Clone(targets[i].Entry.Ports)
+		targets[i].Entry.Utilities = slices.Clone(targets[i].Entry.Utilities)
+	}
+	return targets
 }
 func (m *Dashboard) busy() bool {
 	for _, j := range m.jobs {
@@ -200,7 +213,7 @@ func (m *Dashboard) jobMessage(msg tea.Msg) (bool, tea.Cmd) {
 			return true, m.refreshAfterWork()
 		}
 		m.shellRunning = true
-		return true, tea.ExecProcess(v.command, func(err error) tea.Msg { return shellDoneMsg{err} })
+		return true, tea.Exec(v.command, func(err error) tea.Msg { return shellDoneMsg{err} })
 	case shellDoneMsg:
 		m.shellRunning = false
 		if v.err != nil {
@@ -226,7 +239,7 @@ func (m *Dashboard) selectedSandbox() *operations.Sandbox {
 	return nil
 }
 func (m *Dashboard) actions() []action {
-	a := []action{{label: "sandbox 업데이트", kind: operations.KindUpdate}, {label: "workspace 활성 조합 업데이트", kind: operations.KindUpdate, workspace: true}, {label: "shell / 로그인", shell: true}, {label: "sandbox 중지", kind: operations.KindStop}, {label: "guest 버전 확인", kind: operations.KindVersions}, {label: "Paseo 등록", kind: operations.KindRegister, workspace: true}, {label: "Paseo 해제", kind: operations.KindUnregister, workspace: true}}
+	a := []action{{label: "대상 업데이트", kind: operations.KindUpdate}, {label: "workspace 활성 조합 업데이트", kind: operations.KindUpdate, workspace: true}, {label: "shell / 로그인", shell: true}, {label: "대상 중지", kind: operations.KindStop}, {label: "guest 버전 확인", kind: operations.KindVersions}, {label: "Paseo 등록", kind: operations.KindRegister, workspace: true}, {label: "Paseo 해제", kind: operations.KindUnregister, workspace: true}}
 	w, s := m.selectedWorkspace(), m.selectedSandbox()
 	for i := range a {
 		r := &a[i]
@@ -243,10 +256,12 @@ func (m *Dashboard) actions() []action {
 			r.reason = "workspace 경로 없음"
 		case s == nil:
 			r.reason = "sandbox 선택 필요"
-		case s.Target.Entry.Sandbox == "":
+		case s.Target.Entry.Sandbox == "" && s.Target.Entry.ContainerID == "":
 			r.reason = "sandbox 대상 없음"
 		case !r.workspace && s.RuntimeState == "missing":
 			r.reason = "sandbox 없음"
+		case r.shell && s.Target.Entry.EffectiveCategory() == config.CategoryContainer && s.RuntimeState != "running":
+			r.reason = "container shell requires an explicitly started running container"
 		case r.shell && m.busy():
 			r.reason = "변경 작업과 대기열 완료 후 사용"
 		}
@@ -292,6 +307,7 @@ func (m *Dashboard) chooseAction(a action) tea.Cmd {
 	}
 	r := operations.Request{Kind: a.kind, Target: s.Target, PaseoHome: "~/.paseo"}
 	if a.workspace {
+		r.Target = operations.Target{Workspace: w.Path, Runtime: w.Runtime}
 		// A nonnil empty slice is an explicit inactive baseline, distinct from
 		// omitted CLI targets that resolve activation at execution time.
 		r.Targets = make([]operations.Target, 0)
@@ -314,7 +330,11 @@ func (m *Dashboard) chooseAction(a action) tea.Cmd {
 			r.RestoreTargets = targets
 		}
 	}
-	m.confirm = &confirmation{freezeRequest(r), a.label, actionWarning(a.kind)}
+	warning := actionWarning(a.kind)
+	if s.Target.Entry.EffectiveCategory() == config.CategoryContainer {
+		warning = "Docker exec requires a running container; stopped containers are not automatically started."
+	}
+	m.confirm = &confirmation{freezeRequest(r), a.label, warning}
 	m.modal.GotoTop()
 	return nil
 }
@@ -429,7 +449,9 @@ func (m *Dashboard) managementContent() string {
 	if m.confirm != nil {
 		c := m.confirm
 		lines := []string{"확인: " + c.label, "Workspace: " + c.request.Target.Workspace, "Runtime: " + c.request.Target.Runtime, "Sandbox: " + c.request.Target.Entry.Sandbox, "Image: " + c.request.Target.Entry.Image, c.warning}
+		lines = append(lines, runtimeSettings(c.request.Target.Entry)...)
 		for _, t := range c.request.Targets {
+			lines = append(lines, runtimeSettings(t.Entry)...)
 			lines = append(lines, t.Profile+" → "+t.Entry.Sandbox+" / "+t.Entry.Image)
 		}
 		for _, t := range c.request.RestoreTargets {
@@ -482,15 +504,15 @@ func (m *Dashboard) logContent() string {
 			frames := []rune("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏")
 			status = string(frames[int(elapsed/(100*time.Millisecond))%len(frames)]) + " " + status
 		}
-		lines = append(lines, fmt.Sprintf("#%d %s %s · %s · %s · %s", j.id, j.request.Kind, j.request.Target.Entry.Sandbox, status, j.stage, elapsed.Round(time.Second)))
+		lines = append(lines, fmt.Sprintf("#%d %s %s · %s · %s · %s", j.id, j.request.Kind, j.request.Target.ResourceIdentity(), status, j.stage, elapsed.Round(time.Second)))
 		if j.errorText != "" {
 			lines = append(lines, j.errorText, "대상/선택 보존 · R 키로 확인 후 재시도")
 		}
 		for _, t := range j.result.Remaining {
-			lines = append(lines, "남은 대상: "+t.Profile+" / "+t.Entry.Sandbox)
+			lines = append(lines, "남은 대상: "+t.Profile+" / "+t.ResourceIdentity()+" · registry: "+filepath.Join(t.Runtime, "registry.json"))
 		}
 		for _, t := range j.result.Missing {
-			lines = append(lines, "누락: "+t.Workspace+" / "+t.Entry.Sandbox)
+			lines = append(lines, "누락: "+t.Workspace+" / "+t.ResourceIdentity())
 		}
 		lines = append(lines, versionLines("확인 버전", j.result.Versions)...)
 		lines = append(lines, versionLines("확인 오류", j.result.VersionErrors)...)
@@ -630,4 +652,26 @@ func (s *logSanitizer) clean(p []byte) []byte {
 		out = utf8.AppendRune(out, r)
 	}
 	return out
+}
+
+func portText(ports []config.PortMapping) string {
+	if len(ports) == 0 {
+		return "none"
+	}
+	var parts []string
+	for _, p := range ports {
+		parts = append(parts, fmt.Sprintf("%s:%d → %d", p.HostAddress, p.HostPort, p.ContainerPort))
+	}
+	return strings.Join(parts, ", ")
+}
+func runtimeSettings(e config.Entry) []string {
+	network := e.Network
+	if network == "" {
+		if e.EffectiveCategory() == config.CategoryContainer {
+			network = "bridge"
+		} else {
+			network = "SBX policy"
+		}
+	}
+	return []string{"Category: " + string(e.EffectiveCategory()), "Container ID: " + e.ContainerID, "Mount: " + e.Workspace + " (read/write)", "Network: " + network, "Ports: " + portText(e.Ports)}
 }

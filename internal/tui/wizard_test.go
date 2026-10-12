@@ -15,9 +15,9 @@ func TestEmbeddedWizardReturnsToDashboard(t *testing.T) {
 		for _, cancel := range []bool{true, false} {
 			var m *Model
 			if embedded {
-				m = NewEmbeddedModel(config.DefaultCatalog(), config.Selection{}, "/workspace", "2g")
+				m = newEmbeddedContainerModel(config.DefaultCatalog(), config.Selection{}, "/workspace", "2g")
 			} else {
-				m = NewModel(config.DefaultCatalog(), config.Selection{}, "/workspace", "2g")
+				m = newContainerModel(config.DefaultCatalog(), config.Selection{}, "/workspace", "2g")
 			}
 			code := rune(tea.KeyEscape)
 			if !cancel {
@@ -27,6 +27,9 @@ func TestEmbeddedWizardReturnsToDashboard(t *testing.T) {
 				key(m, tea.KeyEnter)
 				key(m, tea.KeyEnter)
 				code = tea.KeyEnter
+			}
+			if cancel {
+				key(m, tea.KeyEscape)
 			}
 			_, cmd := m.Update(tea.KeyPressMsg(tea.Key{Code: code}))
 			if cmd == nil {
@@ -51,7 +54,7 @@ func TestEmbeddedWizardReturnsToDashboard(t *testing.T) {
 	}
 }
 func TestWizardOnlyChosenCombinations(t *testing.T) {
-	m := NewModel(config.DefaultCatalog(), config.Selection{}, "/workspace", "2g")
+	m := newContainerModel(config.DefaultCatalog(), config.Selection{}, "/workspace", "2g")
 	key(m, tea.KeyEnter)
 	if m.Step != 0 || m.Error == "" {
 		t.Fatal("allowed empty agents")
@@ -74,7 +77,7 @@ func TestWizardOnlyChosenCombinations(t *testing.T) {
 	}
 }
 func TestWizardCancellationAndBack(t *testing.T) {
-	m := NewModel(config.DefaultCatalog(), config.Selection{}, "/workspace", "2g")
+	m := newContainerModel(config.DefaultCatalog(), config.Selection{}, "/workspace", "2g")
 	key(m, tea.KeySpace)
 	key(m, tea.KeyEnter)
 	key(m, tea.KeySpace)
@@ -89,7 +92,7 @@ func TestWizardCancellationAndBack(t *testing.T) {
 	}
 }
 func TestWizardPerAgentMethodsAndHeadroomDisclosure(t *testing.T) {
-	m := NewModel(config.DefaultCatalog(), config.Selection{}, "/workspace", "2g")
+	m := newContainerModel(config.DefaultCatalog(), config.Selection{}, "/workspace", "2g")
 	key(m, tea.KeySpace)
 	key(m, tea.KeyDown)
 	key(m, tea.KeySpace)
@@ -110,14 +113,14 @@ func TestWizardPerAgentMethodsAndHeadroomDisclosure(t *testing.T) {
 	if !m.Result.Apply || len(m.Result.Selection.Pairs) != 2 {
 		t.Fatal(m.Result)
 	}
-	if m.Result.Selection.Profiles()[0] != "claude-gsd-core" || m.Result.Selection.Profiles()[1] != "codex-superpowers" {
+	if m.Result.Selection.Profiles()[0] != "container/claude-gsd-core" || m.Result.Selection.Profiles()[1] != "container/codex-superpowers" {
 		t.Fatal(m.Result.Selection)
 	}
 }
 func TestIncompatibleUtilityCanBeDeselected(t *testing.T) {
 	c := config.DefaultCatalog()
 	c.Utilities[0].Agents = []string{"codex"}
-	m := NewModel(c, config.Selection{Schema: 1, Pairs: []config.Pair{{Agent: "codex", Methodology: "superpowers"}, {Agent: "claude", Methodology: "superpowers"}}, Utilities: []string{"rtk"}}, "/workspace", "2g")
+	m := newContainerModel(c, config.Selection{Schema: 1, Pairs: []config.Pair{{Agent: "codex", Methodology: "superpowers"}, {Agent: "claude", Methodology: "superpowers"}}, Utilities: []string{"rtk"}}, "/workspace", "2g")
 	key(m, tea.KeyEnter)
 	key(m, tea.KeyEnter)
 	key(m, tea.KeyEnter)
@@ -132,7 +135,7 @@ func TestIncompatibleUtilityCanBeDeselected(t *testing.T) {
 }
 
 func TestWizardAntigravityNative(t *testing.T) {
-	m := NewModel(config.DefaultCatalog(), config.Selection{}, "/workspace", "2g")
+	m := newContainerModel(config.DefaultCatalog(), config.Selection{}, "/workspace", "2g")
 	key(m, tea.KeyDown)
 	key(m, tea.KeyDown)
 	key(m, tea.KeySpace)
@@ -157,13 +160,13 @@ func TestWizardAntigravityNative(t *testing.T) {
 	}
 	key(m, tea.KeyEnter)
 	key(m, tea.KeyEnter)
-	if !m.Confirmed || strings.Join(m.Result.Selection.Profiles(), ",") != "antigravity-cli-native" || strings.Join(m.Result.Selection.Utilities, ",") != "rtk" {
+	if !m.Confirmed || strings.Join(m.Result.Selection.Profiles(), ",") != "container/antigravity-cli-native" || strings.Join(m.Result.Selection.Utilities, ",") != "rtk" {
 		t.Fatal(m.Result)
 	}
 }
 
 func TestContinuousFormNavigation(t *testing.T) {
-	m := NewModel(config.DefaultCatalog(), config.Selection{}, "/한글 project", "2g")
+	m := newContainerModel(config.DefaultCatalog(), config.Selection{}, "/한글 project", "2g")
 	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
 	if !strings.Contains(m.View().Content, "Headroom") {
 		t.Fatal("24-line terminal does not show all initial choices")
@@ -201,13 +204,13 @@ func TestContinuousFormNavigation(t *testing.T) {
 		t.Fatal("Tab confirmed resource creation")
 	}
 	key(m, tea.KeyEnter)
-	if !m.Confirmed || strings.Join(m.Result.Selection.Profiles(), ",") != "claude-superpowers,codex-openspec" {
+	if !m.Confirmed || strings.Join(m.Result.Selection.Profiles(), ",") != "container/claude-superpowers,container/codex-openspec" {
 		t.Fatal(m.Result)
 	}
 }
 
 func TestFormColorAndSmallTerminal(t *testing.T) {
-	m := NewModel(config.DefaultCatalog(), config.Selection{Schema: 1, Pairs: []config.Pair{{Agent: "antigravity-cli", Methodology: "openspec"}}}, "/한글 project", "2g")
+	m := newContainerModel(config.DefaultCatalog(), config.Selection{Schema: 1, Pairs: []config.Pair{{Agent: "antigravity-cli", Methodology: "openspec"}}}, "/한글 project", "2g")
 	m.Color = true
 	if !strings.Contains(m.View().Content, "\x1b[") {
 		t.Fatal("missing color")
@@ -233,8 +236,22 @@ func TestFormColorAndSmallTerminal(t *testing.T) {
 		}
 	}
 	t.Setenv("NO_COLOR", "1")
-	plain := NewModel(config.DefaultCatalog(), config.Selection{}, "/workspace", "2g").View().Content
+	plain := newContainerModel(config.DefaultCatalog(), config.Selection{}, "/workspace", "2g").View().Content
 	if strings.Contains(plain, "\x1b[") {
 		t.Fatal("NO_COLOR ignored")
 	}
+}
+
+func newContainerModel(c config.Catalog, s config.Selection, w, memory string) *Model {
+	m := NewModel(c, s, w, memory)
+	if m.Step == -1 {
+		key(m, tea.KeyDown)
+		key(m, tea.KeyEnter)
+	}
+	return m
+}
+func newEmbeddedContainerModel(c config.Catalog, s config.Selection, w, memory string) *Model {
+	m := newContainerModel(c, s, w, memory)
+	m.embedded = true
+	return m
 }

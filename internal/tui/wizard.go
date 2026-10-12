@@ -17,6 +17,8 @@ var ErrCancelled = errors.New("selection cancelled")
 
 type Result struct {
 	Selection config.Selection
+	Category  config.Category
+	Ports     []config.PortMapping
 	Apply     bool
 }
 type WizardFinishedMsg struct {
@@ -26,6 +28,8 @@ type WizardFinishedMsg struct {
 }
 type Model struct {
 	Catalog                  config.Catalog
+	Category                 config.Category
+	Ports                    []config.PortMapping
 	Workspace, Memory        string
 	Step, Cursor, agentIndex int
 	agents, pairs, utilities map[string]bool
@@ -57,7 +61,16 @@ func (m *Model) finish() tea.Cmd {
 
 func NewModel(c config.Catalog, s config.Selection, workspace, memory string) *Model {
 	_, noColor := os.LookupEnv("NO_COLOR")
-	m := &Model{Catalog: c, Workspace: workspace, Memory: memory, Color: !noColor, agents: map[string]bool{}, pairs: map[string]bool{}, utilities: map[string]bool{}}
+	m := &Model{Category: config.CategorySandbox, Step: -1, Catalog: c, Workspace: workspace, Memory: memory, Color: !noColor, agents: map[string]bool{}, pairs: map[string]bool{}, utilities: map[string]bool{}}
+	if s.Schema != 0 {
+		m.Category = s.Category
+		if m.Category == "" {
+			m.Category = config.CategoryContainer
+		}
+	}
+	if s.Agent != "" {
+		m.agents[s.Agent] = true
+	}
 	for _, p := range s.Pairs {
 		m.agents[p.Agent] = true
 		m.pairs[p.Agent+"-"+p.Methodology] = true
@@ -70,7 +83,18 @@ func NewModel(c config.Catalog, s config.Selection, workspace, memory string) *M
 func (m *Model) Init() tea.Cmd { return nil }
 func (m *Model) items() []config.Item {
 	switch m.Step {
+	case -1:
+		return []config.Item{{ID: "sandbox", Label: "sandbox: agent 테스트"}, {ID: "container", Label: "container: 개발 환경"}}
 	case 0:
+		if m.Category == config.CategorySandbox {
+			var items []config.Item
+			for _, i := range m.Catalog.Agents {
+				if i.ID == "codex" || i.ID == "claude" {
+					items = append(items, i)
+				}
+			}
+			return items
+		}
 		return m.Catalog.Agents
 	case 1:
 		var out []config.Item
@@ -86,7 +110,14 @@ func (m *Model) items() []config.Item {
 	return nil
 }
 func (m *Model) selection() config.Selection {
-	s := config.Selection{Schema: 1}
+	s := config.Selection{Schema: 2, Category: m.Category}
+	if m.Category == config.CategorySandbox {
+		chosen := m.chosenAgents()
+		if len(chosen) == 1 {
+			s.Agent = chosen[0]
+		}
+		return s
+	}
 	for _, a := range m.Catalog.Agents {
 		if m.agents[a.ID] {
 			for _, method := range m.Catalog.Methodologies {
@@ -147,12 +178,34 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 	m.Error = ""
+	if m.Step == -1 {
+		switch k.Code {
+		case tea.KeyEscape:
+			m.Err = ErrCancelled
+			return m, m.finish()
+		case tea.KeyUp, tea.KeyDown:
+			m.Cursor = 1 - m.Cursor
+		case tea.KeySpace: // Enter accepts the focused category.
+		case tea.KeyEnter:
+			category := config.Category(m.items()[m.Cursor].ID)
+			if category != m.Category {
+				m.agents = map[string]bool{}
+				m.pairs = map[string]bool{}
+				m.utilities = map[string]bool{}
+			}
+			m.Category = category
+			m.Step = 0
+			m.Cursor = 0
+		}
+		return m, nil
+	}
 	switch k.Code {
 	case tea.KeyEscape:
 		switch m.Step {
 		case 0:
-			m.Err = ErrCancelled
-			return m, m.finish()
+			m.Step = -1
+			m.Cursor = 0
+			return m, nil
 		case 1:
 			if m.agentIndex > 0 {
 				m.agentIndex--
@@ -160,10 +213,24 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.Step = 0
 			}
 		case 2:
-			m.Step = 1
+			if m.Category == config.CategorySandbox {
+				s, err := m.Catalog.Normalize(m.selection())
+				if err != nil {
+					m.Error = err.Error()
+					break
+				}
+				m.Result.Selection = s
+				m.Step = 3
+			} else {
+				m.Step = 1
+			}
 			m.agentIndex = len(m.selectedAgents) - 1
 		case 3:
-			m.Step = 2
+			if m.Category == config.CategorySandbox {
+				m.Step = 0
+			} else {
+				m.Step = 2
+			}
 		}
 		m.Cursor = 0
 	case tea.KeyUp:
@@ -190,7 +257,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		switch m.Step {
 		case 0:
-			m.agents[i.ID] = !m.agents[i.ID]
+			if m.Category == config.CategorySandbox {
+				selected := m.agents[i.ID]
+				m.agents = map[string]bool{}
+				m.agents[i.ID] = !selected
+			} else {
+				m.agents[i.ID] = !m.agents[i.ID]
+			}
 		case 1:
 			p := m.selectedAgents[m.agentIndex] + "-" + i.ID
 			m.pairs[p] = !m.pairs[p]
@@ -210,7 +283,17 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.Error = "Agent를 하나 이상 선택하세요."
 				break
 			}
-			m.Step = 1
+			if m.Category == config.CategorySandbox {
+				s, err := m.Catalog.Normalize(m.selection())
+				if err != nil {
+					m.Error = err.Error()
+					break
+				}
+				m.Result.Selection = s
+				m.Step = 3
+			} else {
+				m.Step = 1
+			}
 			m.agentIndex = 0
 			m.Cursor = 0
 		case 1:
@@ -247,6 +330,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				break
 			}
 			m.Result.Selection = s
+			m.Result.Category = m.Category
+			if m.Category == config.CategoryContainer {
+				m.Result.Ports = slices.Clone(m.Ports)
+			}
 			m.Confirmed = true
 			return m, m.finish()
 		}
@@ -254,6 +341,46 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 func (m *Model) View() tea.View {
+	if m.Step == -1 {
+		lines := []string{"Category · 실행 환경 선택", "Workspace: " + m.Workspace}
+		for index, i := range m.items() {
+			mark := "  "
+			if index == m.Cursor {
+				mark = "› "
+			}
+			lines = append(lines, mark+i.Label)
+		}
+		lines = append(lines, "↑↓ 선택 · Enter 다음 · Esc 취소")
+		return m.boundedView(lines)
+	}
+	if m.Category == config.CategorySandbox {
+		lines := []string{"Category: sandbox · Agent 테스트", "Workspace: " + m.Workspace}
+		if m.Step == 0 {
+			for index, i := range m.items() {
+				mark := "○ "
+				if m.agents[i.ID] {
+					mark = "✓ "
+				}
+				if index == m.Cursor {
+					mark = "› " + mark
+				}
+				lines = append(lines, mark+i.Label)
+			}
+		} else {
+			lines = append(lines, "최종 확인 · Agent: "+m.Result.Selection.Agent, "Image source: official stable package · Confirmed version: unresolved; official stable release will be resolved and recorded during build", "Mount: "+m.Workspace+" (read/write)", "Network: SBX policy · Ports: none", "Build → template load → sandbox · CPU: 2 · Memory: "+m.Memory)
+			mark := "○ "
+			if m.Result.Apply {
+				mark = "✓ "
+			}
+			lines = append(lines, mark+"Paseo provider 등록 및 reload", "Enter 생성 · Space 등록 변경")
+		}
+		if m.Error != "" {
+			lines = append(lines, m.Error)
+		}
+		lines = append(lines, "Space 선택 · Enter 다음 · Esc 이전 · Ctrl+C 취소")
+		return m.boundedView(lines)
+	}
+
 	paint := func(code, text string) string {
 		if !m.Color {
 			return text
@@ -334,7 +461,8 @@ func (m *Model) View() tea.View {
 			body = append(body, "┃    "+paint(green, "✓ "+profile))
 		}
 		body = append(body, "┃    Utilities: "+strings.Join(m.Result.Selection.Utilities, ", "))
-		body = append(body, "┃    Build → load · CPU: 2 · Memory: "+m.Memory)
+		body = append(body, "┃    Build → Docker store · CPU: 2 · Memory: "+m.Memory)
+		body = append(body, "┃    Category: container", "┃    Image source: versions.lock.json · Confirmed versions: unresolved in preview; pinned values recorded during build", "┃    Mount: "+m.Workspace+" (read/write)", "┃    Network: bridge", "┃    Ports: "+portText(m.Ports))
 		if slices.Contains(m.Result.Selection.Utilities, "headroom") {
 			body = append(body, "┃    "+paint(muted, "Headroom: sandbox 내부 Python 런타임 + MCP 도구 연결"))
 		}
@@ -349,7 +477,7 @@ func (m *Model) View() tea.View {
 			mark = "✓"
 		}
 		focus = len(body)
-		body = append(body, "┃  "+paint(pink, "›")+" "+paint(green, mark+" Paseo provider 등록 및 reload"), "┃    "+paint(muted, "Enter: 이미지 빌드 → template 로드 → sandbox 생성"))
+		body = append(body, "┃  "+paint(pink, "›")+" "+paint(green, mark+" Paseo provider 등록 및 reload"), "┃    "+paint(muted, "Enter: 이미지 빌드 → Docker container 생성"))
 		if m.embedded {
 			body = append(body, "┃    Paseo: ~/.paseo/config.json · backup / merge", "┃    다른 workspace provider 유지")
 		}
@@ -358,7 +486,7 @@ func (m *Model) View() tea.View {
 	if agents == "" {
 		agents = "선택 전"
 	}
-	header := []string{paint("38;5;81;1", "PASEO SBX") + "  " + paint(muted, fmt.Sprintf("STEP %d / 4", m.Step+1)), paint(muted, "Workspace: "+m.Workspace), paint(muted, fmt.Sprintf("Memory: %s / sandbox · CPU: 2 · Agent: %s", m.Memory, agents))}
+	header := []string{paint("38;5;81;1", "PASEO SBX") + "  " + paint(muted, fmt.Sprintf("STEP %d / 4", m.Step+1)), paint(muted, "Workspace: "+m.Workspace), paint(muted, fmt.Sprintf("Memory: %s / target · CPU: 2 · Agent: %s", m.Memory, agents))}
 	footer := []string{"", paint(muted, "↑/↓ 이동 · Space/x 선택 · Enter/Tab 다음 · Esc/Shift+Tab 이전"), paint(muted, "Ctrl+C 취소 · 최종 확인 화면에서 Enter로 생성")}
 	if m.Error != "" {
 		footer = append([]string{paint("38;5;203", m.Error)}, footer...)
@@ -386,7 +514,13 @@ func (m *Model) View() tea.View {
 	return v
 }
 func Run(c config.Catalog, s config.Selection, workspace, memory string, in io.Reader, out io.Writer, apply ...bool) (Result, error) {
+	return RunWithPorts(c, s, workspace, memory, nil, in, out, apply...)
+}
+
+// RunWithPorts preserves explicit publications through standalone confirmation.
+func RunWithPorts(c config.Catalog, s config.Selection, workspace, memory string, ports []config.PortMapping, in io.Reader, out io.Writer, apply ...bool) (Result, error) {
 	m := NewModel(c, s, workspace, memory)
+	m.Ports = slices.Clone(ports)
 	if len(apply) > 0 {
 		m.Result.Apply = apply[0]
 	}
@@ -401,4 +535,24 @@ func Run(c config.Catalog, s config.Selection, workspace, memory string, in io.R
 		return Result{}, ErrCancelled
 	}
 	return m.Result, nil
+}
+
+func (m *Model) boundedView(lines []string) tea.View {
+	if m.Height > 0 && len(lines) > m.Height {
+		if m.Step == 3 {
+			lines = lines[len(lines)-m.Height:]
+		} else {
+			focus := 2 + m.Cursor
+			start := min(max(0, focus-m.Height+1), len(lines)-m.Height)
+			lines = lines[start : start+m.Height]
+		}
+	}
+	if m.Width > 0 {
+		for i := range lines {
+			lines[i] = ansi.Truncate(lines[i], m.Width, "…")
+		}
+	}
+	v := tea.NewView(strings.Join(lines, "\n"))
+	v.AltScreen = true
+	return v
 }

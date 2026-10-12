@@ -1,0 +1,2 @@
+PROTOCOL container-codex-superpowers {"id":1,"result":{"userAgent":"category-live/0.161.0 (Ubuntu 26.4.0; aarch64) unknown (category-live; 1)","codexHome":"/home/agent/.codex","platformFamily":"unix","platformOs":"linux"}}
+PROTOCOL sbx-codex {"id":1,"result":{"userAgent":"category-live/0.161.0 (Ubuntu 24.4.0; aarch64) unknown (category-live; 1)","codexHome":"/home/agent/.codex","platformFamily":"unix","platformOs":"linux"}}

@@ -100,6 +100,8 @@ func TestCreationRequestFrozen(t *testing.T) {
 		t.Fatal("valid path/memory did not lead to wizard")
 	}
 	child := m.creating.wizard
+	key(child, tea.KeyDown)
+	key(child, tea.KeyEnter)
 	for _, code := range []rune{tea.KeySpace, tea.KeyEnter, tea.KeySpace, tea.KeyEnter, tea.KeySpace, tea.KeyEnter} {
 		m.Update(tea.KeyPressMsg(tea.Key{Code: code}))
 	}

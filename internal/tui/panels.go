@@ -62,7 +62,7 @@ func (dashboardKeys) FullHelp() [][]keys.Binding {
 		keys.NewBinding(keys.WithKeys("v"), keys.WithHelp("v", "미등록 sandbox (읽기 전용)")), keys.NewBinding(keys.WithKeys("t"), keys.WithHelp("t", "template 탭")), keys.NewBinding(keys.WithKeys("left", "right"), keys.WithHelp("←→", "상세/로그 탭")), keys.NewBinding(keys.WithKeys("esc"), keys.WithHelp("Esc", "검색 취소")),
 		keys.NewBinding(keys.WithKeys("enter"), keys.WithHelp("Enter", "작업")), keys.NewBinding(keys.WithKeys("u"), keys.WithHelp("u", "업데이트")), keys.NewBinding(keys.WithKeys("s"), keys.WithHelp("s", "shell")), keys.NewBinding(keys.WithKeys("c"), keys.WithHelp("c", "취소 요청")),
 		keys.NewBinding(keys.WithKeys("R"), keys.WithHelp("R", "고정 대상 재시도")),
-		keys.NewBinding(keys.WithKeys("n"), keys.WithHelp("n", "새 sandbox 생성")), keys.NewBinding(keys.WithKeys("a"), keys.WithHelp("a", "고급 build/load/prune")),
+		keys.NewBinding(keys.WithKeys("n"), keys.WithHelp("n", "새 환경 생성")), keys.NewBinding(keys.WithKeys("a"), keys.WithHelp("a", "고급 build/load/prune")),
 	}}
 }
 
@@ -116,6 +116,7 @@ func (m *Dashboard) detailContent() string {
 			continue
 		}
 		lines = append(lines, "Profile: "+sandboxID(s), "Sandbox: "+s.Target.Entry.Sandbox, "Image: "+s.Target.Entry.Image, "Runtime: "+s.RuntimeState, "Paseo 등록: "+s.Registration)
+		lines = append(lines, runtimeSettings(s.Target.Entry)...)
 		if s.RegistrationError != "" {
 			lines = append(lines, "Paseo 등록 확인 오류: "+s.RegistrationError)
 		}

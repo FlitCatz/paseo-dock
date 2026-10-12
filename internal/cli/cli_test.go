@@ -98,7 +98,7 @@ func TestCommandLifecycle(t *testing.T) {
 	invoke := func(args ...string) string {
 		t.Helper()
 		var out, stderr bytes.Buffer
-		if code := Run(root, args, &bytes.Buffer{}, &out, &stderr); code != 0 {
+		if code := runLegacyFixture(root, args, &bytes.Buffer{}, &out, &stderr); code != 0 {
 			t.Fatalf("%v: %d %s", args, code, stderr.String())
 		}
 		return out.String()
@@ -180,7 +180,7 @@ func TestCommandLifecycle(t *testing.T) {
 	}
 	reg.Profiles["codex-superpowers"] = config.Entry{}
 	config.WriteJSON(filepath.Join(runtime, "registry.json"), reg)
-	if Run(root, []string{"create", "--workspace", workspace}, &bytes.Buffer{}, &bytes.Buffer{}, &bytes.Buffer{}) == 0 {
+	if runLegacyFixture(root, []string{"create", "--workspace", workspace}, &bytes.Buffer{}, &bytes.Buffer{}, &bytes.Buffer{}) == 0 {
 		t.Fatal("reused mismatching sandbox")
 	}
 }
@@ -199,7 +199,7 @@ func TestWorkspaceMustNotContainSourceRoot(t *testing.T) {
 	os.WriteFile(filepath.Join(fake, "sbx"), []byte("#!/bin/sh\ntouch \""+marker+"\"\necho \"[]\"\n"), 0700)
 	for _, workspace := range []string{root, parent} {
 		var stderr bytes.Buffer
-		if Run(root, []string{"create", "--workspace", workspace, "--profile", "codex-superpowers"}, &bytes.Buffer{}, &bytes.Buffer{}, &stderr) == 0 {
+		if runLegacyFixture(root, []string{"create", "--workspace", workspace, "--profile", "codex-superpowers"}, &bytes.Buffer{}, &bytes.Buffer{}, &stderr) == 0 {
 			t.Fatalf("accepted workspace %s", workspace)
 		}
 		if !strings.Contains(stderr.String(), "source root") {
@@ -245,7 +245,7 @@ func TestWorkspacesShareProviders(t *testing.T) {
 	invoke := func(args ...string) string {
 		t.Helper()
 		var out, stderr bytes.Buffer
-		if code := Run(root, args, &bytes.Buffer{}, &out, &stderr); code != 0 {
+		if code := runLegacyFixture(root, args, &bytes.Buffer{}, &out, &stderr); code != 0 {
 			t.Fatalf("%v: %d %s", args, code, stderr.String())
 		}
 		return out.String()
@@ -282,7 +282,7 @@ func TestWorkspacesShareProviders(t *testing.T) {
 	if len(got) != 3 || got["codex-superpowers"] == nil || got["codex-gsd-core"] != nil || got["custom"] == nil {
 		t.Fatal(got)
 	}
-	if Run(root, []string{"create", "--workspace", filepath.Join(base, "inside"), "--profile", "codex-superpowers"}, &bytes.Buffer{}, &bytes.Buffer{}, &bytes.Buffer{}) == 0 {
+	if runLegacyFixture(root, []string{"create", "--workspace", filepath.Join(base, "inside"), "--profile", "codex-superpowers"}, &bytes.Buffer{}, &bytes.Buffer{}, &bytes.Buffer{}) == 0 {
 		t.Fatal("workspace inside the trusted runtime accepted")
 	}
 }
@@ -303,7 +303,7 @@ func TestPruneForgetsDeletedWorkspaces(t *testing.T) {
 	invoke := func(args ...string) string {
 		t.Helper()
 		var out, stderr bytes.Buffer
-		if code := Run(root, args, &bytes.Buffer{}, &out, &stderr); code != 0 {
+		if code := runLegacyFixture(root, args, &bytes.Buffer{}, &out, &stderr); code != 0 {
 			t.Fatalf("%v: %d %s", args, code, stderr.String())
 		}
 		return out.String()

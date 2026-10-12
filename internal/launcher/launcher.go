@@ -3,6 +3,7 @@ package launcher
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -14,15 +15,99 @@ import (
 	"os/signal"
 	"paseo-sbx/internal/config"
 	"paseo-sbx/internal/gateway"
+	"paseo-sbx/internal/operationlock"
+	"paseo-sbx/internal/operations"
+	"paseo-sbx/internal/process"
 	"paseo-sbx/internal/sandboxupdate"
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 )
 
 // prepareNative copies only plugin-prepared assets into an ephemeral guest
 // directory. Authentication directories are never mounted or copied.
 func prepareNative(args []string, workspace, sandbox string, stderr io.Writer) ([]string, map[string]string, func(), error) {
+	return prepareNativeContext(context.Background(), "", "", args, workspace, config.Entry{Workspace: workspace, Sandbox: sandbox}, stderr)
+}
+
+type nativeAction uint8
+
+const (
+	nativeExec nativeAction = iota
+	nativeCopy
+	nativeExtract
+)
+
+func nativeCommand(ctx context.Context, entry config.Entry, action nativeAction, args ...string) (*exec.Cmd, error) {
+	if entry.EffectiveCategory() != config.CategoryContainer {
+		if action == nativeExtract {
+			return nil, errors.New("native extraction requires Docker")
+		}
+		if action != nativeCopy {
+			args = append([]string{"exec", entry.Sandbox}, args...)
+		}
+		return process.Command(ctx, "sbx", args...), nil
+	}
+	state, err := (&operations.DockerBackend{}).Inspect(ctx, entry)
+	if err != nil {
+		return nil, err
+	}
+	if !state.Running {
+		return nil, errors.New("Docker container is stopped; start it explicitly before native assets")
+	}
+	if action == nativeCopy {
+		return nil, errors.New("native Docker assets require agent extraction")
+	}
+	if action == nativeExtract {
+		if len(args) != 1 || !validNativeGuestDirectory(args[0]) {
+			return nil, errors.New("invalid native extraction directory")
+		}
+		return process.Command(ctx, "docker", "exec", "-i", "--user", fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid()), "--env", "HOME=/home/agent", entry.ContainerID, "/usr/bin/tar", "-xpf", "-", "--no-same-owner", "-C", args[0]), nil
+	}
+	command := []string{"exec", "--user", fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid()), "--env", "HOME=/home/agent", "--workdir", entry.Workspace, entry.ContainerID}
+	return process.Command(ctx, "docker", append(command, args...)...), nil
+}
+
+func prepareNativeContext(ctx context.Context, runtime, key string, args []string, workspace string, entry config.Entry, stderr io.Writer) ([]string, map[string]string, func(), error) {
+	// Legacy prepareNative has no registry parameter; production always supplies
+	// runtime/key. A Docker mutation requires the frozen trusted target.
+	if entry.EffectiveCategory() == config.CategoryContainer && runtime == "" {
+		return nil, nil, nil, errors.New("native Docker assets require a trusted registry target")
+	}
+	runInput := func(ctx context.Context, action nativeAction, capture bool, input io.Reader, args ...string) ([]byte, error) {
+		if runtime != "" {
+			release, err := operationlock.Acquire(ctx, runtime, []string{operationlock.EntryKey(entry)})
+			if err != nil {
+				return nil, err
+			}
+			defer release()
+			if err := validateEntry(runtime, key, entry); err != nil {
+				return nil, err
+			}
+		}
+		cmd, err := nativeCommand(ctx, entry, action, args...)
+		if err != nil {
+			return nil, err
+		}
+		cmd.Stderr = stderr
+		cmd.Stdin = input
+		var data []byte
+		if capture {
+			data, err = cmd.Output()
+		} else {
+			cmd.Stdout = stderr
+			err = cmd.Run()
+		}
+		if ctx.Err() != nil {
+			return data, ctx.Err()
+		}
+		return data, err
+	}
+	run := func(ctx context.Context, action nativeAction, capture bool, args ...string) ([]byte, error) {
+		return runInput(ctx, action, capture, nil, args...)
+	}
+	sandbox := entry.Sandbox
 	args = append([]string{}, args...)
 	home := os.Getenv("PASEO_HOME")
 	if home == "" {
@@ -36,17 +121,28 @@ func prepareNative(args []string, workspace, sandbox string, stderr io.Writer) (
 	if err != nil {
 		return nil, nil, nil, err
 	}
+	var sourceRoot *os.Root
+	defer func() {
+		if sourceRoot != nil {
+			sourceRoot.Close()
+		}
+	}()
 	paths := map[string]string{}
 	guest := ""
 	cleanup := func() {
 		if guest != "" {
-			c := exec.Command("sbx", "exec", sandbox, "rm", "-rf", "--", guest)
-			c.Stderr = stderr
-			_ = c.Run()
+			cleanupCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			if _, err := run(cleanupCtx, nativeExec, false, "rm", "-rf", "--", guest); err != nil {
+				fmt.Fprintln(stderr, "paseo-sbx: native assets cleanup incomplete:", err)
+			}
 		}
 	}
 	fail := func(err error) ([]string, map[string]string, func(), error) { cleanup(); return nil, nil, nil, err }
 	for i, arg := range args {
+		if err := ctx.Err(); err != nil {
+			return fail(err)
+		}
 		if arg != "--add-dir" && arg != "--json-schema" {
 			continue
 		}
@@ -63,39 +159,61 @@ func prepareNative(args []string, workspace, sandbox string, stderr io.Writer) (
 		if path == root || !config.Within(path, root) {
 			return fail(fmt.Errorf("%s path must be in the workspace or native plugin assets: %s", arg, path))
 		}
-		var size int64
-		e = filepath.WalkDir(path, func(p string, d os.DirEntry, e error) error {
+		var relativeSource string
+		if entry.EffectiveCategory() == config.CategoryContainer {
+			if sourceRoot == nil {
+				sourceRoot, e = os.OpenRoot(root)
+				if e != nil {
+					return fail(e)
+				}
+			}
+			raw, e := filepath.Abs(args[i+1])
 			if e != nil {
-				return e
+				return fail(e)
 			}
-			if d.Type()&os.ModeSymlink != 0 {
-				return errors.New("plugin assets must not contain symbolic links")
-			}
-			info, e := d.Info()
+			relativeSource, e = filepath.Rel(root, raw)
 			if e != nil {
-				return e
+				return fail(e)
 			}
-			if !info.IsDir() && !info.Mode().IsRegular() {
-				return errors.New("plugin assets must contain regular files")
+			if e = writeNativeArchive(ctx, sourceRoot, relativeSource, "asset-0", io.Discard); e != nil {
+				return fail(e)
 			}
-			size += info.Size()
-			if size > 128*1024*1024 {
-				return errors.New("plugin assets exceed size limit")
+		} else {
+			var size int64
+			e = filepath.WalkDir(path, func(p string, d os.DirEntry, e error) error {
+				if err := ctx.Err(); err != nil {
+					return err
+				}
+				if e != nil {
+					return e
+				}
+				if d.Type()&os.ModeSymlink != 0 {
+					return errors.New("plugin assets must not contain symbolic links")
+				}
+				info, e := d.Info()
+				if e != nil {
+					return e
+				}
+				if !info.IsDir() && !info.Mode().IsRegular() {
+					return errors.New("plugin assets must contain regular files")
+				}
+				size += info.Size()
+				if size > 128*1024*1024 {
+					return errors.New("plugin assets exceed size limit")
+				}
+				return nil
+			})
+			if e != nil {
+				return fail(e)
 			}
-			return nil
-		})
-		if e != nil {
-			return fail(e)
 		}
 		if guest == "" {
-			c := exec.Command("sbx", "exec", sandbox, "mktemp", "-d", "/tmp/paseo-sbx-assets.XXXXXXXXXX")
-			c.Stderr = stderr
-			b, e := c.Output()
+			b, e := run(ctx, nativeExec, true, "mktemp", "-d", "/tmp/paseo-sbx-assets.XXXXXXXXXX")
 			if e != nil {
-				return fail(errors.New("cannot create guest assets directory"))
+				return fail(fmt.Errorf("cannot create guest assets directory: %w", e))
 			}
 			guest = strings.TrimSpace(string(b))
-			if !strings.HasPrefix(guest, "/tmp/paseo-sbx-assets.") || filepath.Clean(guest) != guest || strings.Contains(guest[5:], "/") {
+			if !validNativeGuestDirectory(guest) {
 				guest = ""
 				return fail(errors.New("invalid guest assets directory"))
 			}
@@ -103,11 +221,23 @@ func prepareNative(args []string, workspace, sandbox string, stderr io.Writer) (
 		next, ok := paths[args[i+1]]
 		if !ok {
 			next = fmt.Sprintf("%s/asset-%d", guest, len(paths))
-			c := exec.Command("sbx", "cp", path, sandbox+":"+next)
-			c.Stdout = stderr
-			c.Stderr = stderr
-			if e = c.Run(); e != nil {
-				return fail(errors.New("cannot copy native plugin assets"))
+			resource := sandbox
+			copyArgs := []string{"cp", path, resource + ":" + next}
+			if entry.EffectiveCategory() == config.CategoryContainer {
+				reader, writer := io.Pipe()
+				done := make(chan error, 1)
+				go func() {
+					err := writeNativeArchive(ctx, sourceRoot, relativeSource, filepath.Base(next), writer)
+					writer.CloseWithError(err)
+					done <- err
+				}()
+				_, execErr := runInput(ctx, nativeExtract, false, reader, guest)
+				reader.CloseWithError(execErr)
+				if e = errors.Join(execErr, <-done); e != nil {
+					return fail(fmt.Errorf("cannot extract native plugin assets: %w", e))
+				}
+			} else if _, e = run(ctx, nativeCopy, false, copyArgs...); e != nil {
+				return fail(fmt.Errorf("cannot copy native plugin assets: %w", e))
 			}
 			paths[args[i+1]] = next
 		}
@@ -345,7 +475,8 @@ func Resolve(base, profile string, args []string) (string, error) {
 	type candidate struct{ runtime, workspace string }
 	var best, fallback *candidate
 	for _, i := range installed {
-		if _, ok := i.Registry.Profiles[profile]; !ok || !i.Registry.IsActive(profile) || i.Missing() {
+		key, _, err := providerEntry(i.Registry, profile)
+		if err != nil || !i.Registry.IsActive(key) || i.Missing() {
 			continue
 		}
 		w, err := config.Canonical(i.Registry.Workspace)
@@ -381,11 +512,11 @@ func LaunchIO(runtime, profile string, args []string, in io.Reader, out, stderr 
 	if err := config.ReadJSON(filepath.Join(runtime, "registry.json"), &registry); err != nil {
 		return 1, errors.New("cannot read trusted sandbox registry")
 	}
-	entry, ok := registry.Profiles[profile]
-	catalog := registry.EffectiveCatalog()
-	pair, valid := catalog.Pair(profile)
-	agent, known := catalog.Agent(pair.Agent)
-	if !ok || !valid || !known || !registry.IsActive(profile) || agent.Adapter != entry.Agent || !config.SupportedAdapter(entry.Agent) || entry.Sandbox == "" {
+	key, entry, err := providerEntry(registry, profile)
+	if err != nil {
+		return 1, err
+	}
+	if !registry.IsActive(key) || !config.SupportedAdapter(entry.Agent) || sandboxupdate.Identity(entry) == "" {
 		return 1, errors.New("invalid sandbox profile")
 	}
 	workspace, err := config.Canonical(entry.Workspace)
@@ -400,7 +531,26 @@ func LaunchIO(runtime, profile string, args []string, in io.Reader, out, stderr 
 		return 1, errors.New("host launcher must remain outside writable sandbox workspaces")
 	}
 	if len(args) == 1 && (args[0] == "--version" || args[0] == "-v") {
-		cmd := exec.Command("sbx", "exec", entry.Sandbox, config.AgentCommand(entry.Agent), "--version")
+		if entry.EffectiveCategory() == config.CategoryContainer {
+			ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
+			defer cancel()
+			release, err := operationlock.Acquire(ctx, runtime, []string{operationlock.EntryKey(entry)})
+			if err != nil {
+				return 1, err
+			}
+			defer release()
+			if err := validateEntry(runtime, key, entry); err != nil {
+				return 1, err
+			}
+			err = (&operations.DockerBackend{}).Exec(ctx, entry, []string{config.AgentCommand(entry.Agent), "--version"}, in, out, stderr)
+			return exitStatus(err), err
+		}
+		command := []string{"exec"}
+		if entry.EffectiveCategory() == config.CategorySandbox {
+			command = append(command, "--env", "PATH="+config.SandboxAgentPath)
+		}
+		command = append(command, entry.Sandbox, config.AgentCommand(entry.Agent), "--version")
+		cmd := exec.Command("sbx", command...)
 		cmd.Stdout = out
 		cmd.Stderr = stderr
 		return exitStatus(cmd.Run()), nil
@@ -421,9 +571,11 @@ func LaunchIO(runtime, profile string, args []string, in io.Reader, out, stderr 
 		}
 	}
 	profiles := []string{}
+	ctx, stopUpdateSignals := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
+	defer stopUpdateSignals()
 	for _, p := range registry.ActiveProfiles() {
-		if _, ok := catalog.Pair(p); ok {
-			profiles = append(profiles, p)
+		if e, ok := registry.Profiles[p]; ok {
+			profiles = append(profiles, operations.ProviderID(p, e))
 		}
 	}
 	runner := func(args []string, check bool) error {
@@ -436,11 +588,42 @@ func LaunchIO(runtime, profile string, args []string, in io.Reader, out, stderr 
 		}
 		return err
 	}
-	relay, err := gateway.NewRelay(profiles, entry.Sandbox, runner)
+	var relay *gateway.Relay
+	if entry.EffectiveCategory() == config.CategoryContainer {
+		relay, err = gateway.NewDockerRelay(profiles, func(endpoint string) error {
+			ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+			defer cancel()
+			var out bytes.Buffer
+			if err := (&operations.DockerBackend{}).Exec(ctx, entry, gateway.DockerProbeCommand(endpoint), nil, &out, stderr); err != nil {
+				return err
+			}
+			if out.String() != gateway.RelayReady {
+				return errors.New("unexpected Docker relay challenge response")
+			}
+			return nil
+		})
+	} else {
+		relay, err = gateway.NewRelay(profiles, entry.Sandbox, runner)
+	}
 	if err != nil {
 		return 1, errors.New("cannot start local MCP relay")
 	}
 	defer relay.Close()
+	if entry.EffectiveCategory() == config.CategoryContainer {
+		if err := func() error {
+			release, err := operationlock.Acquire(ctx, runtime, []string{operationlock.EntryKey(entry)})
+			if err != nil {
+				return err
+			}
+			defer release()
+			if err := validateEntry(runtime, key, entry); err != nil {
+				return err
+			}
+			return relay.CheckReachability()
+		}(); err != nil {
+			return 1, err
+		}
+	}
 	if entry.Agent == "claude" {
 		args, err = rewriteClaude(args, relay.Bind)
 		if err != nil {
@@ -450,7 +633,7 @@ func LaunchIO(runtime, profile string, args []string, in io.Reader, out, stderr 
 	nativePaths := map[string]string{}
 	if entry.Agent == "antigravity-cli" {
 		var cleanup func()
-		args, nativePaths, cleanup, err = prepareNative(args, workspace, entry.Sandbox, stderr)
+		args, nativePaths, cleanup, err = prepareNativeContext(ctx, runtime, key, args, workspace, entry, stderr)
 		if err != nil {
 			return 1, err
 		}
@@ -458,10 +641,8 @@ func LaunchIO(runtime, profile string, args []string, in io.Reader, out, stderr 
 	}
 	// Automatic updates use detached host process groups, so bridge the same
 	// launcher signals to cancellation before any update subprocess starts.
-	ctx, stopUpdateSignals := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
-	updateErr := sandboxupdate.UpdateContext(ctx, runtime, entry, false, stderr, nil)
+	updateErr := updateTarget(ctx, runtime, key, entry, stderr)
 	cancelErr := ctx.Err()
-	stopUpdateSignals()
 	if cancelErr != nil {
 		return 1, cancelErr
 	}
@@ -469,14 +650,37 @@ func LaunchIO(runtime, profile string, args []string, in io.Reader, out, stderr 
 		fmt.Fprintln(stderr, "paseo-sbx: update failed; launching installed agent:", updateErr)
 	}
 	command := []string{"exec", "-i"}
+	releaseStartup, err := operationlock.Acquire(ctx, runtime, []string{operationlock.EntryKey(entry)})
+	if err != nil {
+		return 1, err
+	}
+	defer releaseStartup()
+	executable, resource := "sbx", entry.Sandbox
+	if entry.EffectiveCategory() == config.CategorySandbox {
+		command = append(command, "--env", "PATH="+config.SandboxAgentPath)
+	}
+	if entry.EffectiveCategory() == config.CategoryContainer {
+		executable, resource = "docker", entry.ContainerID
+		command = append(command, "--user", fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid()), "--env", "HOME=/home/agent")
+		state, err := (&operations.DockerBackend{}).Inspect(ctx, entry)
+		if err != nil {
+			return 1, err
+		}
+		if !state.Running {
+			return 1, errors.New("Docker container is stopped; start it explicitly before launch")
+		}
+	}
+	if err := validateEntry(runtime, key, entry); err != nil {
+		return 1, err
+	}
 	for _, name := range []string{"PASEO_AGENT_ID", "PASEO_PARENT_AGENT_ID", "NO_BROWSER"} {
 		if v, ok := os.LookupEnv(name); ok {
 			command = append(command, "--env", name+"="+v)
 		}
 	}
-	command = append(command, "--workdir", cwd, entry.Sandbox, config.AgentCommand(entry.Agent))
+	command = append(command, "--workdir", cwd, resource, config.AgentCommand(entry.Agent))
 	command = append(command, args...)
-	child := exec.Command("sbx", command...)
+	child := exec.Command(executable, command...)
 	child.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	child.Stdout = out
 	child.Stderr = stderr
@@ -491,6 +695,8 @@ func LaunchIO(runtime, profile string, args []string, in io.Reader, out, stderr 
 		stdin.Close()
 		return 1, errors.New("cannot start sbx agent process")
 	}
+	releaseStartup()
+	stopUpdateSignals()
 	done := make(chan struct{})
 	defer close(done)
 	go func() {
@@ -512,22 +718,16 @@ func LaunchIO(runtime, profile string, args []string, in io.Reader, out, stderr 
 		for {
 			line, e := reader.ReadBytes(10)
 			if len(line) > 0 {
-				if entry.Agent == "antigravity-cli" && len(nativePaths) > 0 {
-					var value any
-					if err := json.Unmarshal(line, &value); err != nil {
-						failures <- errors.New("invalid native plugin JSON")
-						syscall.Kill(-child.Process.Pid, syscall.SIGTERM)
-						return
-					}
-					line, _ = json.Marshal(rewriteNativePaths(value, nativePaths))
-					line = append(line, 10)
-				}
-				if entry.Agent == "codex" && len(strings.TrimSpace(string(line))) > 0 {
+				if (entry.Agent == "codex" || entry.Agent == "antigravity-cli") && len(strings.TrimSpace(string(line))) > 0 {
 					var message map[string]any
 					if json.Unmarshal(line, &message) != nil || message == nil {
 						failures <- errors.New("failed to translate Paseo protocol: invalid JSON message")
 						syscall.Kill(-child.Process.Pid, syscall.SIGTERM)
 						return
+					}
+					original, _ := json.Marshal(message)
+					if entry.Agent == "antigravity-cli" && len(nativePaths) > 0 {
+						message = rewriteNativePaths(message, nativePaths).(map[string]any)
 					}
 					if err := CheckWorkdirs(message["params"], workspace); err != nil {
 						failures <- err
@@ -540,13 +740,15 @@ func LaunchIO(runtime, profile string, args []string, in io.Reader, out, stderr 
 						syscall.Kill(-child.Process.Pid, syscall.SIGTERM)
 						return
 					}
-					line, err = json.Marshal(next)
+					encoded, err := json.Marshal(next)
 					if err != nil {
 						failures <- errors.New("failed to encode Paseo protocol")
 						syscall.Kill(-child.Process.Pid, syscall.SIGTERM)
 						return
 					}
-					line = append(line, 10)
+					if entry.Agent != "antigravity-cli" || !bytes.Equal(original, encoded) {
+						line = append(encoded, 10)
+					}
 				}
 				if _, err := stdin.Write(line); err != nil {
 					return
@@ -571,6 +773,83 @@ func LaunchIO(runtime, profile string, args []string, in io.Reader, out, stderr 
 	}
 	return exitStatus(err), nil
 }
+func validateEntry(runtime, key string, entry config.Entry) error {
+	var reg config.Registry
+	if err := config.ReadJSON(filepath.Join(runtime, "registry.json"), &reg); err != nil {
+		return err
+	}
+	if err := reg.ValidateIdentity(key, entry); err != nil {
+		return err
+	}
+	if !reg.IsActive(key) {
+		return errors.New("provider activation changed")
+	}
+	return nil
+}
+
+func providerEntry(reg config.Registry, id string) (string, config.Entry, error) {
+	for key, entry := range reg.Profiles {
+		if operations.ProviderID(key, entry) != id {
+			continue
+		}
+		if entry.EffectiveCategory() != config.CategoryLegacySandbox && key != entry.Key() {
+			return "", entry, errors.New("provider registry key mismatch")
+		}
+		if err := reg.ValidateIdentity(key, entry); err != nil {
+			return "", entry, err
+		}
+		catalog := reg.EffectiveCatalog()
+		if entry.EffectiveCategory() == config.CategorySandbox {
+			agent, ok := catalog.Agent(entry.Agent)
+			if !ok || agent.Adapter != entry.Agent || entry.Tool != "" || len(entry.Utilities) != 0 {
+				return "", entry, errors.New("invalid sandbox provider")
+			}
+		} else {
+			pair, ok := catalog.Pair(strings.TrimPrefix(key, "container/"))
+			agent, known := catalog.Agent(pair.Agent)
+			if !ok || !known || agent.Adapter != entry.Agent {
+				return "", entry, errors.New("invalid provider profile")
+			}
+		}
+		return key, entry, nil
+	}
+	return "", config.Entry{}, errors.New("provider missing from trusted registry")
+}
+
+func updateTarget(ctx context.Context, runtime, key string, entry config.Entry, stderr io.Writer) error {
+	release, err := operationlock.Acquire(ctx, runtime, []string{operationlock.EntryKey(entry)})
+	if err != nil {
+		if errors.Is(err, operationlock.ErrConflict) {
+			return nil
+		}
+		return err
+	}
+	defer release()
+	var reg config.Registry
+	if err := config.ReadJSON(filepath.Join(runtime, "registry.json"), &reg); err != nil {
+		return err
+	}
+	if err := reg.ValidateIdentity(key, entry); err != nil {
+		return err
+	}
+	if !reg.IsActive(key) {
+		return errors.New("provider activation changed")
+	}
+	if entry.EffectiveCategory() != config.CategoryContainer {
+		return sandboxupdate.UpdateLockedContext(ctx, runtime, entry, false, stderr, nil)
+	}
+	transport := func(ctx context.Context, args []string, capture bool) (string, error) {
+		var out bytes.Buffer
+		writer := stderr
+		if capture {
+			writer = &out
+		}
+		err := (&operations.DockerBackend{}).Exec(ctx, entry, append([]string{"env", "-C", "/tmp"}, args...), nil, writer, stderr)
+		return strings.TrimSpace(out.String()), err
+	}
+	return sandboxupdate.UpdateTransportLockedContext(ctx, runtime, entry, false, stderr, nil, transport)
+}
+
 func exitStatus(err error) int {
 	if err == nil {
 		return 0

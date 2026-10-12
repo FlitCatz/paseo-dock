@@ -96,6 +96,10 @@ func TestPruneDuringUpdatePreservesSandboxLock(t *testing.T) {
 
 // External sbx is a Go test executable; registry, updater and process boundaries stay real.
 func TestMain(m *testing.M) {
+	if os.Getenv("CATEGORY_SHELL_HELPER") == "1" && slices.Contains([]string{"sbx", "docker"}, filepath.Base(os.Args[0])) {
+		categoryShellHelper()
+		os.Exit(0)
+	}
 	if os.Getenv("OBSERVE_TEST_MODE") == "1" && slices.Contains([]string{"sbx", "paseo", "docker"}, filepath.Base(os.Args[0])) {
 		observationFake()
 	}
@@ -396,7 +400,7 @@ func TestPruneReturnsMissingTargets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(result.Missing) != 1 || result.Missing[0] != target {
+	if len(result.Missing) != 1 || !result.Missing[0].EqualIdentity(target) {
 		t.Errorf("prune preview lost missing target: %+v", result)
 	}
 	if result.Changed {

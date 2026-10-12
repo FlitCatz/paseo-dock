@@ -234,9 +234,15 @@ func child() {
 	}
 	cmd, err := service.ShellCommand(ctx, target)
 	if err == nil {
-		var terminal *os.File
-		terminal, err = pty.StartWithSize(cmd, &pty.Winsize{Cols: 80, Rows: 24})
+		var terminal, slave *os.File
+		terminal, slave, err = pty.Open()
 		if err == nil {
+			must(pty.Setsize(terminal, &pty.Winsize{Cols: 80, Rows: 24}))
+			cmd.SetStdin(slave)
+			cmd.SetStdout(slave)
+			cmd.SetStderr(slave)
+			done := make(chan error, 1)
+			go func() { runErr := cmd.Run(); slave.Close(); done <- runErr }()
 			terminal.Write([]byte("printf 'TASK6_LIVE_SHELL_OK\\n'; exit\n"))
 			b := make([]byte, 4096)
 			for {
@@ -249,7 +255,7 @@ func child() {
 				}
 			}
 			terminal.Close()
-			err = cmd.Wait()
+			err = <-done
 		}
 	}
 	fmt.Printf("STEP shell exit=%d error=%v\n", exit(err), err)

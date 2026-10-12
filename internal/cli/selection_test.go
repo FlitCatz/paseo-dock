@@ -35,7 +35,7 @@ func TestOpenSpecFailurePreservesActivationAndCanRetry(t *testing.T) {
 	invoke := func(profile string) (int, string) {
 		t.Helper()
 		var stderr bytes.Buffer
-		code := Run(root, []string{"create", "--workspace", workspace, "--profile", profile}, &bytes.Buffer{}, &bytes.Buffer{}, &stderr)
+		code := runLegacyFixture(root, []string{"create", "--workspace", workspace, "--profile", profile}, &bytes.Buffer{}, &bytes.Buffer{}, &stderr)
 		return code, stderr.String()
 	}
 	if code, stderr := invoke("codex-superpowers"); code != 0 {
@@ -84,10 +84,10 @@ func TestBuildUsesOnlySelectedPairs(t *testing.T) {
 	if err := json.Unmarshal(out.Bytes(), &cfg); err != nil {
 		t.Fatal(err)
 	}
-	if len(cfg.Target) != 2 || cfg.Target["claude-superpowers"].Args != nil || cfg.Target["codex-ponytail"].Args["UTILITIES"] != "rtk" {
+	if len(cfg.Target) != 2 || cfg.Target["container-claude-superpowers"].Args != nil || cfg.Target["container-codex-ponytail"].Args["UTILITIES"] != "rtk" {
 		t.Fatal(out.String())
 	}
-	if cfg.Target["codex-ponytail"].Tags[0] == "paseo-sbx/codex-ponytail:2026.09.30" {
+	if cfg.Target["container-codex-ponytail"].Tags[0] == "paseo-sbx/codex-ponytail:2026.09.30" {
 		t.Fatal("unversioned utility image")
 	}
 }
@@ -97,7 +97,7 @@ func TestNonInteractiveRequiresSelection(t *testing.T) {
 	b, _ := os.ReadFile("../../versions.lock.json")
 	os.WriteFile(filepath.Join(root, "versions.lock.json"), b, 0600)
 	for _, args := range [][]string{{"create", "--workspace", t.TempDir()}, {"build", "--print-bake"}, {"build", "--profiles", "codex-superpowers", "--utilities", "unknown", "--print-bake"}} {
-		if Run(root, args, &bytes.Buffer{}, &bytes.Buffer{}, &bytes.Buffer{}) == 0 {
+		if runLegacyFixture(root, args, &bytes.Buffer{}, &bytes.Buffer{}, &bytes.Buffer{}) == 0 {
 			t.Fatalf("accepted %v", args)
 		}
 	}
@@ -137,7 +137,7 @@ func TestSelectedCreatePreservesInactiveAndRejectsUtilityMismatch(t *testing.T) 
 	invoke := func(args ...string) int {
 		t.Helper()
 		var stderr bytes.Buffer
-		code := Run(root, args, &bytes.Buffer{}, &bytes.Buffer{}, &stderr)
+		code := runLegacyFixture(root, args, &bytes.Buffer{}, &bytes.Buffer{}, &stderr)
 		if code != 0 {
 			t.Log(stderr.String())
 		}
@@ -184,7 +184,7 @@ func TestFailedWrapperFinalizationPreservesActiveSelection(t *testing.T) {
 	os.WriteFile(wrapper, []byte("wrapper"), 0700)
 	os.WriteFile(filepath.Join(fake, "sbx"), []byte("#!/bin/sh\nif [ \"$1\" = ls ]; then echo '[]'; fi\n"), 0700)
 	run := func(profiles string) int {
-		return Run(root, []string{"create", "--workspace", workspace, "--profiles", profiles}, &bytes.Buffer{}, &bytes.Buffer{}, &bytes.Buffer{})
+		return runLegacyFixture(root, []string{"create", "--workspace", workspace, "--profiles", profiles}, &bytes.Buffer{}, &bytes.Buffer{}, &bytes.Buffer{})
 	}
 	if run("codex-superpowers") != 0 {
 		t.Fatal("initial create")

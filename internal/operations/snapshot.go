@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -177,10 +178,37 @@ func (s *Service) Snapshot(ctx context.Context, q Query) (Snapshot, error) {
 	if homeErr != nil {
 		providerErr = homeErr
 	}
-	raw, _, sbxErr := s.observe(ctx, "sbx", "ls", "--json")
+	sbx, _ := s.backend(config.CategorySandbox)
+	states, sbxErr := sbx.List(ctx)
 	var rows []runtimeRow
-	if sbxErr == nil {
-		rows, sbxErr = decodeRows[runtimeRow](raw, "sandboxes")
+	for _, state := range states {
+		status := "unknown"
+		if state.Known {
+			status = "stopped"
+			if state.Running {
+				status = "running"
+			}
+		}
+		rows = append(rows, runtimeRow{Name: state.ID, Status: status})
+	}
+	dockerStates := map[string]RuntimeState{}
+	var dockerErr error
+	dockerObserved := false
+	observeDocker := func() {
+		if dockerObserved {
+			return
+		}
+		dockerObserved = true
+		backend, _ := s.backend(config.CategoryContainer)
+		var states []RuntimeState
+		states, dockerErr = backend.List(ctx)
+		for _, state := range states {
+			dockerStates[state.ID] = state
+		}
+		snap.Docker = connection(dockerErr)
+	}
+	if q.IncludeDocker {
+		observeDocker()
 	}
 	byName := map[string]runtimeRow{}
 	if sbxErr == nil {
@@ -227,12 +255,28 @@ func (s *Service) Snapshot(ctx context.Context, q Query) (Snapshot, error) {
 		}
 		for _, profile := range sortedProfiles(reg.Profiles) {
 			entry := reg.Profiles[profile]
-			managed[entry.Sandbox] = true
-			row := Sandbox{Target: Target{Workspace: w.Path, Runtime: runtime, Profile: profile, Entry: entry}, Active: reg.IsActive(profile), RuntimeState: "unknown", Registration: providerRegistration(providers, providerErr, base, profile, entry.Agent), InitialVersions: s.initialVersions(reg, profile, entry)}
+			if entry.EffectiveCategory() != config.CategoryContainer {
+				managed[entry.Sandbox] = true
+			}
+			row := Sandbox{Target: Target{Category: entry.EffectiveCategory(), Workspace: w.Path, Runtime: runtime, Profile: profile, Entry: entry}, Active: reg.IsActive(profile), RuntimeState: "unknown", Registration: providerRegistration(providers, providerErr, base, providerID(profile, entry), entry.Agent), InitialVersions: s.initialVersions(reg, profile, entry)}
 			if providerErr != nil {
 				row.RegistrationError = fmt.Sprintf("%s: %v", filepath.Join(home, "config.json"), providerErr)
 			}
-			if sbxErr == nil {
+			if entry.EffectiveCategory() == config.CategoryContainer {
+				observeDocker()
+				if dockerErr == nil {
+					row.RuntimeState = "missing"
+					if state, ok := dockerStates[entry.ContainerID]; ok {
+						row.RuntimeState = "unknown"
+						if state.Known {
+							row.RuntimeState = "stopped"
+							if state.Running {
+								row.RuntimeState = "running"
+							}
+						}
+					}
+				}
+			} else if sbxErr == nil {
 				row.RuntimeState = "missing"
 				if r, ok := byName[entry.Sandbox]; ok {
 					row.RuntimeState = runtimeState(r.Status)
@@ -240,11 +284,12 @@ func (s *Service) Snapshot(ctx context.Context, q Query) (Snapshot, error) {
 			}
 			row.ImageMismatch = s.imageMismatch(reg, profile, entry.Image)
 			var state sandboxupdate.State
-			if config.ReadJSON(observationPath(runtime, "updates", entry.Sandbox), &state) == nil && state.Sandbox == entry.Sandbox && state.Image == entry.Image {
+			identity := sandboxupdate.Identity(entry)
+			if config.ReadJSON(observationPath(runtime, "updates", identity), &state) == nil && state.Sandbox == identity && state.Image == entry.Image {
 				row.Update = &state
 			}
 			var checked VersionCheck
-			if config.ReadJSON(observationPath(runtime, "version-checks", entry.Sandbox), &checked) == nil && checked.Sandbox == entry.Sandbox && checked.Image == entry.Image {
+			if config.ReadJSON(observationPath(runtime, "version-checks", identity), &checked) == nil && checked.Sandbox == identity && checked.Image == entry.Image {
 				row.VersionCheck = &checked
 			}
 			w.Sandboxes = append(w.Sandboxes, row)
@@ -273,17 +318,6 @@ func (s *Service) Snapshot(ctx context.Context, q Query) (Snapshot, error) {
 		if err == nil {
 			snap.Paseo.Status = status.LocalDaemon
 		}
-	}
-	if q.IncludeDocker {
-		raw, _, err := s.observe(ctx, "docker", "info", "--format", "{{json .}}")
-		var info map[string]json.RawMessage
-		if err == nil {
-			err = json.Unmarshal([]byte(raw), &info)
-			if err == nil && info == nil {
-				err = errors.New("Docker info must be an object")
-			}
-		}
-		snap.Docker = connection(err)
 	}
 	if q.IncludeTemplates {
 		raw, _, err := s.observe(ctx, "sbx", "template", "ls", "--json")
@@ -328,7 +362,7 @@ func validateObservedRegistry(reg config.Registry, runtime string) error {
 		return errors.New("registry runtime identity mismatch")
 	}
 	for profile, e := range reg.Profiles {
-		if profile == "" || e.Workspace != w || e.Sandbox == "" {
+		if profile == "" || e.Workspace != w || (e.EffectiveCategory() == config.CategoryContainer && e.ContainerID == "") || sandboxupdate.Identity(e) == "" {
 			return errors.New("invalid sandbox registry entry")
 		}
 	}
@@ -390,6 +424,14 @@ func providerRegistration(providers map[string]any, err error, base, profile, ag
 	return "registered"
 }
 func (s *Service) imageMismatch(reg config.Registry, profile, image string) bool {
+	entry := reg.Profiles[profile]
+	if entry.EffectiveCategory() == config.CategorySandbox {
+		return false
+	}
+	if entry.EffectiveCategory() == config.CategoryContainer {
+		tag, _, err := ImageSpec(config.CategoryContainer, entry, s.Lock)
+		return err != nil || !strings.HasSuffix(image, "/"+profile+":"+tag)
+	}
 	tag := s.Lock.Tag
 	if reg.Selection != nil {
 		selection := *reg.Selection
@@ -404,6 +446,22 @@ func (s *Service) imageMismatch(reg config.Registry, profile, image string) bool
 }
 func (s *Service) initialVersions(reg config.Registry, profile string, entry config.Entry) map[string]string {
 	versions := map[string]string{}
+	if entry.EffectiveCategory() == config.CategorySandbox {
+		var record struct {
+			Targets map[string]struct {
+				Tags   []string          `json:"tags"`
+				Labels map[string]string `json:"labels"`
+			} `json:"target"`
+		}
+		if config.ReadJSON(filepath.Join(s.Root, ".generated", "images", "sandbox-"+entry.Agent+".json"), &record) == nil {
+			for _, image := range record.Targets {
+				if slices.Contains(image.Tags, entry.Image) && image.Labels["io.paseo-sbx.category"] == "sandbox" && image.Labels["io.paseo-sbx.agent"] == entry.Agent {
+					versions["agent"] = image.Labels["io.paseo-sbx.agent.version"]
+				}
+			}
+		}
+		return versions
+	}
 	agent := entry.Agent
 	if pair, ok := reg.EffectiveCatalog().Pair(profile); ok {
 		agent = pair.Agent
@@ -427,8 +485,12 @@ func (s *Service) initialVersions(reg config.Registry, profile string, entry con
 		}
 	}
 	add("methodology", s.Lock.Tools[entry.Tool])
-	if reg.Selection != nil {
-		for _, u := range reg.Selection.Utilities {
+	utilities := entry.Utilities
+	if entry.EffectiveCategory() == config.CategoryLegacySandbox && reg.Selection != nil {
+		utilities = reg.Selection.Utilities
+	}
+	{
+		for _, u := range utilities {
 			add(u, s.Lock.Utilities[u])
 		}
 	}

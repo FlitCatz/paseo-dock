@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"paseo-sbx/internal/config"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -18,6 +19,14 @@ var ErrConflict = errors.New("operation already running")
 
 // SandboxKey uses the updater's existing lock file identity.
 func SandboxKey(sandbox string) string { return "sandbox:" + sandbox }
+
+// EntryKey preserves historical SBX lock files and separates Docker identities.
+func EntryKey(e config.Entry) string {
+	if e.EffectiveCategory() == config.CategoryContainer {
+		return "container:" + e.ContainerID
+	}
+	return SandboxKey(e.Sandbox)
+}
 
 func Acquire(ctx context.Context, base string, keys []string) (func(), error) {
 	var files []*os.File

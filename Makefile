@@ -1,4 +1,4 @@
-.PHONY: build test vet clean
+.PHONY: build test test-helpers vet clean
 
 build:
 	mkdir -p bin
@@ -8,9 +8,15 @@ build:
 
 test:
 	go test -race ./...
+	$(MAKE) test-helpers
+
+# testdata is excluded from ./...; this directory contains other main programs.
+test-helpers:
+	go test -race internal/tui/testdata/management-tui-live/category-verify.go internal/tui/testdata/management-tui-live/category-verify_test.go
 
 vet:
 	go vet ./...
+	go vet internal/tui/testdata/management-tui-live/category-verify.go internal/tui/testdata/management-tui-live/category-verify_test.go
 
 clean:
 	rm -rf bin

@@ -2,14 +2,15 @@
 package operations
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -20,6 +21,7 @@ import (
 )
 
 type Service struct {
+	Backends map[config.Category]Backend
 	Root     string
 	Lock     config.Lock
 	Catalog  config.Catalog
@@ -35,6 +37,9 @@ type execution struct {
 	emit      func(Event)
 	changed   bool
 	missing   []Target
+	uncertain bool
+	ports     []config.PortMapping
+	remaining []Target
 }
 
 func New(root string) (*Service, error) {
@@ -171,14 +176,20 @@ func (s *Service) resolveTarget(target Target) (Target, error) {
 	if !ok {
 		return target, fmt.Errorf("profile %s missing from registry", target.Profile)
 	}
-	if target.Entry != (config.Entry{}) && target.Entry != entry {
-		return target, errors.New("confirmed sandbox target changed")
+	if !target.Entry.EqualIdentity(config.Entry{}) {
+		if err := reg.ValidateIdentity(target.Profile, target.Entry); err != nil {
+			return target, err
+		}
 	}
-	if entry.Sandbox == "" || entry.Workspace != reg.Workspace {
+	if target.Category != "" && target.Category != entry.EffectiveCategory() {
+		return target, errors.New("confirmed target category changed")
+	}
+	if sandboxupdate.Identity(entry) == "" || (entry.EffectiveCategory() == config.CategoryContainer && entry.ContainerID == "") || entry.Workspace != reg.Workspace {
 		return target, errors.New("invalid sandbox target")
 	}
 	target.Workspace = reg.Workspace
 	target.Entry = entry
+	target.Category = entry.EffectiveCategory()
 	expected, err := config.RuntimePath(target.Workspace)
 	if err != nil {
 		return target, err
@@ -193,7 +204,7 @@ func (s *Service) resolveTarget(target Target) (Target, error) {
 	return target, nil
 }
 
-func (s *Service) ShellCommand(ctx context.Context, target Target) (*exec.Cmd, error) {
+func (s *Service) ShellCommand(ctx context.Context, target Target) (ShellProcess, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -201,10 +212,10 @@ func (s *Service) ShellCommand(ctx context.Context, target Target) (*exec.Cmd, e
 	if err != nil {
 		return nil, err
 	}
-	// Interactive commands retain the terminal's process group for tea.ExecProcess.
-	cmd := exec.CommandContext(ctx, "sbx", "exec", "-it", "--workdir", target.Entry.Workspace, target.Entry.Sandbox, "bash")
-	cmd.Dir = s.Root
-	return cmd, nil
+	target.Entry.Ports = slices.Clone(target.Entry.Ports)
+	target.Entry.Utilities = slices.Clone(target.Entry.Utilities)
+	copy := *s
+	return &shellProcess{service: &copy, ctx: ctx, target: target}, nil
 }
 
 func (s *Service) updateTargets(r Request) ([]Target, error) {
@@ -225,8 +236,17 @@ func (s *Service) updateTargets(r Request) ([]Target, error) {
 		if err := config.ReadJSON(filepath.Join(runtime, "registry.json"), &reg); err != nil {
 			return nil, err
 		}
+		categories := map[config.Category]bool{}
 		for _, p := range reg.ActiveProfiles() {
+			category := reg.Profiles[p].EffectiveCategory()
+			if r.Target.Category != "" && r.Target.Category != category {
+				continue
+			}
+			categories[category] = true
 			targets = append(targets, Target{Workspace: reg.Workspace, Runtime: runtime, Profile: p, Entry: reg.Profiles[p]})
+		}
+		if len(categories) > 1 {
+			return nil, errors.New("multiple runtime categories are active; specify a category or exact target")
 		}
 	}
 	for i, t := range targets {
@@ -240,6 +260,7 @@ func (s *Service) updateTargets(r Request) ([]Target, error) {
 }
 
 func (s *Service) Execute(ctx context.Context, r Request, emit func(Event)) (result Result, err error) {
+	unregisterCategory := r.Target.Category // Resolution must not turn an omitted category into a removal subset.
 	if err = ctx.Err(); err != nil {
 		return result, err
 	}
@@ -247,17 +268,30 @@ func (s *Service) Execute(ctx context.Context, r Request, emit func(Event)) (res
 	r.RestoreTargets = slices.Clone(r.RestoreTargets)
 	r.PruneTargets = slices.Clone(r.PruneTargets)
 	a := s.execution(ctx, nil, emit)
-	consumesSelection := r.Kind == KindBuild || r.Kind == KindLoad || r.Kind == KindCreate || (r.Kind == KindRegister && r.RestoreSelection)
+	a.ports = slices.Clone(r.Ports)
+	if r.Kind == KindRegister && r.RestoreSelection {
+		saved := r.Selection
+		saved.Pairs = slices.Clone(saved.Pairs)
+		saved.Utilities = slices.Clone(saved.Utilities)
+		a.Selection = &saved
+	}
+	consumesSelection := r.Kind == KindBuild || r.Kind == KindLoad || r.Kind == KindCreate
 	if consumesSelection && (len(r.Selection.Pairs) > 0 || r.Selection.Schema != 0) {
 		normalized, e := s.Catalog.Normalize(r.Selection)
 		if e != nil {
 			return result, e
 		}
-		selection, err := s.ResolveSelection(SelectionOptions{Profiles: joinProfiles(normalized), Utilities: joinUtilities(normalized), SetUtilities: true})
-		if err != nil {
-			return result, err
+		if normalized.Schema == 1 {
+			selection, err := s.ResolveSelection(SelectionOptions{Profiles: joinProfiles(normalized), Utilities: joinUtilities(normalized), SetUtilities: true})
+			if err != nil {
+				return result, err
+			}
+			normalized = selection
 		}
-		a.Selection = &selection
+		a.Selection = &normalized
+	}
+	if len(a.ports) > 0 && (a.Selection == nil || a.Selection.Category != config.CategoryContainer || r.Kind != KindCreate) {
+		return result, errors.New("port mappings require container creation")
 	}
 	if r.Namespace == "" {
 		r.Namespace = "paseo-sbx"
@@ -273,6 +307,9 @@ func (s *Service) Execute(ctx context.Context, r Request, emit func(Event)) (res
 		return a.checkVersions(r.Target)
 	}
 	if r.Kind == KindUpdate || r.Kind == KindStop {
+		if r.Kind == KindUpdate && r.AutomaticUpdate && os.Getenv("PASEO_SBX_AUTO_UPDATE") == "0" {
+			return result, nil
+		}
 		targets, e := s.updateTargets(r)
 		if e != nil {
 			return result, e
@@ -287,23 +324,49 @@ func (s *Service) Execute(ctx context.Context, r Request, emit func(Event)) (res
 				failures = append(failures, e)
 				break
 			}
-			release, e := operationlock.Acquire(ctx, t.Runtime, []string{operationlock.SandboxKey(t.Entry.Sandbox)})
+			release, e := operationlock.Acquire(ctx, t.Runtime, []string{operationlock.EntryKey(t.Entry)})
 			if e != nil {
+				if r.Kind == KindUpdate && r.AutomaticUpdate && errors.Is(e, operationlock.ErrConflict) {
+					continue
+				}
 				failures = append(failures, e)
 				result.Remaining = append(result.Remaining, t)
 				continue
 			}
 			validated, e := s.resolveTarget(t)
 			if e == nil {
+				var backend Backend
+				backend, e = a.backend(validated.Category)
+				if e != nil {
+					release()
+					return result, e
+				}
 				if r.Kind == KindUpdate {
 					started := false
-					e = sandboxupdate.UpdateLockedContext(ctx, validated.Runtime, validated.Entry, true, a.Err, func(stage string) { started = true; a.stage(stage, stage) })
+					transport := func(ctx context.Context, args []string, capture bool) (string, error) {
+						var out bytes.Buffer
+						writer := a.Err
+						if capture {
+							writer = &out
+						}
+						entry := validated.Entry
+						// SBX installs must not read workspace npm configuration.
+						if validated.Category != config.CategoryContainer {
+							entry.Workspace = "/tmp"
+						} else {
+							args = append([]string{"env", "-C", "/tmp"}, args...)
+						}
+						err := backend.Exec(ctx, entry, args, nil, writer, a.Err)
+						return strings.TrimSpace(out.String()), err
+					}
+					e = sandboxupdate.UpdateTransportLockedContext(ctx, validated.Runtime, validated.Entry, !r.AutomaticUpdate, a.Err, func(stage string) { started = true; a.stage(stage, stage) }, transport)
 					result.Changed = result.Changed || started
 					if started && (ctx.Err() != nil || errors.Is(e, context.Canceled) || errors.Is(e, context.DeadlineExceeded)) {
 						result.NeedsVerification = true
 					}
 				} else {
-					e = a.run("sbx", "stop", validated.Entry.Sandbox)
+					e = backend.Stop(ctx, validated.Entry)
+					a.changed = true
 				}
 			}
 			release()
@@ -365,7 +428,7 @@ func (s *Service) Execute(ctx context.Context, r Request, emit func(Event)) (res
 	defer release()
 
 	// Workspace/provider mutations also honor an explicitly confirmed registry entry.
-	if r.Target.Profile != "" || r.Target.Entry != (config.Entry{}) {
+	if r.Target.Profile != "" || !r.Target.Entry.EqualIdentity(config.Entry{}) {
 		validated, e := s.resolveTarget(r.Target)
 		if e != nil {
 			return result, e
@@ -385,12 +448,12 @@ func (s *Service) Execute(ctx context.Context, r Request, emit func(Event)) (res
 	case KindCreate:
 		if r.BuildFirst {
 			err = a.build(r.Namespace, r.Platforms, false)
-			if err == nil {
+			if err == nil && (a.Selection == nil || a.Selection.Category != config.CategoryContainer) {
 				err = a.load(r.Namespace, r.KeepArchive)
 			}
 		}
 		if err == nil {
-			err = a.create(r.Target.Workspace, r.Namespace, r.Memory)
+			err = a.create(r.Target.Workspace, r.Namespace, r.Memory, r.Apply)
 		}
 		if err == nil && r.Apply {
 			runtime, e := a.selectedRuntime(r.Target.Workspace)
@@ -404,8 +467,20 @@ func (s *Service) Execute(ctx context.Context, r Request, emit func(Event)) (res
 			var reg config.Registry
 			if config.ReadJSON(filepath.Join(runtime, "registry.json"), &reg) == nil {
 				for _, p := range sortedProfiles(reg.Profiles) {
-					result.Remaining = append(result.Remaining, Target{Workspace: reg.Workspace, Runtime: runtime, Profile: p, Entry: reg.Profiles[p]})
+					result.Remaining = append(result.Remaining, Target{Category: reg.Profiles[p].EffectiveCategory(), Workspace: reg.Workspace, Runtime: runtime, Profile: p, Entry: reg.Profiles[p]})
 				}
+			}
+		}
+		for _, target := range a.remaining {
+			found := false
+			for _, recorded := range result.Remaining {
+				if recorded.EqualIdentity(target) {
+					found = true
+					break
+				}
+			}
+			if !found {
+				result.Remaining = append(result.Remaining, target)
 			}
 		}
 	case KindRegister:
@@ -422,11 +497,12 @@ func (s *Service) Execute(ctx context.Context, r Request, emit func(Event)) (res
 			err = a.register(runtime, r.PaseoHome, r.Apply)
 		}
 	case KindUnregister:
-		err = a.unregister(r.Target.Workspace, r.PaseoHome)
+		err = a.unregister(r.Target.Workspace, r.PaseoHome, unregisterCategory)
 	case KindPrune:
 		err = a.prune(r.PaseoHome, r.DryRun, r.PruneTargets)
 	}
 	result.Changed = a.changed
+	result.NeedsVerification = a.uncertain
 	result.Missing = a.missing
 	if a.changed && ctx.Err() != nil {
 		result.NeedsVerification = true

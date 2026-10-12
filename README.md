@@ -1,7 +1,46 @@
-# Paseo + Docker Sandboxes
+# Paseo + Sandbox / Container
 
-Go 관리 TUI에서 workspace와 sandbox 상태를 보고 생성·업데이트·shell·Paseo 연결을 관리합니다.
-각 에이전트의 파일·shell·하위 프로세스는 독립된 Docker Sandbox 안에서 실행됩니다.
+Go 관리 TUI에서 workspace의 SBX sandbox와 Docker container를 구분하여 생성·업데이트·shell·Paseo 연결을 관리합니다.
+
+## 실행 category
+
+새 `sandbox`는 Codex 또는 Claude Code와 필요한 기본 런타임만 설치하는 agent 테스트 환경입니다.
+생성 시 공식 안정 패키지의 실제 버전과 출처를 기록하며 methodology·utility를 설치하지 않습니다.
+새 `container`는 agent + methodology + 선택 utility를 설치하는 개발 환경이며 기존 lock을 사용합니다.
+기존 category 없는 기록은 legacy SBX sandbox로 유지하고 기존 provider ID를 사용합니다.
+
+```bash
+# Agent-only SBX: build → template load → create
+./bin/paseo-sbx create --workspace /absolute/path/to/project --category sandbox --agent codex --build
+
+# Full-stack Docker: build → create; SBX template load 없음
+./bin/paseo-sbx create --workspace /absolute/path/to/project --category container \
+  --profiles codex-superpowers --utilities rtk --ports 3000:3000 --build
+
+./bin/paseo-sbx shell codex --category sandbox --workspace /absolute/path/to/project
+./bin/paseo-sbx versions codex-superpowers --category container --workspace /absolute/path/to/project
+./bin/paseo-sbx stop codex-superpowers --category container --workspace /absolute/path/to/project
+```
+
+`--profiles`로 새 build/create를 요청하면 container로 해석합니다. 기존 대상의 명령은 저장된
+category를 사용하며, 같은 workspace에 두 category가 있으면 대상과 category를 명시합니다.
+provider ID는 새 sandbox의 `sbx-codex`/`sbx-claude`, 새 container의
+`container-codex-superpowers`처럼 구분합니다. 아래의 prefix 없는 provider 예제는 legacy 기록에
+해당하며 새 container에서는 `container-` prefix를 붙입니다.
+
+Docker는 bridge network, workspace 하나의 읽기·쓰기 mount, host UID/GID에 맞춘 agent 사용자,
+컨테이너 내부의 지속되는 home을 사용합니다. 지정한 포트만 host `127.0.0.1`에 공개합니다.
+중지된 Docker 대상의 shell/version/update와 provider 실행은 먼저 명시적인 시작이 필요합니다.
+SBX shell/version/update는 중지된 guest를 시작할 수 있어 실행 전에 안내합니다.
+기존 기록·이미지는 자동 migration하거나 교체하지 않습니다.
+
+생성 확인에서 sandbox의 공식 출처를 표시하고 정확한 버전은 build에서 확정합니다.
+아주 낮은 터미널에서는 최종 확인 내용이 잘릴 수 있으므로 터미널 높이를 늘려 확인하세요.
+실환경 결과와 모델 인증·runtime 제한은
+[category 검증 기록](docs/superpowers/reviews/2026-10-06-runtime-categories/task-7-report.md)에 있습니다.
+현재 OrbStack Docker 환경에서는 업데이트된 Codex 0.161.0의 workspace-write sandbox가
+user namespace 권한 때문에 실행되지 않습니다. provider 초기화는 통과했지만 해당 개발 명령의
+실행 완료 기준은 미충족입니다. 보안 설정을 낮추는 자동 fallback은 적용하지 않습니다.
 
 ## 관리 TUI
 
@@ -247,7 +286,8 @@ GSD·plugin 설치기는 자체 설정을 변경하므로 전체 구성의 trans
 guest의 기존 `installed.json`과 `versions.lock.json`은 이미지 최초 설치 기록입니다.
 업데이트 로그는 stderr로만 출력하며 Paseo 통신 stdout에 섞지 않습니다.
 이전의 별도 설치 디렉터리는 실행 중 세션을 위해 보존합니다.
-호스트 launcher 환경에 `PASEO_SBX_AUTO_UPDATE=0`을 설정하면 자동 갱신을 끕니다.
+호스트 launcher 또는 CLI 환경에 `PASEO_SBX_AUTO_UPDATE=0`을 설정하면 자동 갱신을 끕니다.
+CLI `shell`도 자동 갱신의 opt-out과 확인 간격을 따릅니다. TUI shell은 자동 갱신하지 않습니다.
 수동 `update`는 이 설정과 확인 간격에 관계없이 실행합니다.
 
 선택 기능 도입 전에 생성한 workspace에는 저장된 선택이 없습니다. 최초 빌드·생성에는
@@ -559,3 +599,11 @@ GSD Core 1.15.0 공식 Codex installer는 일부 project-level `.claude/` 경로
 [Paseo MCP](https://paseo.sh/docs/mcp), [custom providers](https://paseo.sh/docs/custom-providers).
 
 이번 머신의 구성 상태와 오류 해결 기록은 [구현 기록](docs/implementation-log.md)을 참고하세요.
+
+## Review snapshot verification
+
+`make test` and CI include the offline category helper race tests; `make vet`
+checks that helper too. `make test-helpers` runs only its fake-runtime regressions.
+Raw logs are summarized in docs; protocol regression frames live in an embedded
+fixture. Authenticated inference/model-driven MCP and broader platform live
+acceptance remain incomplete. Native live acceptance is a separate explicit opt-in.

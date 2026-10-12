@@ -31,6 +31,19 @@ type State struct {
 
 type runner func(context.Context, []string, bool) (string, error)
 
+// Transport executes guest commands without exposing host package tooling.
+type Transport func(context.Context, []string, bool) (string, error)
+
+func Identity(entry config.Entry) string {
+	if entry.EffectiveCategory() == config.CategoryContainer {
+		if entry.ContainerID == "" {
+			return ""
+		}
+		return "container/" + entry.ContainerID
+	}
+	return entry.Sandbox
+}
+
 func UpdateContext(ctx context.Context, runtime string, entry config.Entry, force bool, log io.Writer, emit func(string)) error {
 	if entry.Sandbox == "" || !config.SupportedAdapter(entry.Agent) {
 		return errors.New("invalid sandbox entry")
@@ -38,7 +51,7 @@ func UpdateContext(ctx context.Context, runtime string, entry config.Entry, forc
 	if !force && os.Getenv("PASEO_SBX_AUTO_UPDATE") == "0" {
 		return nil
 	}
-	release, err := operationlock.Acquire(ctx, runtime, []string{operationlock.SandboxKey(entry.Sandbox)})
+	release, err := operationlock.Acquire(ctx, runtime, []string{operationlock.EntryKey(entry)})
 	if err != nil {
 		if !force && errors.Is(err, operationlock.ErrConflict) {
 			return nil
@@ -58,13 +71,21 @@ func Update(runtime string, entry config.Entry, force bool, log io.Writer) error
 // UpdateLockedContext requires the caller to hold runtime's matching SandboxKey
 // lock. It avoids reacquisition when the caller validates a frozen target under lock.
 func UpdateLockedContext(ctx context.Context, runtime string, entry config.Entry, force bool, log io.Writer, emit func(string)) error {
-	if entry.Sandbox == "" || !config.SupportedAdapter(entry.Agent) {
+	return UpdateTransportLockedContext(ctx, runtime, entry, force, log, emit, nil)
+}
+
+// UpdateTransportLockedContext requires the matching EntryKey lock held by caller.
+func UpdateTransportLockedContext(ctx context.Context, runtime string, entry config.Entry, force bool, log io.Writer, emit func(string), transport Transport) error {
+	if entry.EffectiveCategory() == config.CategoryContainer && transport == nil {
+		return errors.New("container update requires an explicit guest transport")
+	}
+	if Identity(entry) == "" || !config.SupportedAdapter(entry.Agent) {
 		return errors.New("invalid sandbox entry")
 	}
 	if !force && os.Getenv("PASEO_SBX_AUTO_UPDATE") == "0" {
 		return nil
 	}
-	sum := sha256.Sum256([]byte(entry.Sandbox))
+	sum := sha256.Sum256([]byte(Identity(entry)))
 	dir := filepath.Join(runtime, "updates")
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return err
@@ -76,14 +97,19 @@ func UpdateLockedContext(ctx context.Context, runtime string, entry config.Entry
 	if len(prior.Errors) > 0 {
 		interval = time.Hour
 	}
-	if !force && prior.Sandbox == entry.Sandbox && prior.Image == entry.Image && time.Since(prior.Attempt) < interval {
+	if !force && prior.Sandbox == Identity(entry) && prior.Image == entry.Image && time.Since(prior.Attempt) < interval {
 		return nil
 	}
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Minute)
 	defer cancel()
 	run := func(ctx context.Context, args []string, capture bool) (string, error) {
 		// A fixed guest directory prevents workspace npm configuration from affecting installs.
-		cmd := process.Command(ctx, "sbx", append([]string{"exec", "--workdir", "/tmp", entry.Sandbox}, args...)...)
+		command := []string{"exec"}
+		if entry.EffectiveCategory() == config.CategorySandbox {
+			command = append(command, "--env", "PATH="+config.SandboxAgentPath)
+		}
+		command = append(command, "--workdir", "/tmp", entry.Sandbox)
+		cmd := process.Command(ctx, "sbx", append(command, args...)...)
 		cmd.Stderr = log
 		if capture {
 			b, err := cmd.Output()
@@ -92,7 +118,10 @@ func UpdateLockedContext(ctx context.Context, runtime string, entry config.Entry
 		cmd.Stdout = log
 		return "", cmd.Run()
 	}
-	fmt.Fprintln(log, "paseo-sbx: updating", entry.Sandbox)
+	fmt.Fprintln(log, "paseo-sbx: updating", Identity(entry))
+	if transport != nil {
+		run = transport
+	}
 	state := refreshStages(ctx, entry, run, time.Now(), emit)
 	return finishUpdate(ctx, base, state, log)
 }
@@ -125,7 +154,7 @@ func refresh(ctx context.Context, entry config.Entry, run runner, now time.Time)
 	return refreshStages(ctx, entry, run, now, nil)
 }
 func refreshStages(ctx context.Context, entry config.Entry, run runner, now time.Time, emit func(string)) State {
-	s := State{Sandbox: entry.Sandbox, Image: entry.Image, Attempt: now, Versions: map[string]string{}, Errors: map[string]string{}}
+	s := State{Sandbox: Identity(entry), Image: entry.Image, Attempt: now, Versions: map[string]string{}, Errors: map[string]string{}}
 	if emit != nil {
 		emit("environment")
 	}
@@ -165,6 +194,12 @@ func refreshStages(ctx context.Context, entry config.Entry, run runner, now time
 		step("agent", u.antigravity)
 	default:
 		s.Errors["agent"] = "unsupported agent adapter"
+	}
+	if entry.EffectiveCategory() == config.CategorySandbox {
+		if len(s.Errors) == 0 {
+			s.Success = now
+		}
+		return s
 	}
 	// Read the installed lock from the guest, including custom package and utility IDs.
 	raw, err := u.output("cat", home+"/.local/share/paseo-sbx/installed.json")

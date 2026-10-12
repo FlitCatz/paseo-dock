@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"os"
 	"paseo-sbx/internal/config"
+	"paseo-sbx/internal/operations"
 	"path/filepath"
 	"strings"
 	"time"
@@ -131,6 +132,7 @@ func (a *App) runPlugin(args []string) error {
 	f := flag.NewFlagSet("run", flag.ContinueOnError)
 	f.SetOutput(a.Err)
 	profile := f.String("profile", "antigravity-cli-native", "sandbox profile")
+	categoryText := f.String("category", "", "container or legacy-sandbox runtime category")
 	workspace := f.String("workspace", "", "registered workspace (required)")
 	home := f.String("paseo-home", "~/.paseo", "local Paseo daemon home")
 	model := f.String("model", "", "native plugin model ID")
@@ -142,6 +144,10 @@ func (a *App) runPlugin(args []string) error {
 	}
 	if *workspace == "" {
 		return errors.New("--workspace is required")
+	}
+	category := config.Category(*categoryText)
+	if category != "" && category != config.CategoryContainer && category != config.CategoryLegacySandbox {
+		return errors.New("run supports container or legacy-sandbox runtime category")
 	}
 	pair, ok := a.Catalog.Pair(*profile)
 	if !ok {
@@ -171,14 +177,33 @@ func (a *App) runPlugin(args []string) error {
 	if err = config.ReadJSON(filepath.Join(runtime, "registry.json"), &reg); err != nil {
 		return err
 	}
-	entry, ok := reg.Profiles[*profile]
-	if !ok || !reg.IsActive(*profile) || entry.Agent != agent.Adapter || entry.Sandbox == "" || entry.Workspace != w {
-		return errors.New("profile has no active sandbox in this workspace")
+	key := ""
+	var entry config.Entry
+	for candidate, current := range reg.Profiles {
+		if current.EffectiveCategory() != config.CategoryContainer && current.EffectiveCategory() != config.CategoryLegacySandbox {
+			continue
+		}
+		if current.Agent != agent.Adapter || current.Tool != pair.Methodology || !reg.IsActive(candidate) || current.Workspace != w || (category != "" && current.EffectiveCategory() != category) {
+			continue
+		}
+		if current.EffectiveCategory() == config.CategoryContainer && current.ContainerID == "" || current.EffectiveCategory() != config.CategoryContainer && current.Sandbox == "" {
+			continue
+		}
+		if err := reg.ValidateIdentity(candidate, current); err != nil {
+			return err
+		}
+		if key != "" {
+			return errors.New("multiple native runtime categories are active; specify --category")
+		}
+		key, entry = candidate, current
+	}
+	if key == "" {
+		return errors.New("profile has no active runtime in this workspace")
 	}
 	if err = a.installLauncher(base, []string{w}); err != nil {
 		return err
 	}
-	settings := map[string]any{"provider": "antigravity-cli", "cwd": w, "providerOptions": map[string]any{"agyPath": config.LauncherPath(base), "extraArgs": []string{"--paseo-sbx-profile", *profile}}, "featureValues": map[string]any{"shareMcp": "off"}}
+	settings := map[string]any{"provider": "antigravity-cli", "cwd": w, "providerOptions": map[string]any{"agyPath": config.LauncherPath(base), "extraArgs": []string{"--paseo-sbx-profile", operations.ProviderID(key, entry)}}, "featureValues": map[string]any{"shareMcp": "off"}}
 	if *model != "" {
 		settings["model"] = *model
 	}
@@ -203,7 +228,7 @@ func (a *App) runPlugin(args []string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintln(a.Out, "Created Antigravity sandbox agent:", id)
+	fmt.Fprintln(a.Out, "Created Antigravity agent:", id)
 	fmt.Fprintf(a.Out, "View in Paseo, or run: paseo agent attach %s --home %q\n", id, h)
 	return nil
 }

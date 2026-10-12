@@ -7,7 +7,6 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"context"
 	"io"
-	"os/exec"
 	"paseo-sbx/internal/config"
 	"paseo-sbx/internal/operations"
 	"slices"
@@ -18,7 +17,7 @@ import (
 type Backend interface {
 	Snapshot(context.Context, operations.Query) (operations.Snapshot, error)
 	Execute(context.Context, operations.Request, func(operations.Event)) (operations.Result, error)
-	ShellCommand(context.Context, operations.Target) (*exec.Cmd, error)
+	ShellCommand(context.Context, operations.Target) (operations.ShellProcess, error)
 	SavedSelection(string) (config.Selection, error)
 }
 type pollMsg time.Time
@@ -122,7 +121,7 @@ func (m *Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.Error = v.err.Error()
 			m.Snapshot.SBX.Error = m.Error
 			m.Snapshot.SBX.Status = "error"
-			m.unknownRuntime()
+			m.unknownRuntime(false)
 		} else {
 			old := m.Snapshot
 			s := v.snapshot
@@ -161,7 +160,7 @@ func (m *Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.Snapshot = s
 			m.Error = s.SBX.Error
 			if s.SBX.Error != "" {
-				m.unknownRuntime()
+				m.unknownRuntime(true)
 			} else {
 				m.LastSuccess = s.SBX.CheckedAt
 				if m.LastSuccess.IsZero() {
@@ -289,14 +288,20 @@ func (m *Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	m.syncLists()
 	return m, nil
 }
-func (m *Dashboard) unknownRuntime() {
+func (m *Dashboard) unknownRuntime(sbxOnly bool) {
 	for i := range m.Snapshot.Workspaces {
 		for j := range m.Snapshot.Workspaces[i].Sandboxes {
-			m.Snapshot.Workspaces[i].Sandboxes[j].RuntimeState = "unknown"
+			s := &m.Snapshot.Workspaces[i].Sandboxes[j]
+			if !sbxOnly || s.Target.Entry.EffectiveCategory() != config.CategoryContainer {
+				s.RuntimeState = "unknown"
+			}
 		}
 	}
 	for i := range m.Snapshot.Unmanaged {
-		m.Snapshot.Unmanaged[i].RuntimeState = "unknown"
+		s := &m.Snapshot.Unmanaged[i]
+		if !sbxOnly || s.Target.Entry.EffectiveCategory() != config.CategoryContainer {
+			s.RuntimeState = "unknown"
+		}
 	}
 }
 func (m *Dashboard) selectedWorkspace() *operations.Workspace {
@@ -318,6 +323,9 @@ func (m *Dashboard) rows() []operations.Sandbox {
 	return nil
 }
 func sandboxID(s operations.Sandbox) string {
+	if s.Target.Entry.Category != "" {
+		return s.Target.Entry.Key()
+	}
 	if s.Target.Profile != "" {
 		return s.Target.Profile
 	}
@@ -375,7 +383,7 @@ func (m *Dashboard) syncLists() {
 	}
 	for _, s := range m.rows() {
 		id := sandboxID(s)
-		label := id + "  " + s.RuntimeState + "  " + s.Registration
+		label := id + "  " + string(s.Target.Entry.EffectiveCategory()) + "  " + s.RuntimeState + "  " + s.Registration
 		if s.Active {
 			label += "  활성"
 		}

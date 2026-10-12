@@ -29,13 +29,20 @@ type Lock struct {
 }
 
 type Entry struct {
-	Agent     string `json:"agent"`
-	Tool      string `json:"tool"`
-	Workspace string `json:"workspace"`
-	Sandbox   string `json:"sandbox"`
-	Image     string `json:"image"`
+	Category    Category      `json:"category,omitempty"`
+	ContainerID string        `json:"container_id,omitempty"`
+	ImageID     string        `json:"image_id,omitempty"`
+	Network     string        `json:"network,omitempty"`
+	Ports       []PortMapping `json:"ports,omitempty"`
+	Utilities   []string      `json:"utilities,omitempty"`
+	Agent       string        `json:"agent"`
+	Tool        string        `json:"tool"`
+	Workspace   string        `json:"workspace"`
+	Sandbox     string        `json:"sandbox"`
+	Image       string        `json:"image"`
 }
 type Registry struct {
+	Schema    int              `json:"schema,omitempty"`
 	Workspace string           `json:"workspace"`
 	Profiles  map[string]Entry `json:"profiles"`
 	Active    []string         `json:"active_profiles"`

@@ -38,14 +38,72 @@ type Relay struct {
 	allowed, closed bool
 	closeOnce       sync.Once
 	cancel          context.CancelFunc
+	checkDocker     func(string) error
+	challenge       string
+}
+
+const RelayReady = "paseo-sbx-relay-ready"
+
+// DockerProbeCommand ignores guest curl configuration and proxy environment.
+func DockerProbeCommand(endpoint string) []string {
+	return []string{"curl", "-q", "--noproxy", "*", "--fail", "--silent", "--show-error", "--max-time", "5", endpoint}
+}
+
+// NewDockerRelay keeps the host loopback listener. The caller must prove that
+// this exact listener is reachable from the inspected guest before any route.
+func NewDockerRelay(providers []string, check func(string) error) (*Relay, error) {
+	if check == nil {
+		return nil, errors.New("Docker relay requires a guest reachability probe")
+	}
+	return newRelay(providers, "", nil, check)
+}
+
+func (r *Relay) CheckReachability() error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.allowLocked()
+}
+func (r *Relay) allowLocked() error {
+	if r.closed {
+		return errors.New("relay closed")
+	}
+	if r.allowed {
+		return nil
+	}
+	if r.checkDocker != nil {
+		endpoint := fmt.Sprintf("http://host.docker.internal:%d/%s", r.port, r.challenge)
+		if err := r.checkDocker(endpoint); err != nil {
+			return fmt.Errorf("Docker bridge cannot reach local Paseo relay (curl required; container must be running): %w", err)
+		}
+	} else {
+		if r.run == nil {
+			return errors.New("relay transport unavailable")
+		}
+		if err := r.run([]string{"policy", "allow", "network", "--sandbox", r.sandbox, fmt.Sprintf("localhost:%d", r.port)}, true); err != nil {
+			return errors.New("cannot allow sandbox relay port")
+		}
+	}
+	r.allowed = true
+	return nil
 }
 
 func NewRelay(providers []string, sandbox string, run Runner) (*Relay, error) {
+	return newRelay(providers, sandbox, run, nil)
+}
+func newRelay(providers []string, sandbox string, run Runner, check func(string) error) (*Relay, error) {
+	challenge := ""
+	if check != nil {
+		var err error
+		challenge, err = token()
+		if err != nil {
+			return nil, err
+		}
+	}
 	ln, err := net.Listen("tcp4", "127.0.0.1:0")
 	if err != nil {
 		return nil, err
 	}
-	r := &Relay{providers: providers, sandbox: sandbox, run: run, routes: map[string]route{}, port: ln.Addr().(*net.TCPAddr).Port}
+	r := &Relay{providers: providers, sandbox: sandbox, run: run, routes: map[string]route{}, port: ln.Addr().(*net.TCPAddr).Port, checkDocker: check, challenge: challenge}
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.Proxy = nil
 	r.client = &http.Client{Timeout: 180 * time.Second, Transport: transport, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
@@ -89,11 +147,8 @@ func (r *Relay) Bind(endpoint string, headers map[string]string) (string, map[st
 	if r.closed {
 		return "", nil, errors.New("relay closed")
 	}
-	if !r.allowed {
-		if err := r.run([]string{"policy", "allow", "network", "--sandbox", r.sandbox, fmt.Sprintf("localhost:%d", r.port)}, true); err != nil {
-			return "", nil, errors.New("cannot allow sandbox relay port")
-		}
-		r.allowed = true
+	if err := r.allowLocked(); err != nil {
+		return "", nil, err
 	}
 	r.routes[id] = route{url: endpoint, headers: upstream, key: key, policy: NewPolicy(r.providers, caller)}
 	return fmt.Sprintf("http://host.docker.internal:%d/%s", r.port, id), map[string]string{"Authorization": "Bearer " + key}, nil
@@ -102,12 +157,13 @@ func (r *Relay) Close() {
 	r.closeOnce.Do(func() {
 		r.mu.Lock()
 		r.closed = true
+		r.routes = map[string]route{}
 		allowed := r.allowed
 		r.mu.Unlock()
 		r.cancel()
 		r.server.Close()
 		r.client.CloseIdleConnections()
-		if allowed {
+		if allowed && r.checkDocker == nil && r.run != nil {
 			r.run([]string{"policy", "rm", "network", "--sandbox", r.sandbox, "--resource", fmt.Sprintf("localhost:%d", r.port), "--force"}, false)
 		}
 	})
@@ -118,6 +174,13 @@ func reject(w http.ResponseWriter, id any) {
 	json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": id, "error": map[string]any{"code": -32602, "message": "Request rejected by sandbox delegation policy"}})
 }
 func (r *Relay) handle(w http.ResponseWriter, req *http.Request) {
+	// A random, credential-free challenge proves reachability of this listener.
+	// It never forwards traffic or reveals the upstream endpoint or credentials.
+	if r.challenge != "" && req.URL.Path == "/"+r.challenge && req.Method == "GET" {
+		w.Header().Set("Content-Type", "text/plain")
+		io.WriteString(w, RelayReady)
+		return
+	}
 	if req.Method != "POST" && req.Method != "DELETE" {
 		http.Error(w, "method not allowed", 405)
 		return

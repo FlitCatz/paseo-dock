@@ -12,9 +12,9 @@ import (
 	"os/signal"
 	"paseo-sbx/internal/config"
 	"paseo-sbx/internal/operations"
-	"paseo-sbx/internal/sandboxupdate"
 	"paseo-sbx/internal/tui"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 )
@@ -43,7 +43,21 @@ func (a *App) submit(r operations.Request) error {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	_, err := a.Service.Execute(ctx, r, nil)
+	result, err := a.Service.Execute(ctx, r, nil)
+	if err != nil && r.Kind != operations.KindVersions {
+		for _, t := range result.Remaining {
+			fmt.Fprintf(a.Err, "paseo-sbx: retained target %s / %s; registry: %s\n", t.Profile, t.ResourceIdentity(), filepath.Join(t.Runtime, "registry.json"))
+		}
+		if result.NeedsVerification {
+			fmt.Fprintln(a.Err, "paseo-sbx: partial guest state needs verification before retry.")
+		}
+	}
+	if r.Kind == operations.KindVersions {
+		encodeErr := json.NewEncoder(a.Out).Encode(result)
+		if err == nil {
+			err = encodeErr
+		}
+	}
 	return err
 }
 func ActiveAdapters(i []config.Installed) map[string]string { return operations.ActiveAdapters(i) }
@@ -57,12 +71,12 @@ func Run(root string, args []string, in io.Reader, out, stderr io.Writer) int {
 		if terminalStreams(in, out) {
 			args = []string{"tui"}
 		} else {
-			fmt.Fprintln(stderr, "usage: paseo-sbx {build|load|create|register|run|unregister|prune|list|shell|stop|update} [options]")
+			fmt.Fprintln(stderr, "usage: paseo-sbx {build|load|create|register|run|unregister|prune|list|shell|stop|update|versions} [options]")
 			return 2
 		}
 	}
 	if args[0] == "--help" || args[0] == "-h" || args[0] == "help" {
-		fmt.Fprintln(out, "usage: paseo-sbx {tui|build|load|create|register|run|unregister|prune|list|shell|stop|update} [options]\nRun paseo-sbx COMMAND --help for command options.")
+		fmt.Fprintln(out, "usage: paseo-sbx {tui|build|load|create|register|run|unregister|prune|list|shell|stop|update|versions} [options]\nRun paseo-sbx COMMAND --help for command options.")
 		return 0
 	}
 	if args[0] == "tui" {
@@ -125,7 +139,9 @@ func (a *App) execute(args []string) error {
 	}
 	f := flag.NewFlagSet(command, flag.ContinueOnError)
 	f.SetOutput(a.Err)
-	var profile, workspace, platforms, profiles, utilities, selectionPath, agents, methods string
+	var profile, workspace, platforms, profiles, utilities, selectionPath, agents, methods, categoryText, agent, portsText string
+	f.StringVar(&categoryText, "category", "", "sandbox or container runtime category")
+	f.StringVar(&agent, "agent", "", "agent-only creation or existing agent target")
 	namespace := "paseo-sbx"
 	memory := "2g"
 	home := "~/.paseo"
@@ -150,6 +166,7 @@ func (a *App) execute(args []string) error {
 			f.BoolVar(&keep, "keep-archive", false, "retain image archives")
 		}
 	case "create":
+		f.StringVar(&portsText, "ports", "", "comma-separated host:container ports, bound to 127.0.0.1 (container only)")
 		f.StringVar(&memory, "memory", memory, "memory per sandbox")
 		f.StringVar(&namespace, "namespace", namespace, "image namespace")
 		f.BoolVar(&buildFirst, "build", false, "build and load selected images before creating")
@@ -167,9 +184,9 @@ func (a *App) execute(args []string) error {
 	case "prune":
 		f.StringVar(&home, "paseo-home", home, "Paseo configuration home")
 		f.BoolVar(&dryRun, "dry-run", false, "show missing workspaces without removing registries")
-	case "list", "shell", "stop", "update":
+	case "list", "shell", "stop", "update", "versions":
 		f.StringVar(&workspace, "workspace", "", "workspace path")
-		if command == "update" {
+		if command != "list" {
 			f.StringVar(&profile, "profile", "", "update one profile; omitted updates all active profiles")
 		}
 		if command == "list" {
@@ -180,14 +197,14 @@ func (a *App) execute(args []string) error {
 	}
 	// Accept flags before or after the positional profile.
 	rest := args[1:]
-	if (command == "shell" || command == "stop" || command == "update") && len(rest) > 0 && !strings.HasPrefix(rest[0], "-") {
+	if (command == "shell" || command == "stop" || command == "update" || command == "versions") && len(rest) > 0 && !strings.HasPrefix(rest[0], "-") {
 		profile = rest[0]
 		rest = rest[1:]
 	}
 	if err := f.Parse(rest); err != nil {
 		return err
 	}
-	if command == "shell" || command == "stop" || command == "update" {
+	if command == "shell" || command == "stop" || command == "update" || command == "versions" {
 		if profile == "" && f.NArg() == 1 {
 			profile = f.Arg(0)
 		} else if f.NArg() != 0 {
@@ -196,11 +213,21 @@ func (a *App) execute(args []string) error {
 	} else if f.NArg() != 0 {
 		return errors.New("unexpected arguments")
 	}
-	if _, ok := a.Catalog.Pair(profile); profile != "" && !ok && command != "shell" && command != "stop" {
-		return fmt.Errorf("invalid profile %q", profile)
+	category := config.Category(categoryText)
+	if category != "" && category != config.CategorySandbox && category != config.CategoryContainer {
+		return fmt.Errorf("invalid category %q", category)
 	}
-	if command == "stop" && profile == "" {
-		return errors.New("stop requires an explicit profile")
+	var ports []config.PortMapping
+	if portsText != "" {
+		for _, pair := range strings.Split(portsText, ",") {
+			h, c, ok := strings.Cut(pair, ":")
+			hp, he := strconv.Atoi(h)
+			cp, ce := strconv.Atoi(c)
+			if !ok || he != nil || ce != nil || hp < 1 || hp > 65535 || cp < 1 || cp > 65535 {
+				return errors.New("--ports requires host:container ports between 1 and 65535")
+			}
+			ports = append(ports, config.PortMapping{HostAddress: "127.0.0.1", HostPort: hp, ContainerPort: cp})
+		}
 	}
 	if command == "build" || command == "load" || command == "create" {
 		setUtilities := false
@@ -215,7 +242,7 @@ func (a *App) execute(args []string) error {
 				isTerminal = term.IsTerminal(input.Fd()) && term.IsTerminal(output.Fd())
 			}
 		}
-		openWizard := command == "create" && (interactive || (isTerminal && profile == "" && profiles == "" && selectionPath == "" && agents == "" && methods == "" && !setUtilities))
+		openWizard := command == "create" && (interactive || (isTerminal && profile == "" && profiles == "" && selectionPath == "" && agents == "" && methods == "" && !setUtilities && category == "" && agent == ""))
 		if openWizard {
 			if !isTerminal {
 				return errors.New("--interactive requires terminal input and output")
@@ -231,27 +258,28 @@ func (a *App) execute(args []string) error {
 			if runtime, err := a.selectedRuntime(workspace); err == nil {
 				initial, _ = readSavedSelection(runtime)
 			}
-			if profile != "" || profiles != "" || selectionPath != "" || agents != "" || methods != "" || setUtilities {
+			if profile != "" || profiles != "" || selectionPath != "" || agents != "" || methods != "" || setUtilities || category != "" || agent != "" {
 				var err error
-				initial, err = a.resolveSelection(workspace, profile, profiles, utilities, selectionPath, agents, methods, setUtilities)
+				initial, err = a.creationSelection(category, agent, workspace, profile, profiles, utilities, selectionPath, agents, methods, setUtilities)
 				if err != nil {
 					return err
 				}
 			}
-			result, err := tui.Run(a.Catalog, initial, workspace, memory, a.In, a.Out, apply)
+			result, err := tui.RunWithPorts(a.Catalog, initial, workspace, memory, ports, a.In, a.Out, apply)
 			if err != nil {
 				return err
 			}
 			a.Selection = &result.Selection
-			// Reuse CLI validation for locked versions before any Docker action.
-			_, err = a.resolveSelection(workspace, "", strings.Join(result.Selection.Profiles(), ","), strings.Join(result.Selection.Utilities, ","), "", "", "", true)
-			if err != nil {
+			if _, err = a.Catalog.Normalize(result.Selection); err != nil {
 				return err
 			}
 			apply = apply || result.Apply
 			buildFirst = !skipBuild
+			if result.Category == config.CategoryContainer {
+				ports = result.Ports
+			}
 		} else {
-			s, err := a.resolveSelection(workspace, profile, profiles, utilities, selectionPath, agents, methods, setUtilities)
+			s, err := a.creationSelection(category, agent, workspace, profile, profiles, utilities, selectionPath, agents, methods, setUtilities)
 			if err != nil {
 				return err
 			}
@@ -268,17 +296,14 @@ func (a *App) execute(args []string) error {
 	case "load":
 		return a.submit(operations.Request{Kind: operations.KindLoad, Namespace: namespace, KeepArchive: keep})
 	case "create":
-		return a.submit(operations.Request{Kind: operations.KindCreate, Target: operations.Target{Workspace: workspace}, Namespace: namespace, Memory: memory, BuildFirst: buildFirst, Apply: apply, PaseoHome: home})
-	case "unregister":
-		return a.submit(operations.Request{Kind: operations.KindUnregister, Target: operations.Target{Workspace: workspace}, PaseoHome: home})
+		return a.submit(operations.Request{Kind: operations.KindCreate, Target: operations.Target{Workspace: workspace}, Namespace: namespace, Memory: memory, Ports: ports, BuildFirst: buildFirst, Apply: apply, PaseoHome: home})
 	case "prune":
 		return a.submit(operations.Request{Kind: operations.KindPrune, PaseoHome: home, DryRun: dryRun})
-	case "register":
-		return a.submit(operations.Request{Kind: operations.KindRegister, Target: operations.Target{Workspace: workspace}, PaseoHome: home, Apply: apply})
-	case "stop", "update":
-		return a.submit(operations.Request{Kind: operations.Kind(command), Target: operations.Target{Workspace: workspace, Profile: profile}})
-	case "list", "shell":
-		if command == "list" && all {
+	case "list":
+		if all {
+			if category != "" {
+				return errors.New("--category with --all is not supported; select a workspace")
+			}
 			return a.Service.ListAll()
 		}
 		runtime, err := a.selectedRuntime(workspace)
@@ -289,35 +314,104 @@ func (a *App) execute(args []string) error {
 		if err = config.ReadJSON(filepath.Join(runtime, "registry.json"), &reg); err != nil {
 			return err
 		}
-		if command == "list" {
-			enc := json.NewEncoder(a.Out)
-			enc.SetIndent("", "  ")
-			return enc.Encode(reg)
+		if category != "" {
+			for key, e := range reg.Profiles {
+				if !categoryMatches(category, e) {
+					delete(reg.Profiles, key)
+				}
+			}
+			var active []string
+			for _, key := range reg.ActiveProfiles() {
+				if _, ok := reg.Profiles[key]; ok {
+					active = append(active, key)
+				}
+			}
+			reg.Active = active
 		}
-		entry, ok := reg.Profiles[profile]
-		if !ok {
-			return errors.New("profile missing from registry")
+		enc := json.NewEncoder(a.Out)
+		enc.SetIndent("", "  ")
+		return enc.Encode(reg)
+	case "shell", "stop", "update", "versions", "register", "unregister":
+		if agent != "" {
+			if profile != "" {
+				return errors.New("use only one target or --agent")
+			}
+			profile = agent
 		}
-		// Catch signals only during the background update. The interactive shell
-		// retains the terminal's signal/process-group ownership afterward.
-		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-		err = sandboxupdate.UpdateContext(ctx, runtime, entry, false, a.Err, nil)
-		cancelErr := ctx.Err()
-		stop()
-		if cancelErr != nil {
-			return cancelErr
-		}
-		if err != nil {
-			fmt.Fprintln(a.Err, "paseo-sbx: update failed; opening shell:", err)
-		}
-		cmd, err := a.Service.ShellCommand(context.Background(), operations.Target{Workspace: reg.Workspace, Runtime: runtime, Profile: profile, Entry: entry})
+		single := command == "shell" || command == "stop" || command == "versions"
+		reg, targets, err := a.registryTargets(workspace, profile, category, single)
 		if err != nil {
 			return err
 		}
-		cmd.Stdin = a.In
-		cmd.Stdout = a.Out
-		cmd.Stderr = a.Err
-		return cmd.Run()
+		if command == "stop" && profile == "" {
+			return errors.New("stop requires an explicit profile or --agent")
+		}
+		target := operations.Target{Workspace: workspace, Category: category}
+		if len(targets) > 0 {
+			target = targets[0]
+		}
+		if command == "shell" || command == "update" || command == "versions" {
+			for _, t := range targets {
+				if t.Entry.EffectiveCategory() != config.CategoryContainer {
+					fmt.Fprintln(a.Err, "paseo-sbx:", command, "uses sbx exec and may start a stopped sandbox (including legacy SBX targets).")
+					break
+				}
+			}
+		}
+		if command == "shell" {
+			// The shared operation dispatch preserves agent-only and legacy updates.
+			ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+			defer stop()
+			_, updateErr := a.Service.Execute(ctx, operations.Request{Kind: operations.KindUpdate, Target: target, AutomaticUpdate: true}, nil)
+			cancelErr := ctx.Err()
+			if cancelErr != nil {
+				return cancelErr
+			}
+			if updateErr != nil {
+				fmt.Fprintln(a.Err, "paseo-sbx: update failed; opening shell:", updateErr)
+			}
+			cmd, err := a.Service.ShellCommand(ctx, target)
+			if err != nil {
+				return err
+			}
+			cmd.SetStdin(a.In)
+			cmd.SetStdout(a.Out)
+			cmd.SetStderr(a.Err)
+			return cmd.Run()
+		}
+		if command == "register" || command == "unregister" {
+			if profile != "" {
+				return errors.New("provider commands select a workspace/category; use --category")
+			}
+			var scope []operations.Target
+			runtime, runtimeErr := a.selectedRuntime(reg.Workspace)
+			if runtimeErr != nil {
+				return runtimeErr
+			}
+			for _, key := range reg.ActiveProfiles() {
+				entry := reg.Profiles[key]
+				scope = append(scope, operations.Target{Workspace: reg.Workspace, Runtime: runtime, Profile: key, Category: entry.EffectiveCategory(), Entry: entry})
+			}
+
+			if category != "" && len(targets) == 0 {
+				return errors.New("requested category has no active targets")
+			}
+			targets = scope
+			target = operations.Target{Workspace: reg.Workspace, Runtime: runtime, Category: category}
+			if command == "register" {
+				fmt.Fprintln(a.Err, "Provider merge applies to the full workspace/Paseo provider union.")
+			} else if category != "" {
+				fmt.Fprintln(a.Err, "Unregister deactivates category", category, "and merges the full Paseo provider union.")
+			}
+		}
+		r := operations.Request{Kind: operations.Kind(command), Target: target, PaseoHome: home, Apply: apply}
+		if !single {
+			r.Targets = targets
+			if r.Targets == nil {
+				r.Targets = []operations.Target{}
+			}
+		}
+		return a.submit(r)
 	}
 	return nil
 }

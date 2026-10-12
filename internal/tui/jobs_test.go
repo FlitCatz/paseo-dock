@@ -75,9 +75,9 @@ func (b *jobBackend) Execute(ctx context.Context, r operations.Request, emit fun
 	}
 	return operations.Result{}, nil
 }
-func (b *jobBackend) ShellCommand(_ context.Context, t operations.Target) (*exec.Cmd, error) {
+func (b *jobBackend) ShellCommand(_ context.Context, t operations.Target) (operations.ShellProcess, error) {
 	b.shellTarget = t
-	return exec.Command("true"), b.shellErr
+	return &testShellProcess{exec.Command("true")}, b.shellErr
 }
 func (b *jobBackend) SavedSelection(string) (config.Selection, error) { return config.Selection{}, nil }
 func managementFixture() operations.Snapshot {
@@ -516,12 +516,18 @@ func (b *shellProgramBackend) Snapshot(ctx context.Context, q operations.Query) 
 	b.refreshed <- struct{}{}
 	return s, err
 }
-func (b *shellProgramBackend) ShellCommand(_ context.Context, target operations.Target) (*exec.Cmd, error) {
+func (b *shellProgramBackend) ShellCommand(_ context.Context, target operations.Target) (operations.ShellProcess, error) {
 	cmd := exec.Command(b.exe, "-test.run=^TestShellExecProcessCallback$")
 	cmd.Env = append(os.Environ(), "TUI_SHELL_TEST_HELPER=1")
 	b.shellTarget = target
-	return cmd, nil
+	return &testShellProcess{cmd}, nil
 }
+
+type testShellProcess struct{ *exec.Cmd }
+
+func (p *testShellProcess) SetStdin(in io.Reader)      { p.Stdin = in }
+func (p *testShellProcess) SetStdout(out io.Writer)    { p.Stdout = out }
+func (p *testShellProcess) SetStderr(stderr io.Writer) { p.Stderr = stderr }
 
 func TestJobRetryUsesFailedRequest(t *testing.T) {
 	b := &jobBackend{snapshot: managementFixture(), execute: func(context.Context, operations.Request, func(operations.Event)) (operations.Result, error) {
@@ -540,7 +546,7 @@ func TestJobRetryUsesFailedRequest(t *testing.T) {
 	runJobCommand(m, keyCmd(m, "enter"))
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if len(b.requests) != 2 || b.requests[1].Target != original {
+	if len(b.requests) != 2 || !b.requests[1].Target.EqualIdentity(original) {
 		t.Fatal("retry followed current selection")
 	}
 }

@@ -23,6 +23,8 @@ RUN mkdir -p /opt/paseo-sbx/runtime /opt/paseo-sbx/install \
 FROM node-runtime
 ARG AGENT
 ARG AGENT_VERSION
+ARG AGENT_SOURCE
+ARG AGENT_MANIFEST
 RUN if [ "$AGENT" = codex ]; then \
       npm install --global --prefix /opt/paseo-sbx/runtime "@openai/codex@$AGENT_VERSION"; \
     elif [ "$AGENT" = claude ]; then \
@@ -36,7 +38,11 @@ ENV PATH="/home/agent/.local/bin:${PATH}"
 ARG TOOL
 ARG METHOD_INSTALLER
 ARG UTILITIES=""
+ARG CATEGORY="container"
 RUN bash /opt/paseo-sbx/install/install-tools.sh "$AGENT" "$TOOL" "$METHOD_INSTALLER" \
-    && bash /opt/paseo-sbx/install/install-utilities.sh "$AGENT" "$UTILITIES"
-LABEL org.opencontainers.image.title="Paseo sandbox agent" \
-      io.paseo-sbx.agent="${AGENT}" io.paseo-sbx.tool="${TOOL}" io.paseo-sbx.utilities="${UTILITIES}"
+    && bash /opt/paseo-sbx/install/install-utilities.sh "$AGENT" "$UTILITIES" \
+    && printf '%s\n' "$AGENT_MANIFEST" > /home/agent/.local/share/paseo-sbx/agent.json
+LABEL org.opencontainers.image.title="Paseo development container" \
+      io.paseo-sbx.category="${CATEGORY}" \
+      io.paseo-sbx.agent="${AGENT}" io.paseo-sbx.tool="${TOOL}" io.paseo-sbx.utilities="${UTILITIES}" \
+      io.paseo-sbx.agent.version="${AGENT_VERSION}" io.paseo-sbx.agent.source="${AGENT_SOURCE}"
