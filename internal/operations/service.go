@@ -306,6 +306,10 @@ func (s *Service) Execute(ctx context.Context, r Request, emit func(Event)) (res
 	if r.Kind == KindVersions {
 		return a.checkVersions(r.Target)
 	}
+	if r.Kind == KindRemove {
+		err = a.remove(r)
+		return Result{Changed: a.changed, NeedsVerification: a.uncertain, Remaining: a.remaining}, err
+	}
 	if r.Kind == KindUpdate || r.Kind == KindStop {
 		if r.Kind == KindUpdate && r.AutomaticUpdate && os.Getenv("PASEO_SBX_AUTO_UPDATE") == "0" {
 			return result, nil

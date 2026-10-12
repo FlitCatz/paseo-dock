@@ -46,6 +46,10 @@ func (b *categoryBackend) Stop(_ context.Context, e config.Entry) error {
 	b.calls = append(b.calls, "stop:"+e.Key())
 	return nil
 }
+func (b *categoryBackend) Remove(_ context.Context, e config.Entry) error {
+	b.calls = append(b.calls, "remove:"+e.Key())
+	return nil
+}
 func (b *categoryBackend) Exec(_ context.Context, e config.Entry, args []string, _ io.Reader, out, stderr io.Writer) error {
 	command := strings.Join(args, " ")
 	b.calls = append(b.calls, command)

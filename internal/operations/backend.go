@@ -2,9 +2,13 @@ package operations
 
 import (
 	"context"
+	"errors"
 	"io"
 	"paseo-sbx/internal/config"
 )
+
+// ErrRuntimeNotFound means a successful observation confirmed resource absence.
+var ErrRuntimeNotFound = errors.New("runtime not found")
 
 // RuntimeState is observed runtime data. Known is false when inspection fails;
 // callers must not interpret that state as an absent resource.
@@ -27,4 +31,5 @@ type Backend interface {
 	Inspect(context.Context, config.Entry) (RuntimeState, error)
 	Exec(context.Context, config.Entry, []string, io.Reader, io.Writer, io.Writer) error
 	Stop(context.Context, config.Entry) error
+	Remove(context.Context, config.Entry) error
 }

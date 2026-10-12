@@ -74,7 +74,7 @@ func (b *SBXBackend) Inspect(ctx context.Context, e config.Entry) (RuntimeState,
 			return r, nil
 		}
 	}
-	return RuntimeState{}, fmt.Errorf("sandbox %s missing", e.Sandbox)
+	return RuntimeState{}, fmt.Errorf("sandbox %s missing: %w", e.Sandbox, ErrRuntimeNotFound)
 }
 func (b *SBXBackend) run(ctx context.Context, args []string, in io.Reader, out, stderr io.Writer) error {
 	cmd := process.Command(ctx, "sbx", args...)
@@ -104,6 +104,12 @@ func (b *SBXBackend) Stop(ctx context.Context, e config.Entry) error {
 		return err
 	}
 	return b.run(ctx, []string{"stop", e.Sandbox}, b.In, b.Out, b.Err)
+}
+func (b *SBXBackend) Remove(ctx context.Context, e config.Entry) error {
+	if err := validateSBXEntry(e); err != nil {
+		return err
+	}
+	return b.run(ctx, []string{"rm", "--force", e.Sandbox}, nil, b.Out, b.Err)
 }
 func (b *SBXBackend) Create(ctx context.Context, e config.Entry) (config.Entry, error) {
 	if err := validateSBXEntry(e); err != nil {

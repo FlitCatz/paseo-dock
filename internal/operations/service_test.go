@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -189,6 +190,10 @@ func fakeSBX() {
 		return
 	}
 	args := os.Args[1:]
+	if path := os.Getenv("SBX_TEST_ARGV_FILE"); path != "" {
+		b, _ := json.Marshal(args)
+		_ = os.WriteFile(path, b, 0600)
+	}
 	command := strings.Join(args, " ")
 	f, _ := os.OpenFile(os.Getenv("SBX_TEST_LOG"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
 	if f != nil {

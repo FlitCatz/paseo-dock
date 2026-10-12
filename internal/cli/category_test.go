@@ -93,6 +93,9 @@ func (b *cliCategoryBackend) Stop(_ context.Context, e config.Entry) error {
 	b.stopped = append(b.stopped, e)
 	return nil
 }
+func (b *cliCategoryBackend) Remove(context.Context, config.Entry) error {
+	return nil
+}
 
 func TestCLIContainerDispatchPreservesPortsAndStoredTarget(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())

@@ -13,6 +13,7 @@ const (
 	KindCreate     Kind = "create"
 	KindUpdate     Kind = "update"
 	KindStop       Kind = "stop"
+	KindRemove     Kind = "remove"
 	KindRegister   Kind = "register"
 	KindUnregister Kind = "unregister"
 	KindPrune      Kind = "prune"
@@ -43,6 +44,7 @@ type Request struct {
 	// AutomaticUpdate preserves opt-out and retry intervals for CLI shell entry.
 	// Explicit CLI/TUI updates leave this false and force a refresh.
 	AutomaticUpdate bool
+	RemoveRuntimes  bool
 	// For register/unregister a nonnil Targets slice (including empty) is
 	// the confirmed complete active scope; nil preserves legacy CLI resolution.
 	Targets []Target

@@ -39,6 +39,10 @@ func init() {
 	}
 	switch os.Args[1] {
 	case "inspect":
+		if message := os.Getenv("DOCKER_BACKEND_INSPECT_ERROR"); message != "" {
+			fmt.Fprintln(os.Stderr, message)
+			os.Exit(1)
+		}
 		b, _ := os.ReadFile(os.Getenv("DOCKER_BACKEND_INSPECT"))
 		if os.Getenv("DOCKER_BACKEND_CHANGE_THIRD_INSPECT") == "1" {
 			log, _ := os.ReadFile(os.Getenv("DOCKER_BACKEND_LOG"))
@@ -84,6 +88,50 @@ func init() {
 		fmt.Println(strings.Repeat("a", 64))
 	}
 	os.Exit(0)
+}
+
+func TestDockerRemoveExactStoppedManagedID(t *testing.T) {
+	for _, mode := range []string{"stopped", "running", "label", "category", "missing workspace"} {
+		t.Run(mode, func(t *testing.T) {
+			b, e, raw, log := dockerFixture(t)
+			raw["State"] = map[string]any{"Running": mode == "running"}
+			labels := raw["Config"].(map[string]any)["Labels"].(map[string]string)
+			if mode == "label" {
+				labels[DockerManagedLabel] = "false"
+			}
+			if mode == "category" {
+				labels["io.paseo-sbx.category"] = "sandbox"
+			}
+			if mode == "missing workspace" {
+				e.Workspace = filepath.Join(e.Workspace, "missing")
+				raw["Mounts"] = []any{map[string]any{"Type": "bind", "Source": e.Workspace, "Destination": e.Workspace, "RW": true}}
+			}
+			writeDockerInspect(t, raw)
+			err := b.Remove(context.Background(), e)
+			calls := dockerCalls(t, log)
+			allowed := mode == "stopped" || mode == "missing workspace"
+			if (err == nil) != allowed || strings.Contains(calls, `"stop"`) || strings.Contains(calls, `"--force"`) {
+				t.Fatal(err, calls)
+			}
+			if strings.Contains(calls, `["rm","`+e.ContainerID+`"]`) != allowed {
+				t.Fatal(err, calls)
+			}
+		})
+	}
+}
+
+func TestDockerAbsenceIsNotInspectionFailure(t *testing.T) {
+	for _, message := range []string{"Error: No such object: ", "Error: No such container: ", "Cannot connect to Docker daemon", "permission denied: No such object: "} {
+		t.Run(message, func(t *testing.T) {
+			b, e, _, _ := dockerFixture(t)
+			t.Setenv("DOCKER_BACKEND_INSPECT_ERROR", message+e.ContainerID)
+			_, err := b.Inspect(context.Background(), e)
+			want := strings.HasPrefix(message, "Error: No such")
+			if errors.Is(err, ErrRuntimeNotFound) != want {
+				t.Fatal(err)
+			}
+		})
+	}
 }
 
 func dockerFixture(t *testing.T) (*DockerBackend, config.Entry, map[string]any, string) {

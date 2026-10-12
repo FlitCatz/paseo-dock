@@ -62,6 +62,14 @@ func (b *DockerBackend) capture(ctx context.Context, args ...string) ([]byte, er
 		if ctx.Err() != nil {
 			return out, ctx.Err()
 		}
+		if len(args) == 4 && args[0] == "inspect" && args[1] == "--type" && args[2] == "container" {
+			message := strings.TrimSpace(stderr.String())
+			for _, prefix := range []string{"Error: No such object: ", "Error: No such container: ", "Error response from daemon: No such container: "} {
+				if message == prefix+args[3] {
+					return out, fmt.Errorf("container %s: %w", args[3], ErrRuntimeNotFound)
+				}
+			}
+		}
 		return out, fmt.Errorf("docker %s: %w: %s", args[0], err, strings.TrimSpace(stderr.String()))
 	}
 	return out, nil
@@ -110,7 +118,7 @@ func observedDockerState(raw dockerInspection) (RuntimeState, error) {
 	state.Known = true
 	return state, nil
 }
-func validateDockerEntry(e config.Entry, creating bool) (config.Entry, error) {
+func validateDockerEntry(e config.Entry, creating bool, allowMissingWorkspace ...bool) (config.Entry, error) {
 	if e.SecurityPolicy == "" {
 		if e.SecurityPolicyDigest != "" {
 			return e, fmt.Errorf("Docker policy digest without policy")
@@ -125,8 +133,9 @@ func validateDockerEntry(e config.Entry, creating bool) (config.Entry, error) {
 	if err != nil {
 		return e, err
 	}
-	info, err := os.Stat(workspace)
-	if err != nil || !info.IsDir() {
+	info, statErr := os.Stat(workspace)
+	missingAllowed := len(allowMissingWorkspace) > 0 && allowMissingWorkspace[0] && os.IsNotExist(statErr)
+	if !missingAllowed && (statErr != nil || !info.IsDir()) {
 		return e, fmt.Errorf("Docker workspace must be an existing directory: %s", workspace)
 	}
 	if strings.ContainsAny(workspace, ",\n\r") {
@@ -162,7 +171,7 @@ func validateDockerEntry(e config.Entry, creating bool) (config.Entry, error) {
 	return e, nil
 }
 func (b *DockerBackend) Inspect(ctx context.Context, e config.Entry) (RuntimeState, error) {
-	e, err := validateDockerEntry(e, false)
+	e, err := validateDockerEntry(e, false, true)
 	if err != nil {
 		return RuntimeState{}, err
 	}
@@ -297,6 +306,20 @@ func (b *DockerBackend) Stop(ctx context.Context, e config.Entry) error {
 		return err
 	}
 	_, err := b.capture(ctx, "stop", e.ContainerID)
+	return err
+}
+func (b *DockerBackend) Remove(ctx context.Context, e config.Entry) error {
+	state, err := b.Inspect(ctx, e)
+	if err != nil {
+		return err
+	}
+	if !state.Known {
+		return errors.New("container state unknown; removal refused")
+	}
+	if state.Running {
+		return errors.New("container is running; stop first")
+	}
+	_, err = b.capture(ctx, "rm", e.ContainerID)
 	return err
 }
 func (b *DockerBackend) ready(ctx context.Context, e config.Entry, user string) error {
