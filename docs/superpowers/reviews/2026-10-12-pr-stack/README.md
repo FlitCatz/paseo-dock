@@ -85,6 +85,27 @@ it does not change the tested product tree. Local integration is complete.
 Authenticated/model-driven acceptance and broader platform gates below remain
 pending. No remote push or live acceptance action was performed.
 
+## Subsequent dashboard section fix
+
+After local integration, the user requested visible section boundaries. The
+dashboard now shows four independently titled boxes at 80x20 and above, with a
+double frame for the focused section and monochrome-safe boundaries. Narrow
+screens retain one section with its position; tiny screens prioritize the
+selected row. Action/confirmation overlays also account for frame dimensions.
+README keyboard/layout guidance is updated. Backend/resource behavior is unchanged.
+
+Frame/menu regressions were observed failing before implementation. Existing
+Korean, tiny-terminal, long-selection and log bounds passed after the change.
+The first full run exposed a small-screen warning assertion that assumed a
+Korean word could not wrap; its visible-text assertion now spans frame/wrapped
+rows. An unchanged CLI userns PTY heading-marker test also failed once; its
+focused rerun and the final full suite passed without changing that wizard/test.
+Final `make test` exits0 (CLI15.773s, TUI13.718s, category helper21.585s),
+`make vet`, `make build` and diff check pass. Independent scoped review found no
+Critical/Important layout findings. An actual rebuilt dashboard was opened in a
+PTY, its four frames observed, and closed with `q`. That read-only render check
+does not claim daemon/Docker connectivity or authenticated guest acceptance.
+
 ## Remaining acceptance
 
 Authenticated model inference, actual model-driven MCP/native tool use, amd64

@@ -59,7 +59,7 @@ func (dashboardKeys) ShortHelp() []keys.Binding {
 }
 func (dashboardKeys) FullHelp() [][]keys.Binding {
 	return [][]keys.Binding{dashboardKeys{}.ShortHelp(), {
-		keys.NewBinding(keys.WithKeys("v"), keys.WithHelp("v", "미등록 sandbox (읽기 전용)")), keys.NewBinding(keys.WithKeys("t"), keys.WithHelp("t", "template 탭")), keys.NewBinding(keys.WithKeys("left", "right"), keys.WithHelp("←→", "상세/로그 탭")), keys.NewBinding(keys.WithKeys("esc"), keys.WithHelp("Esc", "검색 취소")),
+		keys.NewBinding(keys.WithKeys("v"), keys.WithHelp("v", "미등록 sandbox (읽기 전용)")), keys.NewBinding(keys.WithKeys("t"), keys.WithHelp("t", "template 탭")), keys.NewBinding(keys.WithKeys("left", "right"), keys.WithHelp("←→", "상세/로그")), keys.NewBinding(keys.WithKeys("esc"), keys.WithHelp("Esc", "검색 취소")),
 		keys.NewBinding(keys.WithKeys("enter"), keys.WithHelp("Enter", "작업")), keys.NewBinding(keys.WithKeys("u"), keys.WithHelp("u", "업데이트")), keys.NewBinding(keys.WithKeys("s"), keys.WithHelp("s", "shell")), keys.NewBinding(keys.WithKeys("c"), keys.WithHelp("c", "취소 요청")),
 		keys.NewBinding(keys.WithKeys("R"), keys.WithHelp("R", "고정 대상 재시도")),
 		keys.NewBinding(keys.WithKeys("n"), keys.WithHelp("n", "새 환경 생성")), keys.NewBinding(keys.WithKeys("a"), keys.WithHelp("a", "고급 build/load/prune")),
@@ -159,52 +159,102 @@ func (m *Dashboard) detailContent() string {
 	}
 	return strings.Join(lines, "\n")
 }
+
+// Section dimensions include the frame; tiny terminals retain the selected row.
+func sectionDimensions(width, height int) (contentWidth, contentHeight, padding int, framed bool) {
+	width, height = max(1, width), max(1, height)
+	if width < 6 || height < 3 {
+		titleHeight := 0
+		if height > 2 {
+			titleHeight = 1
+		}
+		return width, max(1, height-titleHeight), 0, false
+	}
+	if width >= 24 {
+		padding = 1
+	}
+	return width - 2 - 2*padding, height - 2, padding, true
+}
+
+func renderSection(title, body string, width, height int, focused bool) string {
+	width, height = max(1, width), max(1, height)
+	contentWidth, contentHeight, padding, framed := sectionDimensions(width, height)
+	mark := ""
+	if focused {
+		mark = "› "
+	}
+	rows := strings.Split(body, "\n")
+	lines := make([]string, 0, height)
+	border := lipgloss.RoundedBorder()
+	if focused {
+		border = lipgloss.DoubleBorder()
+	}
+	edge, heading := lipgloss.NewStyle(), lipgloss.NewStyle()
+	if os.Getenv("NO_COLOR") == "" {
+		edge = edge.Foreground(lipgloss.Color("240"))
+		heading = heading.Bold(true).Foreground(lipgloss.Color("252"))
+		if focused {
+			edge = edge.Foreground(lipgloss.Color("86"))
+			heading = heading.Foreground(lipgloss.Color("86"))
+		}
+	}
+	if framed {
+		label := ansi.Truncate(" "+mark+title+" ", width-3, "…")
+		lines = append(lines, edge.Render(border.TopLeft+border.Top)+heading.Render(label)+edge.Render(strings.Repeat(border.Top, width-3-ansi.StringWidth(label))+border.TopRight))
+	} else if height > 2 {
+		lines = append(lines, heading.Render(ansi.Truncate(mark+title, width, "…")))
+	}
+	for i := 0; i < contentHeight; i++ {
+		line := ""
+		if i < len(rows) {
+			line = ansi.Truncate(rows[i], contentWidth, "…")
+		}
+		line += strings.Repeat(" ", max(0, contentWidth-ansi.StringWidth(line)))
+		if framed {
+			line = edge.Render(border.Left) + strings.Repeat(" ", padding) + line + strings.Repeat(" ", padding) + edge.Render(border.Right)
+		}
+		lines = append(lines, line)
+	}
+	if framed {
+		lines = append(lines, edge.Render(border.BottomLeft+strings.Repeat(border.Bottom, width-2)+border.BottomRight))
+	}
+	return strings.Join(lines, "\n")
+}
+
 func (m *Dashboard) panel(which, width, height int) string {
 	width = max(1, width)
 	height = max(1, height)
-	title := []string{"Workspaces", "Sandboxes", "상세", "작업 로그"}[which]
+	title := []string{"Workspaces", "Sandbox / Container", "상세", "작업 로그"}[which]
 	if which == 1 && m.Unmanaged {
 		title = "미등록 · 읽기 전용"
 	}
 	if which == 2 && m.templateTab {
 		title = "Templates"
 	}
-	if which == m.Focus {
-		title = "› " + title
+	if m.Width < 80 || m.Height < 20 {
+		title = fmt.Sprintf("%d/4 %s", which+1, title)
 	}
-	// In a very short terminal prioritize the actual focused item over decorative titles.
-	titleHeight := 1
-	if height <= 2 {
-		titleHeight = 0
-	}
-	available := max(1, height-titleHeight)
+	contentWidth, available, _, _ := sectionDimensions(width, height)
 	var body string
 	switch which {
 	case 0:
-		m.workspaces.SetSize(width, available)
+		m.workspaces.SetSize(contentWidth, available)
 		body = m.workspaces.View()
 	case 1:
-		m.sandboxes.SetSize(width, available)
+		m.sandboxes.SetSize(contentWidth, available)
 		body = m.sandboxes.View()
 	case 2:
-		m.details.SetWidth(width)
+		m.details.SetWidth(contentWidth)
 		m.details.SetHeight(available)
 		m.details.SetContent(m.detailContent())
 		body = m.details.View()
 	case 3:
-		m.logs.SetWidth(width)
+		m.logs.SetWidth(contentWidth)
 		m.logs.SetHeight(available)
 		m.logs.SetContent(m.logContent())
 		body = m.logs.View()
 	}
-	if titleHeight == 0 {
-		return lipgloss.NewStyle().Width(width).Height(height).Render(body)
-	}
-	style := lipgloss.NewStyle()
-	if os.Getenv("NO_COLOR") == "" {
-		style = style.Bold(true).Foreground(lipgloss.Color("141"))
-	}
-	return lipgloss.NewStyle().Width(width).Height(height).Render(style.Render(ansi.Truncate(title, width, "…")) + "\n" + body)
+	return renderSection(title, body, width, height, which == m.Focus)
 }
 func (m *Dashboard) View() tea.View {
 	if m.creating != nil && !m.exitPrompt {
@@ -237,28 +287,20 @@ func (m *Dashboard) View() tea.View {
 	available := max(1, height-headerLines-footerLines)
 	var body string
 	switch {
-	case width >= 120 && height >= 28:
-		top := available * 2 / 3
-		left := width / 3
-		right := width - left - 1
-		body = lipgloss.JoinHorizontal(lipgloss.Top, m.panel(0, left, top), "│", m.panel(1, right, top)) + "\n" + lipgloss.JoinHorizontal(lipgloss.Top, m.panel(2, left, available-top-1), "│", m.panel(3, right, available-top-1))
 	case width >= 80 && height >= 20:
-		top := available * 2 / 3
-		left := width / 3
+		top := (available - 1) / 2
+		left := width * 2 / 5
 		right := width - left - 1
-		which := 2 + m.detailTab
-		if m.Focus >= 2 {
-			which = m.Focus
-		}
-		body = lipgloss.JoinHorizontal(lipgloss.Top, m.panel(0, left, top), "│", m.panel(1, right, top)) + "\n" + m.panel(which, width, available-top-1)
+		body = lipgloss.JoinHorizontal(lipgloss.Top, m.panel(0, left, top), " ", m.panel(1, right, top)) + "\n\n" + lipgloss.JoinHorizontal(lipgloss.Top, m.panel(2, left, available-top-1), " ", m.panel(3, right, available-top-1))
 	default:
 		body = m.panel(m.Focus, width, available)
 	}
 	if content := m.managementContent(); content != "" {
-		m.modal.SetWidth(width)
-		m.modal.SetHeight(available)
+		contentWidth, contentHeight, _, _ := sectionDimensions(width, available)
+		m.modal.SetWidth(contentWidth)
+		m.modal.SetHeight(contentHeight)
 		if !m.actionMenu {
-			content = ansi.Hardwrap(content, width, true)
+			content = ansi.Hardwrap(content, contentWidth, true)
 		}
 		m.modal.SetContent(content)
 		if m.actionMenu {
@@ -266,11 +308,20 @@ func (m *Dashboard) View() tea.View {
 			if line < m.modal.YOffset() {
 				m.modal.SetYOffset(line)
 			}
-			if line >= m.modal.YOffset()+available {
-				m.modal.SetYOffset(line - available + 1)
+			if line >= m.modal.YOffset()+contentHeight {
+				m.modal.SetYOffset(line - contentHeight + 1)
 			}
 		}
-		body = m.modal.View()
+		title := "고급 작업"
+		switch {
+		case m.exitPrompt:
+			title = "종료 확인"
+		case m.confirm != nil:
+			title = "실행 확인"
+		case m.actionMenu:
+			title = "작업 메뉴"
+		}
+		body = renderSection(title, m.modal.View(), width, available, true)
 	}
 	if m.actionError != "" {
 		footer = m.actionError + " · " + footer

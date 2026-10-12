@@ -173,6 +173,60 @@ func TestDashboardNarrowKoreanNoColor(t *testing.T) {
 	}
 }
 
+func TestDashboardSectionsHaveVisibleFrames(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	for _, size := range [][2]int{{120, 40}, {80, 24}} {
+		t.Run(fmt.Sprintf("%dx%d", size[0], size[1]), func(t *testing.T) {
+			m := NewDashboard(&dashboardBackend{}, config.Catalog{}, "")
+			defer m.cancel()
+			deliver(m, fixtureSnapshot())
+			m.Update(tea.WindowSizeMsg{Width: size[0], Height: size[1]})
+			view := m.View().Content
+			if strings.Count(view, "╭")+strings.Count(view, "╔") != 4 || strings.Count(view, "╰")+strings.Count(view, "╚") != 4 {
+				t.Fatalf("four independently closed sections are not visible:\n%s", view)
+			}
+			for _, title := range []string{"Workspaces", "Sandbox / Container", "상세", "작업 로그"} {
+				if !strings.Contains(view, title) {
+					t.Errorf("section title %q is missing", title)
+				}
+			}
+			if strings.Contains(view, "\x1b[") {
+				t.Fatal("section boundaries require color despite NO_COLOR")
+			}
+			for focus := 0; focus < 4; focus++ {
+				m.Focus = focus
+				focused := m.View().Content
+				if strings.Count(focused, "╔") != 1 || strings.Count(focused, "╚") != 1 {
+					t.Fatalf("focus %d is not uniquely marked by its frame", focus)
+				}
+				if len(strings.Split(focused, "\n")) > size[1] {
+					t.Fatal("frames overflow terminal height")
+				}
+				for _, line := range strings.Split(focused, "\n") {
+					if ansi.StringWidth(line) > size[0] {
+						t.Fatal("frames overflow terminal width")
+					}
+				}
+			}
+			if size == [2]int{80, 24} {
+				t.Logf("80x24 section preview:\n%s", view)
+			}
+		})
+	}
+}
+
+func TestDashboardActionMenuHasItsOwnFrame(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	m := NewDashboard(&dashboardBackend{}, config.Catalog{}, "")
+	defer m.cancel()
+	deliver(m, fixtureSnapshot())
+	m.actionMenu = true
+	view := m.View().Content
+	if strings.Count(view, "╔") != 1 || strings.Count(view, "╚") != 1 || !strings.Contains(view, "작업 메뉴") {
+		t.Fatalf("action menu has no distinct closed section:\n%s", view)
+	}
+}
+
 // Removing display-width clipping or list scrolling must hide/overflow the selection.
 func TestDashboardTerminalBounds(t *testing.T) {
 	t.Setenv("NO_COLOR", "1")

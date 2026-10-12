@@ -14,9 +14,11 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // The backend double replaces external resources; all queue/model transitions stay real.
@@ -708,7 +710,16 @@ func TestJobConfirmationScrollsOnSmallScreen(t *testing.T) {
 	for i := 0; i < 5; i++ {
 		keyCmd(m, "j")
 	}
-	if view := m.View().Content; !strings.Contains(view, "시작") {
+	view := m.View().Content
+	// Frames reduce the viewport width, so a Korean word may span two rows.
+	// Check the visible text across wrapping without treating border/padding as content.
+	visible := strings.Map(func(r rune) rune {
+		if unicode.IsSpace(r) || strings.ContainsRune("╔═╗║╚╝", r) {
+			return -1
+		}
+		return r
+	}, ansi.Strip(view))
+	if !strings.Contains(visible, "중지된sandbox를시작할수있습니다.") {
 		t.Fatalf("small screen cannot reach start warning: %q", view)
 	}
 	keyCmd(m, "esc")
