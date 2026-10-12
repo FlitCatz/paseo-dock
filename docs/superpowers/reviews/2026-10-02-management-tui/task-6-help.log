@@ -1,2 +1,0 @@
-usage: paseo-sbx {tui|build|load|create|register|run|unregister|prune|list|shell|stop|update} [options]
-Run paseo-sbx COMMAND --help for command options.

@@ -32,8 +32,8 @@ jobs:
         with:
           go-version-file: go.mod
           cache: false
-      - run: go test -race ./...
-      - run: go vet ./...
+      - run: make test
+      - run: make vet
       - run: make build
       - name: Resolve catalog profiles
         id: matrix

@@ -41,6 +41,9 @@ func TestWorkspaceBoundary(t *testing.T) {
 	}
 }
 func TestLaunchStdioAndExit(t *testing.T) {
+	// This fixture exercises the process cwd fallback, independent of Paseo's
+	// session environment inherited by a developer running the suite.
+	t.Setenv("PASEO_AGENT_CWD", "")
 	workspace := t.TempDir()
 	runtime := t.TempDir()
 	bin := t.TempDir()
