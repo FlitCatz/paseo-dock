@@ -268,7 +268,7 @@ func (a *execution) listAll() error {
 	enc.SetIndent("", "  ")
 	return enc.Encode(rows)
 }
-func (a *execution) prune(home string, dryRun bool, targets []Target) error {
+func (a *execution) prune(home string, dryRun bool, targets []Target, removeRuntimes bool) error {
 	base, err := config.BaseDir()
 	if err != nil {
 		return err
@@ -333,7 +333,7 @@ func (a *execution) prune(home string, dryRun bool, targets []Target) error {
 		}
 	}
 	var missing []config.Installed
-	var sandboxes []string
+	var sandboxes, containers []string
 	for _, i := range installed {
 		if !i.Missing() {
 			continue
@@ -349,21 +349,28 @@ func (a *execution) prune(home string, dryRun bool, targets []Target) error {
 		for _, p := range profiles {
 			a.missing = append(a.missing, Target{Workspace: i.Registry.Workspace, Runtime: i.Runtime, Profile: p, Entry: i.Registry.Profiles[p]})
 		}
-		names := []string{}
+		names, ids := []string{}, []string{}
 		for _, e := range i.Registry.Profiles {
-			if e.Sandbox != "" {
+			if e.EffectiveCategory() == config.CategoryContainer {
+				ids = append(ids, e.ContainerID)
+			} else if e.Sandbox != "" {
 				names = append(names, e.Sandbox)
 			}
 		}
 		slices.Sort(names)
+		slices.Sort(ids)
 		sandboxes = append(sandboxes, names...)
+		containers = append(containers, ids...)
 		fmt.Fprintf(a.Out, "Missing workspace: %s\n  registry: %s\n  sandboxes: %s\n", i.Registry.Workspace, i.Runtime, strings.Join(names, ", "))
+		if len(ids) > 0 {
+			fmt.Fprintln(a.Out, "  containers:", strings.Join(ids, ", "))
+		}
 	}
 	if len(missing) == 0 {
 		fmt.Fprintln(a.Out, "No missing workspaces.")
 		return nil
 	}
-	if dryRun {
+	if dryRun && !removeRuntimes {
 		return nil
 	}
 	// Acquire every affected sandbox before changing provider or registry metadata.
@@ -406,6 +413,9 @@ func (a *execution) prune(home string, dryRun bool, targets []Target) error {
 	if len(missing) == 0 {
 		return nil
 	}
+	if removeRuntimes {
+		return a.pruneRuntimes(home, dryRun, missing)
+	}
 	// Providers already ignore missing workspaces; sync first so a failure
 	// leaves every registry in place.
 	if err = a.syncProviders(home, true); err != nil {
@@ -440,6 +450,12 @@ func (a *execution) prune(home string, dryRun bool, targets []Target) error {
 	if len(sandboxes) > 0 {
 		fmt.Fprintln(a.Out, "Sandboxes were kept. To delete them (irreversible):")
 		fmt.Fprintln(a.Out, "  sbx rm", strings.Join(sandboxes, " "))
+	}
+	if len(containers) > 0 {
+		fmt.Fprintln(a.Out, "Containers were kept. To delete them (irreversible):")
+		for _, id := range containers {
+			fmt.Fprintln(a.Out, "  docker rm", id)
+		}
 	}
 	return nil
 }

@@ -308,6 +308,9 @@ func (s *Service) Execute(ctx context.Context, r Request, emit func(Event)) (res
 	}
 	if r.Kind == KindRemove {
 		err = a.remove(r)
+		if a.changed && ctx.Err() != nil {
+			a.uncertain = true
+		}
 		return Result{Changed: a.changed, NeedsVerification: a.uncertain, Remaining: a.remaining}, err
 	}
 	if r.Kind == KindUpdate || r.Kind == KindStop {
@@ -503,7 +506,8 @@ func (s *Service) Execute(ctx context.Context, r Request, emit func(Event)) (res
 	case KindUnregister:
 		err = a.unregister(r.Target.Workspace, r.PaseoHome, unregisterCategory)
 	case KindPrune:
-		err = a.prune(r.PaseoHome, r.DryRun, r.PruneTargets)
+		err = a.prune(r.PaseoHome, r.DryRun, r.PruneTargets, r.RemoveRuntimes)
+		result.Remaining = a.remaining
 	}
 	result.Changed = a.changed
 	result.NeedsVerification = a.uncertain
