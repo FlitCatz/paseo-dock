@@ -1,9 +1,15 @@
 # Branch closure and integration decision — 2026-10-12
 
+Subsequent integration: the user selected local merge, and main advanced through
+the three reviewed heads. See [integration record](../2026-10-12-pr-stack/README.md)
+for the actual branch boundaries, verification and preserved main plan drafts.
+The integration-decision section below describes the earlier closure checkpoint.
+
 Feature development is frozen. Implementation and offline checks are distinct
 from complete product acceptance; authenticated inference and model-driven MCP
-remain unverified. No merge, push, or resource/policy changes are authorized by
-this maintenance decision.
+remain unverified. The maintenance decision itself did not authorize integration;
+the subsequent user choice authorized the local merge. No push, live resource
+or host policy change was performed.
 
 ## Integration decision
 
