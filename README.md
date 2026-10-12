@@ -531,6 +531,7 @@ Ponytail과 GSD의 hook 설치 여부와 실제 실행 여부는 구분해야 �
 ./paseo-sbx list --workspace /absolute/path/to/project
 ./paseo-sbx shell codex-superpowers --workspace /absolute/path/to/project
 ./paseo-sbx stop codex-superpowers --workspace /absolute/path/to/project
+./paseo-sbx remove --workspace /absolute/path/to/project --profile container/codex-superpowers
 
 # 다른 프로젝트용 환경 선택·생성·등록
 ./paseo-sbx create --workspace /path/to/another-project
@@ -547,6 +548,13 @@ Ponytail과 GSD의 hook 설치 여부와 실제 실행 여부는 구분해야 �
 
 sandbox 이름에는 workspace 경로 hash가 붙습니다. 다른 workspace의 sandbox는
 삭제하지 않습니다. 기존 sandbox의 내용을 새 이미지로 자동 교체하지 않습니다.
+
+`remove`는 중지된 대상 하나와 registry·업데이트·버전 기록을 삭제합니다.
+`--profile`에는 `list`의 정확한 registry key를 사용하고, 확인 화면에서 그 key를
+그대로 입력합니다. 비대화형 실행은 `--yes`가 필요합니다. 로그인 상태·세션·guest 파일은
+복구할 수 없으며 workspace 원본 폴더와 image·template은 보존합니다.
+running 대상은 먼저 중지해야 하고, 상태 확인 실패는 삭제를 막습니다. 이미 없는 대상은
+registry만 정리하므로 부분 실패 후 같은 명령으로 재시도할 수 있습니다.
 
 ### 여러 프로젝트
 
@@ -565,6 +573,8 @@ sandbox로 연결합니다. 중첩된 workspace는 가장 깊은 쪽을 사용�
 ./paseo-sbx unregister --workspace /path/to/old-project  # 연결 대상에서 제외
 ./paseo-sbx prune --dry-run                              # 삭제된 workspace 확인
 ./paseo-sbx prune                                        # 삭제된 workspace의 기록 정리
+./paseo-sbx prune --remove-runtimes --dry-run             # 남은 sandbox/container와 삭제 차단 대상 확인
+./paseo-sbx prune --remove-runtimes                       # 중지된 환경까지 삭제 (prune 입력 확인)
 ```
 
 `unregister`는 해당 workspace의 활성 조합을 비우고 Paseo provider 목록을 다시 만듭니다.
@@ -575,7 +585,11 @@ sandbox와 저장된 선택은 남기므로 `create --workspace <path> --skip-bu
 sandbox 연결과 Paseo provider 목록에서 자동으로 제외됩니다. `prune`은 그 기록
 (`~/.local/share/paseo-sbx/<id>/`)을 삭제하고, Paseo 설정을 백업한 뒤 provider 목록을
 다시 만들어 reload합니다. sandbox에는 로그인 상태와 세션이 남아 있으므로 삭제하지 않고
-`sbx rm` 명령만 안내합니다. 외장 디스크처럼 잠시 연결이 끊긴 폴더도 삭제된 것으로
+`sbx rm`과 container의 `docker rm <id>` 명령만 안내합니다. entry lock 파일은 보존합니다.
+`--remove-runtimes`를 주면 남은 sandbox/container도 삭제하며, running 또는 상태 확인 불가
+대상이 하나라도 있으면 전체 작업을 거부합니다. 확인은 `prune` 입력이며 비대화형 실행은
+`--yes`가 필요합니다. 일부 삭제가 실패한 workspace의 registry는 재시도를 위해 남깁니다.
+외장 디스크처럼 잠시 연결이 끊긴 폴더도 삭제된 것으로
 보이므로 먼저 `--dry-run`으로 대상을 확인하세요.
 GUI 사용 절차는 [README_GUI.md](README_GUI.md)를 참고하세요.
 

@@ -71,12 +71,12 @@ func Run(root string, args []string, in io.Reader, out, stderr io.Writer) int {
 		if terminalStreams(in, out) {
 			args = []string{"tui"}
 		} else {
-			fmt.Fprintln(stderr, "usage: paseo-sbx {build|load|create|register|run|unregister|prune|list|shell|stop|update|versions} [options]")
+			fmt.Fprintln(stderr, "usage: paseo-sbx {build|load|create|register|run|unregister|prune|list|shell|stop|remove|update|versions} [options]")
 			return 2
 		}
 	}
 	if args[0] == "--help" || args[0] == "-h" || args[0] == "help" {
-		fmt.Fprintln(out, "usage: paseo-sbx {tui|build|load|create|register|run|unregister|prune|list|shell|stop|update|versions} [options]\nRun paseo-sbx COMMAND --help for command options.")
+		fmt.Fprintln(out, "usage: paseo-sbx {tui|build|load|create|register|run|unregister|prune|list|shell|stop|remove|update|versions} [options]\nRun paseo-sbx COMMAND --help for command options.")
 		return 0
 	}
 	if args[0] == "tui" {
@@ -146,6 +146,7 @@ func (a *App) execute(args []string) error {
 	memory := "2g"
 	home := "~/.paseo"
 	var push, keep, apply, printBake, buildFirst, interactive, skipBuild, all, dryRun, codexUserNS bool
+	var yes, removeRuntimes bool
 	if command == "build" || command == "load" || command == "create" {
 		f.StringVar(&profiles, "profiles", "", "comma-separated agent-methodology pairs")
 		f.StringVar(&profile, "profile", "", "select one agent-methodology pair")
@@ -185,6 +186,13 @@ func (a *App) execute(args []string) error {
 	case "prune":
 		f.StringVar(&home, "paseo-home", home, "Paseo configuration home")
 		f.BoolVar(&dryRun, "dry-run", false, "show missing workspaces without removing registries")
+		f.BoolVar(&removeRuntimes, "remove-runtimes", false, "also remove stopped runtimes belonging to missing workspaces")
+		f.BoolVar(&yes, "yes", false, "confirm irreversible runtime removal without prompting")
+	case "remove":
+		f.StringVar(&workspace, "workspace", "", "workspace path (required)")
+		f.StringVar(&profile, "profile", "", "exact registry profile key (required)")
+		f.StringVar(&home, "paseo-home", home, "Paseo configuration home")
+		f.BoolVar(&yes, "yes", false, "confirm irreversible runtime removal without prompting")
 	case "list", "shell", "stop", "update", "versions":
 		f.StringVar(&workspace, "workspace", "", "workspace path")
 		if command != "list" {
@@ -317,7 +325,25 @@ func (a *App) execute(args []string) error {
 		}
 		return a.submit(operations.Request{Kind: operations.KindCreate, Target: operations.Target{Workspace: workspace}, Namespace: namespace, Memory: memory, Ports: ports, BuildFirst: buildFirst, Apply: apply, PaseoHome: home})
 	case "prune":
-		return a.submit(operations.Request{Kind: operations.KindPrune, PaseoHome: home, DryRun: dryRun})
+		return a.pruneWithConfirmation(home, dryRun, removeRuntimes, yes)
+	case "remove":
+		if workspace == "" || profile == "" || agent != "" {
+			return errors.New("remove requires --workspace and an exact --profile key")
+		}
+		reg, targets, err := a.registryTargets(workspace, profile, category, true)
+		if err != nil {
+			return err
+		}
+		if len(targets) != 1 || targets[0].Profile != profile {
+			return errors.New("remove requires an exact registry --profile key")
+		}
+		target := targets[0]
+		fmt.Fprintf(a.Out, "Remove %s / %s\n  category: %s\n  runtime: %s\n  image: %s\n", reg.Workspace, target.Profile, target.Category, target.ResourceIdentity(), target.Entry.Image)
+		printRemovalEffects(a.Out)
+		if err := a.confirmRemoval(target.Profile, yes); err != nil {
+			return err
+		}
+		return a.submit(operations.Request{Kind: operations.KindRemove, Target: target, PaseoHome: home})
 	case "list":
 		if all {
 			if category != "" {
