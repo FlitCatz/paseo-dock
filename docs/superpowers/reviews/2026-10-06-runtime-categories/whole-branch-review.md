@@ -1,5 +1,11 @@
 # Whole-branch review and recovery fixes
 
+Historical review of the range stated below. Subsequent approved userns opt-in
+and its confinement evidence, correction reviews and main integration are recorded
+in [current integration status](../2026-10-12-pr-stack/README.md). The default-policy
+Docker failure below is not the result of the later opt-in experiment. Authenticated
+model/tool and broader platform acceptance still remain incomplete.
+
 Date: 2026-10-08. Reviewed baseline: `e0f4263..2012474`, branch `feat/management-tui`.
 The interrupted review was recovered from the prior session and completed by an independent
 read-only reviewer. Four findings were confirmed; each was reproduced in a Go test before

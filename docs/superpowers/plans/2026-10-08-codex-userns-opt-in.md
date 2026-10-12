@@ -1,5 +1,10 @@
 # Codex user namespace opt-in Implementation Plan
 
+**Current integration:** Implemented and locally merged into main through the
+reviewed stack. See [latest integration status](../reviews/2026-10-12-pr-stack/README.md).
+The closure checkpoint and step lists below remain historical; authenticated
+model/tool and additional-platform acceptance are still incomplete.
+
 **Closure status (2026-10-12):** Policy, CLI/TUI and isolated Service confinement
 implementation are committed through `69652ee`. The resumed scoped review and
 helper maintenance are recorded in [closure status](../reviews/2026-10-06-runtime-categories/branch-closure.md).

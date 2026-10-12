@@ -1,5 +1,12 @@
 # 상태 기반 sandbox 관리 TUI 계획
 
+> **현재 상태 (2026-10-12):** 관리 TUI와 후속 category/userns 구현을 main에 통합했고
+> race/helper 테스트·vet·build를 통과했다. Task 6 독립 review는 저장된 보고서에서 승인됐다.
+> 인증된 모델·MCP/native 실행, amd64 live confinement, AppArmor host 검증과 과거
+> HTTP 403으로 실패한 all-success live lifecycle은 미완료다.
+> [최신 통합 기록](superpowers/reviews/2026-10-12-pr-stack/README.md)을 기준으로 읽는다.
+> 아래 2026-10-02/06 상태·체크리스트는 당시의 계획과 증거를 보존한 역사 기록이다.
+
 > **2026-10-06 범위 개정:** 아래 2026-10-02 기록은 구현 당시의 sandbox 전용 기준과
 > 검증 증거로 보존한다. 새 작업의 기준은 승인된
 > `docs/superpowers/specs/2026-10-06-runtime-categories-design.md`이며,

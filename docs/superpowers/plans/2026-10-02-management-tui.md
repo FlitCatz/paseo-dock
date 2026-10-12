@@ -1,5 +1,12 @@
 # Management TUI Implementation Plan
 
+**Current status (2026-10-12):** Implemented and locally integrated into main,
+including subsequent categories/userns work. Offline race/helper tests, vet and
+build passed. The recorded Task 6 independent review approved the implementation;
+the HTTP-403-limited all-success live lifecycle remains unverified. Original step
+lists below are historical, not the current completion checklist. See
+[integration status](../reviews/2026-10-12-pr-stack/README.md) for current gates.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Go 관리 TUI에서 workspace와 sandbox 상태를 보고 생성·업데이트·shell·중지·등록·빌드·정리를 수행한다.

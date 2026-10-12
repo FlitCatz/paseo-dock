@@ -1,5 +1,13 @@
 # Sandbox and Container Categories Implementation Plan
 
+**Current status (2026-10-12):** Category/native implementation and approved userns
+opt-in are locally integrated into main. The default-policy Docker namespace failure
+below is historical and remains a default-policy limitation; the opt-in's tested
+confinement path passed. Independent correction/split reviews and offline checks
+are recorded in [integration status](../reviews/2026-10-12-pr-stack/README.md).
+Authenticated model/MCP/native and additional-platform acceptance remain open.
+The dated execution status and checklists below preserve the original plan.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add agent-only SBX sandboxes and full-stack Docker development containers to the management TUI while preserving existing sandbox records and CLI behavior.

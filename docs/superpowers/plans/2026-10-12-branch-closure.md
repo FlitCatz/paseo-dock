@@ -1,5 +1,11 @@
 # Branch closure maintenance plan
 
+**Current status:** This maintenance plan was executed and reviewed. The user
+subsequently authorized local integration; all three review heads were merged
+into main and the combined checks passed. See
+[integration record](../reviews/2026-10-12-pr-stack/README.md). Constraints below
+describe the original maintenance scope, before that later integration choice.
+
 **Goal:** Address the external review without adding features or claiming full acceptance.
 
 **Scope:** Finish the interrupted helper review, make offline helper tests part of

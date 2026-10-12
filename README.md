@@ -2,6 +2,11 @@
 
 Go 관리 TUI에서 workspace의 SBX sandbox와 Docker container를 구분하여 생성·업데이트·shell·Paseo 연결을 관리합니다.
 
+2026-10-12: 합의한 기능 구현과 로컬 main 통합을 완료했고, race/helper 테스트·vet·build를
+통과했습니다. 인증된 모델·MCP/native 실행과 추가 플랫폼의 인수 검증은 남아 있습니다.
+[최신 통합·검증 상태](docs/superpowers/reviews/2026-10-12-pr-stack/README.md)와
+[GUI 사용 안내](README_GUI.md)를 참고하세요. 날짜가 있는 계획·실험 보고서는 당시 증거를 보존합니다.
+
 ## 실행 category
 
 새 `sandbox`는 Codex 또는 Claude Code와 필요한 기본 런타임만 설치하는 agent 테스트 환경입니다.
@@ -374,8 +379,10 @@ Paseo의 delegation MCP와 별도로 동작합니다. 유틸리티의 설치 정
 ## 모델 인증
 
 
-Docker 로그인과 모델 서비스 로그인은 별개입니다. sbx secret proxy에 credential을
-등록하면 에이전트 이미지에 credential을 넣지 않고 모델을 사용할 수 있습니다.
+Docker 로그인과 모델 서비스 로그인은 별개입니다. SBX sandbox에서는 sbx secret proxy에
+credential을 등록하는 방식을 사용합니다. 아래 secret 명령은 SBX용이며 Docker container에
+credential을 자동 전달하지 않습니다. Container에서는 해당 guest 안에서 공식 agent CLI의
+로그인을 진행합니다. 이미지에는 인증 정보를 넣지 않습니다.
 
 ```bash
 # ChatGPT 로그인
@@ -386,9 +393,10 @@ sbx secret set openai
 sbx secret set anthropic
 ```
 
-Claude 구독 로그인은 선택해서 생성한 각 Claude sandbox에서 Claude Code의 `/login`으로 진행합니다.
-예를 들어 `claude-superpowers`를 생성했다면 `./paseo-sbx shell claude-superpowers`로
-들어가 `claude`를 실행합니다. 다른 Claude 조합도 생성했다면 그 sandbox에서도 로그인합니다.
+Claude 구독 로그인은 선택해서 생성한 각 runtime에서 Claude Code의 `/login`으로 진행합니다.
+새 container의 예는 `./paseo-sbx shell claude-superpowers --category container --workspace /project`로
+들어가 `claude`를 실행하는 것입니다. 새 agent-only sandbox는 `shell claude --category sandbox`,
+기존 legacy SBX는 저장된 profile을 사용합니다. 다른 runtime도 생성했다면 각각 로그인합니다.
 API key를 사용하면 `sbx secret set anthropic`으로 생성한 Claude sandbox들에 공통 적용할 수 있습니다.
 대화형 Claude 화면 대신 `sbx exec -it <sandbox-name> claude auth login --claudeai`로도
 구독 인증을 진행할 수 있습니다. 새 sandbox에서는 다시 인증합니다.
@@ -399,37 +407,39 @@ API key를 사용하면 `sbx secret set anthropic`으로 생성한 Claude sandbo
 
 공식 `agy` CLI를 Go 설치기로 검증하여 설치합니다. Paseo에는 기존
 `paseo-plugin-antigravity-cli`가 설치·활성화되어 있어야 합니다. 플러그인이 native
-`stream-json`을 처리하고, 공용 Go launcher가 sandbox에서 `agy`를 실행합니다.
-sbx 내장 agent에는 Antigravity가 없으므로 sandbox는 `shell`로 생성합니다.
-인증은 sandbox 안의 공식 CLI에서 진행하며 호스트 Google 인증을 가져오지 않습니다.
+`stream-json`을 처리하고, 공용 Go launcher가 선택한 guest에서 `agy`를 실행합니다.
+새 Antigravity 조합은 Docker `container`로 생성합니다. 기존 legacy SBX 조합은 저장된
+경로를 유지하며, 새로운 agent-only `sandbox`는 Codex/Claude용입니다.
+인증은 guest 안의 공식 CLI에서 진행하며 호스트 Google 인증을 가져오지 않습니다.
 
 ```bash
 make build
 ./paseo-sbx create --workspace /absolute/path/to/project \
-  --profile antigravity-cli-native --build
-./paseo-sbx shell antigravity-cli-native --workspace /absolute/path/to/project
+  --category container --profile antigravity-cli-native --build --apply
+./paseo-sbx shell antigravity-cli-native --category container --workspace /absolute/path/to/project
 
-# sandbox 안에서 공식 CLI를 실행하여 로그인
+# container 안에서 공식 CLI를 실행하여 로그인
 agy
 ```
 
-공식 CLI의 인증 안내를 따라 로그인한 뒤 sandbox shell에서 나옵니다.
+공식 CLI의 인증 안내를 따라 로그인한 뒤 guest shell에서 나옵니다.
 로그인 창과 callback 처리, Linux keyring 요구사항은 공식 CLI가 담당합니다.
 Paseo 플러그인의 계정 화면은 호스트 계정을 관리하므로 sandbox 로그인에 사용하지 않습니다.
-다음 명령으로 sandbox 프로파일을 지정한 Paseo 에이전트를 만듭니다.
+다음 명령으로 container profile을 지정한 Paseo 에이전트를 만듭니다.
 
 ```bash
 ./paseo-sbx run --workspace /absolute/path/to/project \
-  --profile antigravity-cli-native '프로젝트를 확인해줘'
+  --category container --profile antigravity-cli-native '프로젝트를 확인해줘'
 ```
 
 생성한 에이전트는 Paseo 앱에 표시됩니다.
 `--model`, `--mode`, `--title`, `--paseo-home`을 지정할 수 있고,
 `--dry-run`으로 daemon 요청 전에 에이전트 설정을 확인할 수 있습니다.
-현재 Paseo 0.10.2는 플러그인 공급자의 config alias를 지원하지 않으므로
-`register`는 Antigravity용 별도 `SBX …` 공급자를 추가하지 않습니다. 앱에서 일반
-Antigravity 공급자를 직접 선택하면 호스트 CLI가 실행됩니다. SBX 에이전트는 위 `run`
-명령으로 생성하고 이후 앱에서 사용합니다. daemon을 재시작하거나 플러그인 코드를 수정하지 않습니다.
+새 container는 `container-antigravity-cli-native` provider를 등록하고 기존 native plugin을
+확장한 guest 실행 경로를 사용합니다. 기존 legacy SBX는 별도 `SBX …` alias를 만들지 않고
+`run`으로 plugin의 per-agent 옵션을 지정하는 경로를 유지합니다. 일반 호스트 Antigravity
+provider와 guest provider를 구분하세요. 새 category 경로의 인증된 모델/native 도구 실행은
+아직 인수 검증하지 않았습니다.
 
 방법론은 `antigravity-cli-superpowers`, `antigravity-cli-gsd-core`,
 `antigravity-cli-ponytail`, `antigravity-cli-openspec` 중에서 선택합니다. Superpowers 스킬은
@@ -445,23 +455,26 @@ workspace 밖의 일반 추가 디렉터리는 거부합니다. 플러그인의 
 공유하지 않으므로 해당 파일을 읽어야 하는 질문·background·subagent 추적 기능은 지원하지 않습니다.
 Paseo MCP 공유 설정은 기본적으로 꺼 둡니다.
 
-Gemini API key는 `sbx secret set google`과 sandbox 안의 공식 CLI 설정을 사용합니다.
-sandbox에는 `GEMINI_API_KEY=proxy-managed` placeholder를 전달합니다.
+기존 legacy SBX의 Gemini API key는 `sbx secret set google`과 sandbox 안의 공식 CLI 설정을
+사용하며 `GEMINI_API_KEY=proxy-managed` placeholder를 전달합니다. 새 Docker container에는
+SBX secret proxy를 적용하지 않으므로 guest 안의 공식 CLI 인증·API 설정을 사용합니다.
 CLI 인증·API 설정은 [Google 공식 문서](https://antigravity.google/docs/cli/install),
 플러그인 옵션은 [Paseo provider options](https://paseo.sh/docs/sdk/provider-options.md)를 참고하세요.
 
 ## Paseo에서 실행과 자동 위임
 
-Paseo 앱의 provider 선택에서 등록한 `SBX codex-superpowers` 등의 항목을 선택합니다.
+Paseo 앱의 provider 선택에서 새 container는 `SBX container-codex-superpowers`, 새 sandbox는
+`SBX sbx-codex`, 기존 legacy SBX는 `SBX codex-superpowers` 같은 등록 항목을 선택합니다.
 작업 위치는 선택한 조합을 `create`로 등록한 workspace와 그 하위 디렉터리여야 합니다.
 여러 프로젝트에서 사용하는 방법은 아래 "여러 프로젝트" 절과 [README_GUI.md](README_GUI.md)를
 참고하세요. CLI로도 시작할 수 있습니다.
 
-아래 위임 예제는 `codex-superpowers`와 `claude-ponytail`을 모두 선택하여 생성·등록한 경우입니다.
+아래 위임 예제는 두 profile을 모두 새 container로 생성·등록한 경우입니다.
+기존 legacy SBX는 prefix 없는 provider ID를 유지합니다.
 
 ```bash
-paseo run --provider codex-superpowers --cwd /absolute/path/to/project \
-  '요구사항을 구현하고 독립적인 검토는 claude-ponytail에 위임해줘'
+paseo run --provider container-codex-superpowers --cwd /absolute/path/to/project \
+  '요구사항을 구현하고 독립적인 검토는 container-claude-ponytail에 위임해줘'
 ```
 
 이미지의 전역 지침은 독립적인 작업을 Paseo MCP로 위임하는 흐름을 설명합니다.
@@ -476,7 +489,9 @@ Paseo credential은 relay 프로세스 메모리에 유지하며 sandbox에는 �
 전달합니다. 호스트 터미널·스크립트·브라우저·스케줄 도구와 sandbox 외 provider는
 relay에서 거부합니다. agent가 임의 workspace나 cwd를 지정하여 위임하는 것도 거부합니다.
 위임할 수 있는 조합은 호출한 agent의 workspace에 등록된 조합으로 제한됩니다.
-relay는 host loopback에만 bind하고 해당 sandbox에만 임시 포트 접근을 허용합니다.
+SBX relay는 host loopback에 bind하고 해당 sandbox에 임시 포트 접근을 허용합니다.
+Docker 경로는 별도 relay를 사용하며 해당 guest의 reachability 검증을 통과해야 합니다.
+새 category의 모델이 실제로 이 경로를 호출하는 인수 검증은 아직 미완료입니다.
 
 호스트 launcher는 `~/.local/share/paseo-sbx/launcher/`에, workspace별 registry는
 `~/.local/share/paseo-sbx/<workspace-id>/`에 저장합니다. agent가 host launcher와 registry를

@@ -1,5 +1,10 @@
 # 구성 기록 — 2026-09-30
 
+> **과거 환경 기록:** 아래 로그인·모델·위임 결과는 2026-09-30의 legacy SBX 환경에 관한
+> 것이다. 새 category/userns 경로의 인증 검증을 통과했다는 뜻이 아니다.
+> 현재 구현·main 통합과 남은 인수 검증은
+> [최신 통합 기록](superpowers/reviews/2026-10-12-pr-stack/README.md)을 참고한다.
+
 ## 설치 및 실행 상태
 
 - 호스트: macOS arm64, OrbStack Docker 29.4.0, Paseo 0.10.1, sbx 0.46.0.
