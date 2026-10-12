@@ -17,7 +17,7 @@ func readSavedSelection(runtime string) (config.Selection, error) {
 
 // Creation converts historical pair syntax at the CLI boundary. Existing-target
 // management reads registry entries directly and never normalizes their stack.
-func (a *App) creationSelection(category config.Category, agent, workspace, profile, profiles, utilities, path, agents, methods string, setUtilities bool) (config.Selection, error) {
+func (a *App) creationSelection(category config.Category, agent, workspace, profile, profiles, utilities, path, agents, methods string, setUtilities bool, override *bool) (config.Selection, error) {
 	if category == config.CategorySandbox && path == "" {
 		if agent == "" {
 			return config.Selection{}, fmt.Errorf("--category sandbox requires --agent codex|claude")
@@ -25,12 +25,16 @@ func (a *App) creationSelection(category config.Category, agent, workspace, prof
 		if profile != "" || profiles != "" || agents != "" || methods != "" || utilities != "" {
 			return config.Selection{}, fmt.Errorf("sandbox accepts only --agent, without methodology or utilities")
 		}
-		return a.Catalog.Normalize(config.Selection{Schema: 2, Category: category, Agent: agent})
+		s := config.Selection{Schema: 2, Category: category, Agent: agent}
+		if override != nil {
+			s.CodexUserNS = *override
+		}
+		return a.Catalog.Normalize(s)
 	}
 	if agent != "" {
 		return config.Selection{}, fmt.Errorf("--agent requires --category sandbox for creation")
 	}
-	s, err := a.resolveSelection(workspace, profile, profiles, utilities, path, agents, methods, setUtilities)
+	s, err := a.Service.ResolveSelection(operations.SelectionOptions{Workspace: workspace, Profile: profile, Profiles: profiles, Utilities: utilities, Path: path, Agents: agents, Methods: methods, SetUtilities: setUtilities, CodexUserNS: override})
 	if err != nil {
 		return s, err
 	}

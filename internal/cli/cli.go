@@ -145,7 +145,7 @@ func (a *App) execute(args []string) error {
 	namespace := "paseo-sbx"
 	memory := "2g"
 	home := "~/.paseo"
-	var push, keep, apply, printBake, buildFirst, interactive, skipBuild, all, dryRun bool
+	var push, keep, apply, printBake, buildFirst, interactive, skipBuild, all, dryRun, codexUserNS bool
 	if command == "build" || command == "load" || command == "create" {
 		f.StringVar(&profiles, "profiles", "", "comma-separated agent-methodology pairs")
 		f.StringVar(&profile, "profile", "", "select one agent-methodology pair")
@@ -166,6 +166,7 @@ func (a *App) execute(args []string) error {
 			f.BoolVar(&keep, "keep-archive", false, "retain image archives")
 		}
 	case "create":
+		f.BoolVar(&codexUserNS, "codex-userns", false, "opt in new Codex containers to workspace-write isolation; expands kernel syscall access for all guest processes, no added capabilities")
 		f.StringVar(&portsText, "ports", "", "comma-separated host:container ports, bound to 127.0.0.1 (container only)")
 		f.StringVar(&memory, "memory", memory, "memory per sandbox")
 		f.StringVar(&namespace, "namespace", namespace, "image namespace")
@@ -231,9 +232,13 @@ func (a *App) execute(args []string) error {
 	}
 	if command == "build" || command == "load" || command == "create" {
 		setUtilities := false
+		var userNSOverride *bool
 		f.Visit(func(flag *flag.Flag) {
 			if flag.Name == "utilities" {
 				setUtilities = true
+			}
+			if flag.Name == "codex-userns" {
+				userNSOverride = &codexUserNS
 			}
 		})
 		isTerminal := false
@@ -260,9 +265,20 @@ func (a *App) execute(args []string) error {
 			}
 			if profile != "" || profiles != "" || selectionPath != "" || agents != "" || methods != "" || setUtilities || category != "" || agent != "" {
 				var err error
-				initial, err = a.creationSelection(category, agent, workspace, profile, profiles, utilities, selectionPath, agents, methods, setUtilities)
+				initial, err = a.creationSelection(category, agent, workspace, profile, profiles, utilities, selectionPath, agents, methods, setUtilities, userNSOverride)
 				if err != nil {
 					return err
+				}
+			} else if userNSOverride != nil {
+				if initial.Schema == 0 {
+					// A new interactive selection is validated after choices are made.
+					initial = config.Selection{Schema: 2, Category: config.CategoryContainer, CodexUserNS: *userNSOverride}
+				} else {
+					var err error
+					initial, err = a.creationSelection("", "", workspace, "", "", "", "", "", "", false, userNSOverride)
+					if err != nil {
+						return err
+					}
 				}
 			}
 			result, err := tui.RunWithPorts(a.Catalog, initial, workspace, memory, ports, a.In, a.Out, apply)
@@ -279,7 +295,7 @@ func (a *App) execute(args []string) error {
 				ports = result.Ports
 			}
 		} else {
-			s, err := a.creationSelection(category, agent, workspace, profile, profiles, utilities, selectionPath, agents, methods, setUtilities)
+			s, err := a.creationSelection(category, agent, workspace, profile, profiles, utilities, selectionPath, agents, methods, setUtilities, userNSOverride)
 			if err != nil {
 				return err
 			}
@@ -296,6 +312,9 @@ func (a *App) execute(args []string) error {
 	case "load":
 		return a.submit(operations.Request{Kind: operations.KindLoad, Namespace: namespace, KeepArchive: keep})
 	case "create":
+		if a.Selection.CodexUserNS {
+			fmt.Fprintln(a.Err, "Codex policy: codex-userns-v1 · workspace-write isolation · expanded kernel syscall access for all guest processes in each opted-in Codex container · no added capabilities or privileged mode.")
+		}
 		return a.submit(operations.Request{Kind: operations.KindCreate, Target: operations.Target{Workspace: workspace}, Namespace: namespace, Memory: memory, Ports: ports, BuildFirst: buildFirst, Apply: apply, PaseoHome: home})
 	case "prune":
 		return a.submit(operations.Request{Kind: operations.KindPrune, PaseoHome: home, DryRun: dryRun})

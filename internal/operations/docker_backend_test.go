@@ -48,9 +48,23 @@ func init() {
 		}
 		fmt.Print(string(b))
 	case "image":
-		fmt.Println(`[{"Id":"sha256:image"}]`)
+		arch := os.Getenv("DOCKER_BACKEND_ARCH")
+		if arch == "" {
+			arch = "arm64"
+		}
+		fmt.Printf(`[{"Id":"sha256:image","Architecture":%q}]`, arch)
 	case "run":
 		for i, arg := range os.Args {
+			if arg == "--security-opt" && i+1 < len(os.Args) && strings.HasPrefix(os.Args[i+1], "seccomp=") {
+				policy, err := os.ReadFile(strings.TrimPrefix(os.Args[i+1], "seccomp="))
+				if err != nil {
+					fmt.Fprintln(os.Stderr, err)
+					os.Exit(1)
+				}
+				if target := os.Getenv("DOCKER_BACKEND_POLICY"); target != "" {
+					_ = os.WriteFile(target, policy, 0600)
+				}
+			}
 			if arg == "--cidfile" && i+1 < len(os.Args) {
 				_ = os.WriteFile(os.Args[i+1], []byte(strings.Repeat("a", 64)), 0600)
 			}

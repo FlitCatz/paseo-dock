@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"paseo-sbx/internal/config"
+	"paseo-sbx/internal/containerpolicy"
 	"paseo-sbx/internal/process"
 	"path/filepath"
 	"regexp"
@@ -20,6 +21,8 @@ import (
 )
 
 const DockerManagedLabel = "io.paseo-sbx.managed"
+const dockerPolicyLabel = "io.paseo-sbx.security-policy"
+const dockerPolicyDigestLabel = "io.paseo-sbx.security-policy-digest"
 
 var dockerExactID = regexp.MustCompile(`^[a-f0-9]{64}$`)
 
@@ -36,6 +39,10 @@ type dockerInspection struct {
 	Config     struct{ Labels map[string]string }
 	Mounts     []RuntimeMount
 	HostConfig struct {
+		SecurityOpt  []string
+		CapAdd       []string
+		CapDrop      []string
+		Privileged   bool
 		NetworkMode  string
 		PortBindings map[string][]struct {
 			HostIP   string `json:"HostIp"`
@@ -104,6 +111,13 @@ func observedDockerState(raw dockerInspection) (RuntimeState, error) {
 	return state, nil
 }
 func validateDockerEntry(e config.Entry, creating bool) (config.Entry, error) {
+	if e.SecurityPolicy == "" {
+		if e.SecurityPolicyDigest != "" {
+			return e, fmt.Errorf("Docker policy digest without policy")
+		}
+	} else if e.SecurityPolicy != containerpolicy.ID || e.SecurityPolicyDigest != containerpolicy.SHA256 || e.Agent != "codex" {
+		return e, fmt.Errorf("unsupported Docker security policy or digest")
+	}
 	if e.Category != config.CategoryContainer {
 		return e, fmt.Errorf("Docker backend requires container category")
 	}
@@ -156,6 +170,9 @@ func (b *DockerBackend) Inspect(ctx context.Context, e config.Entry) (RuntimeSta
 	if err != nil {
 		return RuntimeState{}, err
 	}
+	if err := validateDockerPolicy(e, raw); err != nil {
+		return RuntimeState{}, err
+	}
 	state, err := observedDockerState(raw)
 	if err != nil {
 		return RuntimeState{}, err
@@ -182,6 +199,44 @@ func (b *DockerBackend) Inspect(ctx context.Context, e config.Entry) (RuntimeSta
 		return RuntimeState{}, fmt.Errorf("Docker port mappings mismatch")
 	}
 	return state, nil
+}
+
+func validateDockerPolicy(e config.Entry, raw dockerInspection) error {
+	if raw.Config.Labels[dockerPolicyLabel] != e.SecurityPolicy || raw.Config.Labels[dockerPolicyDigestLabel] != e.SecurityPolicyDigest {
+		return fmt.Errorf("Docker security policy labels mismatch")
+	}
+	if e.SecurityPolicy == "" {
+		return nil
+	} // Historical daemon policy remains compatible.
+	// Docker may persist the canonical CAP_ name rather than the CLI spelling.
+	dropsSysAdmin := slices.Contains(raw.HostConfig.CapDrop, "SYS_ADMIN") || slices.Contains(raw.HostConfig.CapDrop, "CAP_SYS_ADMIN")
+	if raw.HostConfig.Privileged || len(raw.HostConfig.CapAdd) != 0 || !dropsSysAdmin {
+		return fmt.Errorf("Docker security policy capabilities mismatch")
+	}
+	if len(raw.HostConfig.SecurityOpt) != 2 {
+		return fmt.Errorf("Docker security options mismatch")
+	}
+	nnp, seccomp := false, false
+	for _, opt := range raw.HostConfig.SecurityOpt {
+		switch {
+		case opt == "no-new-privileges" || opt == "no-new-privileges=true":
+			if nnp {
+				return fmt.Errorf("duplicate Docker no-new-privileges option")
+			}
+			nnp = true
+		case strings.HasPrefix(opt, "seccomp="):
+			if seccomp || !containerpolicy.MatchesJSON([]byte(strings.TrimPrefix(opt, "seccomp="))) {
+				return fmt.Errorf("Docker seccomp profile mismatch")
+			}
+			seccomp = true
+		default:
+			return fmt.Errorf("unexpected Docker security option")
+		}
+	}
+	if !nnp || !seccomp {
+		return fmt.Errorf("Docker security policy missing required options")
+	}
+	return nil
 }
 func (b *DockerBackend) List(ctx context.Context) ([]RuntimeState, error) {
 	out, err := b.capture(ctx, "ps", "--all", "--no-trunc", "--filter", "label="+DockerManagedLabel+"=true", "--filter", "label=io.paseo-sbx.category=container", "--format", "{{.ID}}")
@@ -297,7 +352,8 @@ func (b *DockerBackend) Create(ctx context.Context, e config.Entry) (config.Entr
 		return e, err
 	}
 	var images []struct {
-		ID string `json:"Id"`
+		ID           string `json:"Id"`
+		Architecture string
 	}
 	if err := json.Unmarshal(image, &images); err != nil {
 		return e, err
@@ -309,6 +365,9 @@ func (b *DockerBackend) Create(ctx context.Context, e config.Entry) (config.Entr
 		return e, fmt.Errorf("Docker image ID changed")
 	}
 	e.ImageID = images[0].ID
+	if e.SecurityPolicy != "" && images[0].Architecture != "arm64" && images[0].Architecture != "amd64" {
+		return e, fmt.Errorf("Codex user namespace policy requires arm64 or amd64 image")
+	}
 	// Docker writes the CID before starting the container. A private directory
 	// keeps that identity recoverable even when run fails or is canceled later.
 	cidDir, err := os.MkdirTemp("", "paseo-sbx-docker-cid-")
@@ -318,7 +377,15 @@ func (b *DockerBackend) Create(ctx context.Context, e config.Entry) (config.Entr
 	defer os.RemoveAll(cidDir)
 	cidPath := filepath.Join(cidDir, "container-id")
 	sum := sha256.Sum256([]byte(e.Workspace + "\x00" + e.Key()))
-	args := []string{"run", "--detach", "--name", fmt.Sprintf("paseo-sbx-%x", sum[:12]), "--label", DockerManagedLabel + "=true", "--label", "io.paseo-sbx.category=container", "--network", "bridge", "--mount", "type=bind,src=" + e.Workspace + ",dst=" + e.Workspace, "--workdir", e.Workspace, "--user", "root", "--env", "HOME=/home/agent", "--entrypoint", "sh"}
+	args := []string{"run", "--detach", "--name", fmt.Sprintf("paseo-sbx-%x", sum[:12]), "--label", DockerManagedLabel + "=true", "--label", "io.paseo-sbx.category=container", "--network", "bridge", "--mount", "type=bind,src=" + e.Workspace + ",dst=" + e.Workspace, "--workdir", e.Workspace, "--user", "root", "--env", "HOME=/home/agent", "--entrypoint", "/bin/sh"}
+	if e.SecurityPolicy != "" {
+		path, cleanup, err := containerpolicy.WriteTemp()
+		if err != nil {
+			return e, err
+		}
+		defer cleanup()
+		args = append(args, "--label", dockerPolicyLabel+"="+e.SecurityPolicy, "--label", dockerPolicyDigestLabel+"="+e.SecurityPolicyDigest, "--security-opt", "seccomp="+path, "--security-opt", "no-new-privileges", "--cap-drop", "SYS_ADMIN")
+	}
 	args = append(args, "--cidfile", cidPath)
 	for _, p := range e.Ports {
 		args = append(args, "--publish", fmt.Sprintf("127.0.0.1:%d:%d/tcp", p.HostPort, p.ContainerPort))
@@ -326,7 +393,7 @@ func (b *DockerBackend) Create(ctx context.Context, e config.Entry) (config.Entr
 	ids := strings.Split(user, ":")
 	// Root only aligns permissions. The persistent main process and all later
 	// exec commands use the host-aligned agent user.
-	bootstrap := fmt.Sprintf(`set -eu; rm -f /tmp/paseo-sbx-agent-ready; groupmod -o -g %s "$(id -gn agent)"; usermod -o -u %s -g %s agent; chown -R %s /home/agent; touch /tmp/paseo-sbx-agent-ready; exec runuser -u agent -- sleep infinity`, ids[1], ids[0], ids[1], user)
+	bootstrap := fmt.Sprintf(`set -eu; /usr/bin/rm -f /tmp/paseo-sbx-agent-ready; /usr/sbin/groupmod -o -g %s "$(/usr/bin/id -gn agent)"; /usr/sbin/usermod -o -u %s -g %s agent; /usr/bin/chown -R %s /home/agent; /usr/bin/touch /tmp/paseo-sbx-agent-ready; exec /usr/sbin/runuser -u agent -- /usr/bin/sleep infinity`, ids[1], ids[0], ids[1], user)
 	args = append(args, e.ImageID, "-c", bootstrap)
 	out, err := b.capture(ctx, args...)
 	cid, _ := os.ReadFile(cidPath)

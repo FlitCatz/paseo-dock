@@ -29,6 +29,7 @@ type WizardFinishedMsg struct {
 type Model struct {
 	Catalog                  config.Catalog
 	Category                 config.Category
+	CodexUserNS              bool
 	Ports                    []config.PortMapping
 	Workspace, Memory        string
 	Step, Cursor, agentIndex int
@@ -78,6 +79,7 @@ func NewModel(c config.Catalog, s config.Selection, workspace, memory string) *M
 	for _, u := range s.Utilities {
 		m.utilities[u] = true
 	}
+	m.CodexUserNS = s.CodexUserNS
 	return m
 }
 func (m *Model) Init() tea.Cmd { return nil }
@@ -110,7 +112,7 @@ func (m *Model) items() []config.Item {
 	return nil
 }
 func (m *Model) selection() config.Selection {
-	s := config.Selection{Schema: 2, Category: m.Category}
+	s := config.Selection{Schema: 2, Category: m.Category, CodexUserNS: m.CodexUserNS}
 	if m.Category == config.CategorySandbox {
 		chosen := m.chosenAgents()
 		if len(chosen) == 1 {
@@ -154,6 +156,17 @@ func (m *Model) chosenAgents() []string {
 	}
 	return chosen
 }
+func (m *Model) userNSEligible() bool {
+	if m.Category != config.CategoryContainer {
+		return false
+	}
+	for _, pair := range m.selection().Pairs {
+		if pair.Agent == "codex" {
+			return true
+		}
+	}
+	return false
+}
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if size, ok := msg.(tea.WindowSizeMsg); ok {
 		m.Width, m.Height = size.Width, size.Height
@@ -192,6 +205,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.agents = map[string]bool{}
 				m.pairs = map[string]bool{}
 				m.utilities = map[string]bool{}
+				m.CodexUserNS = false
+				m.Result.Selection.CodexUserNS = false
 			}
 			m.Category = category
 			m.Step = 0
@@ -200,6 +215,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	switch k.Code {
+	case 'u':
+		if k.Mod == 0 && m.Step == 3 && m.userNSEligible() {
+			m.CodexUserNS = !m.CodexUserNS
+			m.Result.Selection.CodexUserNS = m.CodexUserNS
+		}
 	case tea.KeyEscape:
 		switch m.Step {
 		case 0:
@@ -263,6 +283,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.agents[i.ID] = !selected
 			} else {
 				m.agents[i.ID] = !m.agents[i.ID]
+			}
+			if m.Category != config.CategoryContainer || !m.agents["codex"] {
+				m.CodexUserNS = false
+				m.Result.Selection.CodexUserNS = false
 			}
 		case 1:
 			p := m.selectedAgents[m.agentIndex] + "-" + i.ID
@@ -463,6 +487,15 @@ func (m *Model) View() tea.View {
 		body = append(body, "┃    Utilities: "+strings.Join(m.Result.Selection.Utilities, ", "))
 		body = append(body, "┃    Build → Docker store · CPU: 2 · Memory: "+m.Memory)
 		body = append(body, "┃    Category: container", "┃    Image source: versions.lock.json · Confirmed versions: unresolved in preview; pinned values recorded during build", "┃    Mount: "+m.Workspace+" (read/write)", "┃    Network: bridge", "┃    Ports: "+portText(m.Ports))
+		if m.userNSEligible() {
+			state := "off (default Docker policy)"
+			if m.CodexUserNS {
+				state = "on (codex-userns-v1)"
+			}
+			body = append(body, "┃    u: Codex workspace-write isolation · "+state,
+				"┃    Opt-in expands kernel syscall access for all guest processes in each Codex container",
+				"┃    Opt-in: no privileged mode; no added capabilities; no-new-privileges enabled")
+		}
 		if slices.Contains(m.Result.Selection.Utilities, "headroom") {
 			body = append(body, "┃    "+paint(muted, "Headroom: sandbox 내부 Python 런타임 + MCP 도구 연결"))
 		}

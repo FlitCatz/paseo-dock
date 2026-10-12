@@ -1,6 +1,6 @@
 # Namespace compatibility experiment proposal
 
-Status: both authorized spikes executed; minimal policy passes; product integration not applied. Date: 2026-10-08.
+Status: opt-in implemented; historical Service confinement validation passed. Resumed review corrections and acceptance gates are recorded in [closure status](branch-closure.md); authenticated product acceptance remains incomplete. Updated: 2026-10-12.
 
 Question: can the current Codex Linux sandbox run inside an unprivileged Docker container
 using an explicit, constrained seccomp profile while retaining workspace-write confinement?
@@ -134,4 +134,39 @@ legacy compatibility regressions, independent review, and a fresh Service-create
 validation against the exact product policy. Actual authenticated model calls remain deferred.
 The user explicitly selected opt-in implementation for new Codex containers. Implementation
 is now authorized with the constraints above; no equivalent approval will be requested again.
-No product integration code or new product-policy guest has been created at this checkpoint.
+The preceding statement describes the approval checkpoint. Product integration is now implemented
+and verified as recorded below.
+
+## Approved opt-in product implementation — 2026-10-12
+
+CLI creation flag `--codex-userns` and eligible TUI confirmation toggle `u` choose the policy.
+Default is off; saved values survive and explicit false overrides true. Mixed selections apply
+it only to Codex. Runtime choice does not alter image tags or build contents.
+Policy ID/digest are frozen registry identity. Creation embeds the exact profile, applies
+no-new-privileges and SYS_ADMIN drop, and introduces no added capabilities or privileged mode.
+Inspect verifies complete profile JSON/labels, exact supported drop spelling, and the expected
+security constraints before exec/stop/resume. Existing resources are not converted or downgraded.
+Current root bootstrap utilities use trusted absolute image paths.
+
+Normal Service-created CID `f7a8eceb0f7700c2a75e7487c403fcc7dbcb7245b0f27ff6d8e10d7c521ff116`
+in `/private/tmp/paseo-sbx-userns-live-117101514` passes actual Codex0.159.2/0.161.0 confinement,
+negative syscall/network/write probes, forged request rejection and same-CID restart/persistence.
+The original image is reused by its normally derived tag. Routing/recipe/binaries/homes are
+private; no default project routing or original resources are modified. Guest and new private
+Paseo daemon are stopped. [Live report](userns-task3-report.md).
+
+Actual Docker29.4.0 stores SYS_ADMIN as CAP_SYS_ADMIN; initial creation/cleanup failed strict
+comparison and retained exact identity. The reviewed fix accepts only these equivalent names
+and rejects near matches; the same guest then passes, with failure/recovery logs retained.
+Historical default-GORACE race/vet/build checks passed. The mismatch cleanup-enrollment
+correction is committed at `69652ee`. Resumed independent scoped review found a further
+canceled-context cleanup gap, addressed in the closure maintenance with a RED→GREEN regression.
+See [closure status](branch-closure.md) for fresh checks and integration gates. No authenticated
+model or model-triggered tool call is claimed. The user has explicitly deferred login.
+
+amd64 live confinement and AppArmor-enabled Linux host compatibility remain unverified.
+Seccomp opt-in does not override the host's AppArmor mount/user namespace restrictions;
+this is a compatibility risk, not a reproduced result on such a host. See
+[Docker AppArmor documentation](https://docs.docker.com/engine/security/apparmor/).
+Product acceptance remains incomplete until authenticated model and model-driven MCP
+checks pass; the sandbox probes above establish only the tested confinement path.

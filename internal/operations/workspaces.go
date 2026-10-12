@@ -7,6 +7,7 @@ import (
 	"maps"
 	"os"
 	"paseo-sbx/internal/config"
+	"paseo-sbx/internal/containerpolicy"
 	"paseo-sbx/internal/operationlock"
 	"path/filepath"
 	"slices"
@@ -508,6 +509,10 @@ func (a *execution) createCategory(w, runtime, namespace, memory string, saved c
 				}
 			}
 			entry.Network = "bridge"
+			if a.Selection.CodexUserNS && entry.Agent == "codex" {
+				entry.SecurityPolicy = containerpolicy.ID
+				entry.SecurityPolicyDigest = containerpolicy.SHA256
+			}
 			entry.Ports = slices.Clone(a.ports)
 			entry, err = validateDockerEntry(entry, true)
 			if err != nil {

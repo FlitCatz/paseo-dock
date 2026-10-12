@@ -1,14 +1,15 @@
 # Runtime category verification — Task 7
 
-Date: 2026-10-08. Initial implementation baseline: `8c91652` on `feat/management-tui`.
-Tests and runtime transport checks pass as listed below. **Acceptance is not complete:**
-the default Docker runtime still cannot run Codex 0.161.0 workspace-write sandbox commands.
-The separately authorized initial and minimal-policy seccomp spikes pass confinement assertions
-below; they have not changed the product runtime policy. Actual authenticated model/MCP calls
-remain open.
+Updated: 2026-10-12. Initial implementation baseline: `8c91652` on `feat/management-tui`.
+The approved new-container Codex user namespace opt-in is implemented in the product and
+passes actual Service-created guest confinement and exact-ID restart checks. CLI/TUI default
+creation behavior and existing containers are unchanged. **Authenticated acceptance is not
+complete:** the user has deferred guest login; actual model inference and model-driven MCP
+tool execution remain unverified. The policyless Docker runtime still has its documented
+bubblewrap namespace limitation; opt-in provides the explicitly selected compatibility path.
 The discovered SBX activation-path defect has been repaired and verified on the same guest.
 Independent whole-branch review and its four code fixes are recorded in
-[whole-branch review](whole-branch-review.md). The Docker execution acceptance gap remains open.
+[whole-branch review](whole-branch-review.md). Current opt-in evidence is recorded below.
 
 ## Scope and identities
 
@@ -35,6 +36,56 @@ not reconstructed, stopped or deleted during this continuation. Initial older-ro
 did not prove Docker relay: its log showed an unknown container and no container provider.
 
 ## Fresh verification
+
+### Approved product opt-in implementation — 2026-10-12
+
+CLI `create --codex-userns` and the eligible TUI confirmation toggle enable the fixed
+`codex-userns-v1` policy only for new Codex container entries. Default remains off; saved true
+is preserved, explicit false overrides it, and inapplicable categories/selections are rejected
+or cleared by the appropriate flow. Runtime choice does not change image tags/build contents.
+Registry policy ID/digest are part of frozen identity. Docker inspect verifies policy labels,
+full JSON, no-new-privileges, SYS_ADMIN drop, no CapAdd/Privileged and no unrelated options.
+Existing resources cannot silently enable/downgrade the policy. Root bootstrap utilities are
+absolute image paths. Backend and CLI/TUI independent reviews passed; the subsequent scoped
+helper review and remaining acceptance gates are recorded in [closure status](branch-closure.md).
+
+Actual Service-created new CID
+`f7a8eceb0f7700c2a75e7487c403fcc7dbcb7245b0f27ff6d8e10d7c521ff116`, root
+`/private/tmp/paseo-sbx-userns-live-117101514`, reuses the normally computed pinned image tag
+for `sha256:7760a63ba6a62611c4434c1208c1c87236cd37d36b691da206ebd0d7e77d6521`.
+Trusted recipe/current binaries, routing, HOME, PASEO_HOME and Docker config are staged privately.
+No old vanished temporary registry was reconstructed, and no default project routing changed.
+
+First create revealed Docker29.4 canonicalizes SYS_ADMIN to CAP_SYS_ADMIN. This caused both
+creation and cleanup inspection to reject the equivalent capability name; exact CID/metadata
+were retained. Regression RED reproduced; the fix accepts only the two exact names and rejects
+near matches. Default-GORACE focused race tests pass and scoped independent review approves.
+The exact owned guest was then stopped through corrected Service and resumed, not replaced.
+[Initial failure](evidence-summary.md), [corrected cleanup](evidence-summary.md).
+
+Actual Codex0.159.2 and exact guest-installed0.161.0 both pass workspace write and outside
+home/symlink/protected/network denial, with CapEff0/NoNewPrivs1/Seccomp2. Baseline outside write
+and network success establish meaningful negative probes. Unneeded administrative syscalls and
+socket families remain denied. Forged policy/digest and existing-policy change requests reject
+without registry/raw-state changes. Exact Service stop/resume preserves CID, policy and both
+home/workspace markers, then0.161.0 confinement repeats successfully. Final guest running=false.
+[Service live continuation](evidence-summary.md). No login or model request occurred.
+
+The new isolated Paseo daemon was stopped via its verified private home, and its PID vanished.
+The final helper cleanup function was separately exercised against a restarted same-home
+daemon, with identity-rejection regressions; no guest probe was repeated for that check.
+[Daemon cleanup verification](evidence-summary.md).
+
+Settled `make test` with default global GORACE exits0 across all packages (CLI15.967s,
+launcher41.354s, operations144.720s, TUI13.589s). `make vet`, `make build`, explicit helper vet
+and diff check pass. Logs: [race](evidence-summary.md), [vet](evidence-summary.md),
+[build](evidence-summary.md). Final independent review found no important product-path
+defect, but requested a helper cleanup-enrollment correction on preserved CID mismatch; that
+correction was committed at `69652ee`. The resumed review's cancellation correction is recorded
+in [closure status](branch-closure.md). The matching-CID live evidence remains historical.
+
+The actual platform is arm64/Linux Docker29.4.0. amd64 architecture acceptance has unit
+coverage, but no amd64 live confinement claim.
 
 ### Continuation after whole-branch review
 
@@ -111,7 +162,7 @@ Codex0.159.2 and exact-installed0.161.0, then stopped with an explicit running=f
 assertion. This closes the minimal-policy spike gap without modifying product defaults or
 any existing resource. [Minimal-policy live log](evidence-summary.md).
 The user subsequently selected opt-in product integration for new Codex containers;
-that implementation is starting separately from the completed spike.
+that implementation is now committed separately from the completed spike, as recorded above.
 
 Guest direct login was requested by the user. Both device flows ended without
 authentication; the user then said login is not currently possible. The exact original
@@ -312,4 +363,8 @@ GOCACHE=/private/tmp/paseo-sbx-go-cache GOTMPDIR=/private/tmp go build \
 Use explicit Go files because this testdata directory also contains separate standalone
 programs. Evidence: [guard/parser RED](evidence-summary.md),
 [provider-session RED](evidence-summary.md), [focused GREEN](evidence-summary.md).
-Scoped independent re-review and final branch review remain coordinator gates.
+The subsequent category whole-branch review and corrections are recorded in
+[whole-branch review](whole-branch-review.md). The resumed userns helper review,
+normal helper test targets and remaining product acceptance gates are recorded
+in [closure status](branch-closure.md). Authenticated inference/model-driven MCP,
+amd64 live confinement and AppArmor-host acceptance remain incomplete.

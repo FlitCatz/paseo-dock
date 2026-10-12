@@ -11,10 +11,11 @@ import (
 type SelectionOptions struct {
 	Workspace, Profile, Profiles, Utilities, Path, Agents, Methods string
 	SetUtilities                                                   bool
+	CodexUserNS                                                    *bool
 }
 
 func (s *Service) ResolveSelection(o SelectionOptions) (config.Selection, error) {
-	return s.execution(context.Background(), nil, nil).resolveSelection(o.Workspace, o.Profile, o.Profiles, o.Utilities, o.Path, o.Agents, o.Methods, o.SetUtilities)
+	return s.execution(context.Background(), nil, nil).resolveSelection(o.Workspace, o.Profile, o.Profiles, o.Utilities, o.Path, o.Agents, o.Methods, o.SetUtilities, o.CodexUserNS)
 }
 func (s *Service) SavedSelection(workspace string) (config.Selection, error) {
 	runtime, err := s.SelectedRuntime(workspace)
@@ -26,7 +27,7 @@ func (s *Service) SavedSelection(workspace string) (config.Selection, error) {
 func ReadSavedSelection(runtime string) (config.Selection, error) { return readSavedSelection(runtime) }
 func joinProfiles(s config.Selection) string                      { return strings.Join(s.Profiles(), ",") }
 func joinUtilities(s config.Selection) string                     { return strings.Join(s.Utilities, ",") }
-func (a *execution) resolveSelection(workspace, profile, profiles, utilities, path, agents, methods string, setUtilities bool) (config.Selection, error) {
+func (a *execution) resolveSelection(workspace, profile, profiles, utilities, path, agents, methods string, setUtilities bool, codexUserNS *bool) (config.Selection, error) {
 	s := config.Selection{Schema: 1}
 	sources := 0
 	for _, v := range []string{profile, profiles, path, agents + methods} {
@@ -75,6 +76,15 @@ func (a *execution) resolveSelection(workspace, profile, profiles, utilities, pa
 				s.Utilities = append(s.Utilities, strings.TrimSpace(u))
 			}
 		}
+	}
+	if codexUserNS != nil {
+		// An explicit creation policy uses the current container format, just
+		// like the CLI's historical pair-to-container conversion.
+		if s.Schema == 1 {
+			s.Schema = 2
+			s.Category = config.CategoryContainer
+		}
+		s.CodexUserNS = *codexUserNS
 	}
 	s, err = a.Catalog.Normalize(s)
 	if err != nil {

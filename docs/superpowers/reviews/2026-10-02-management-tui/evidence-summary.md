@@ -1,10 +1,16 @@
-# Historical evidence summary
+# Historical evidence summary and transcript inventory
 
-Raw logs are excluded from this review snapshot. Byte-identical local copies are
-under ignored `.artifacts/review-logs/`, with repository-relative paths. Originals
-remain in the original feature history. Log links intentionally lead here.
-See [TUI report](task-6-report.md) and [review](task-6-review.md). The live
-lifecycle encountered a manifest HTTP 403; a complete live lifecycle is unverified.
+Raw transcripts were removed from the reviewable checkout on 2026-10-12.
+The controller retained byte-identical copies locally under ignored
+`.artifacts/review-logs/`, preserving each original repository-relative path.
+Previously committed originals remain in Git history; no history rewrite occurred.
+This inventory identifies historical runs and is not a fresh acceptance result.
+Links formerly pointing to raw logs now deliberately lead to this summary.
+
+The management TUI reports record race/vet/build, help/no-argument behavior
+and PTY checks. The live lifecycle encountered a manifest HTTP 403; full live
+lifecycle is not established. See [Task 6 report](task-6-report.md) and
+[review](task-6-review.md) for results and limitations.
 
 | Former transcript | Bytes | SHA256 |
 | --- | ---: | --- |

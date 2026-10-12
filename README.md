@@ -17,6 +17,10 @@ Go 관리 TUI에서 workspace의 SBX sandbox와 Docker container를 구분하여
 ./bin/paseo-sbx create --workspace /absolute/path/to/project --category container \
   --profiles codex-superpowers --utilities rtk --ports 3000:3000 --build
 
+# 새 Codex container에서 workspace-write user namespace 정책을 명시적으로 선택
+./bin/paseo-sbx create --workspace /absolute/path/to/project --category container \
+  --profile codex-superpowers --codex-userns --build
+
 ./bin/paseo-sbx shell codex --category sandbox --workspace /absolute/path/to/project
 ./bin/paseo-sbx versions codex-superpowers --category container --workspace /absolute/path/to/project
 ./bin/paseo-sbx stop codex-superpowers --category container --workspace /absolute/path/to/project
@@ -38,9 +42,30 @@ SBX shell/version/update는 중지된 guest를 시작할 수 있어 실행 전�
 아주 낮은 터미널에서는 최종 확인 내용이 잘릴 수 있으므로 터미널 높이를 늘려 확인하세요.
 실환경 결과와 모델 인증·runtime 제한은
 [category 검증 기록](docs/superpowers/reviews/2026-10-06-runtime-categories/task-7-report.md)에 있습니다.
-현재 OrbStack Docker 환경에서는 업데이트된 Codex 0.161.0의 workspace-write sandbox가
-user namespace 권한 때문에 실행되지 않습니다. provider 초기화는 통과했지만 해당 개발 명령의
-실행 완료 기준은 미충족입니다. 보안 설정을 낮추는 자동 fallback은 적용하지 않습니다.
+기본 Docker 정책을 쓰는 OrbStack 환경에서는 Codex 0.161.0의 workspace-write sandbox가
+user namespace 권한 때문에 실행되지 않았습니다. 새 Codex container 생성에만
+`--codex-userns`로 검토된 `codex-userns-v1` seccomp 정책을 선택할 수 있습니다.
+기본값은 off이며 자동 fallback은 없습니다. 저장된 선택을 다시 사용할 때 flag를 생략하면
+저장된 값이 유지되고, `--codex-userns=false`는 명시적으로 해제합니다. standalone/관리 TUI의
+Codex container 최종 확인에서는 `u`로 선택을 바꿉니다. sandbox 또는 Codex가 없는 선택에는
+이 정책을 적용할 수 없으며, 혼합 선택에서는 Codex container에만 적용합니다.
+
+이 정책은 Codex의 workspace-write 격리를 위한 user namespace를 허용하며 해당 Codex
+container의 **모든 guest process**에 추가 kernel syscall 접근을 허용합니다.
+privileged mode나 capability를 추가하지 않고 no-new-privileges를 켭니다.
+기존 container의 정책은 변환하지 않습니다. 같은 대상의 기존 정책과 다른 선택은 거부되므로
+별도 workspace의 새 container로 생성하세요.
+
+지원 범위는 Linux Docker guest의 arm64/amd64 이미지입니다. 실제 confinement 실험은
+OrbStack의 Docker Engine 29.4.0, arm64 이미지와 Codex 0.159.2/0.161.0에서 수행했습니다.
+다른 host/kernel/runtime 조합이나 인증된 모델 호출의 성공을 보장하는 결과는 아닙니다.
+amd64는 unit test 범위이며 실환경 confinement 검증은 남아 있습니다.
+AppArmor가 활성화된 일반 Linux host도 아직 검증하지 않았습니다. seccomp opt-in은
+AppArmor 정책을 바꾸지 않으므로 host의 mount/user namespace 제한에 따라 실행이 실패할 수 있습니다.
+Docker의 기본 AppArmor 적용과 진단 방법은 [공식 문서](https://docs.docker.com/engine/security/apparmor/)를 참고하세요.
+인증된 모델 추론과 모델이 MCP 도구를 호출하는 전체 경로는 미검증이며, 제품 acceptance는 미완료입니다.
+정확한 정책·workspace/외부 쓰기·network 제한과 검증 결과는
+[namespace 검증 기록](docs/superpowers/reviews/2026-10-06-runtime-categories/namespace-compatibility-proposal.md)에 있습니다.
 
 ## 관리 TUI
 
@@ -305,7 +330,14 @@ Docker 실행 없이 생성할 Bake 설정을 확인하려면 다음 명령을 �
 ```
 
 소스는 `cmd/`의 세 진입점과 `internal/`의 CLI, TUI, catalog·registry, launcher, relay, Node 설치
-패키지로 구성됩니다. `make test`는 race 검사를 포함하고 `make vet`는 정적 검사를 수행합니다.
+패키지로 구성됩니다. `make test`는 전체 패키지와 `testdata`의 userns/category helper 회귀
+테스트에 race 검사를 수행합니다. helper만 실행하려면 `make test-helpers`를 사용하세요.
+이 검사는 fake runtime으로 동작하며 실환경 guest를 만들거나 모델을 호출하지 않습니다.
+`make vet`에도 두 helper의 정적 검사가 포함됩니다. 별도 native live acceptance는
+기존 명시적 opt-in 검사로 남으며 기본 검사에 포함되지 않습니다.
+CI도 `make test`·`make vet`를 실행합니다. userns 실환경 helper는 macOS/OrbStack의
+`/private/tmp`에 한정돼 있으며, 해당 경로를 쓰는 daemon fixture 두 개는 다른 OS에서
+명시적으로 skip합니다. 소유권·취소·외부 경로 거부 검사는 모든 플랫폼에서 실행합니다.
 
 ## 유틸리티와 확장
 
@@ -599,11 +631,3 @@ GSD Core 1.15.0 공식 Codex installer는 일부 project-level `.claude/` 경로
 [Paseo MCP](https://paseo.sh/docs/mcp), [custom providers](https://paseo.sh/docs/custom-providers).
 
 이번 머신의 구성 상태와 오류 해결 기록은 [구현 기록](docs/implementation-log.md)을 참고하세요.
-
-## Review snapshot verification
-
-`make test` and CI include the offline category helper race tests; `make vet`
-checks that helper too. `make test-helpers` runs only its fake-runtime regressions.
-Raw logs are summarized in docs; protocol regression frames live in an embedded
-fixture. Authenticated inference/model-driven MCP and broader platform live
-acceptance remain incomplete. Native live acceptance is a separate explicit opt-in.

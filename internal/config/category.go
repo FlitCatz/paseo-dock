@@ -51,6 +51,9 @@ func (e Entry) Key() string {
 // EqualIdentity compares every saved resource and installation option. Port and
 // utility order is not identity, but duplicate mappings/options remain significant.
 func (e Entry) EqualIdentity(other Entry) bool {
+	if e.SecurityPolicy != other.SecurityPolicy || e.SecurityPolicyDigest != other.SecurityPolicyDigest {
+		return false
+	}
 	ep, op := e.Ports, other.Ports
 	eu, ou := e.Utilities, other.Utilities
 	if e.Category != other.Category || e.ContainerID != other.ContainerID || e.ImageID != other.ImageID || e.Network != other.Network || e.Agent != other.Agent || e.Tool != other.Tool || e.Workspace != other.Workspace || e.Sandbox != other.Sandbox || e.Image != other.Image {
@@ -121,6 +124,15 @@ func (r Registry) MarshalJSON() ([]byte, error) {
 	return json.Marshal(plain(r))
 }
 func (s Selection) validateFormat() error {
+	if s.CodexUserNS {
+		eligible := false
+		for _, p := range s.Pairs {
+			eligible = eligible || p.Agent == "codex"
+		}
+		if s.Schema != 2 || s.Category != CategoryContainer || !eligible {
+			return fmt.Errorf("codex_userns requires a schema-2 container selection containing codex")
+		}
+	}
 	if s.Schema == 1 {
 		if s.Category != "" || s.Agent != "" {
 			return fmt.Errorf("legacy selection cannot specify category or agent")

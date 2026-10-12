@@ -34,11 +34,12 @@ type Pair struct {
 	Methodology string `json:"methodology"`
 }
 type Selection struct {
-	Category  Category `json:"category,omitempty"`
-	Agent     string   `json:"agent,omitempty"`
-	Schema    int      `json:"schema"`
-	Pairs     []Pair   `json:"pairs"`
-	Utilities []string `json:"utilities"`
+	CodexUserNS bool     `json:"codex_userns,omitempty"`
+	Category    Category `json:"category,omitempty"`
+	Agent       string   `json:"agent,omitempty"`
+	Schema      int      `json:"schema"`
+	Pairs       []Pair   `json:"pairs"`
+	Utilities   []string `json:"utilities"`
 }
 
 func DefaultCatalog() Catalog { var c Catalog; _ = json.Unmarshal(catalogJSON, &c); return c }
@@ -177,6 +178,7 @@ func (c Catalog) AllProfiles() []string {
 	return out
 }
 func ImageTag(l Lock, s Selection, catalogs ...Catalog) string {
+	s.CodexUserNS = false // Runtime policy does not change image contents.
 	c := DefaultCatalog()
 	if len(catalogs) > 0 {
 		c = catalogs[0]

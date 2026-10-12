@@ -103,4 +103,49 @@ Task 7 continuation final suite after native fixes: make test -race exit0 (CLI9.
 Task 7 final native redesign: intermediate agent-owned staging links made root chown unsuitable even with fixed executable. Removed container Docker cp/root ownership mutation entirely; Go archive/tar from anchored os.OpenRoot, symlink/nofollow/inode checks, regular/dir-only private permissions,128MiB bound, context/error joining -> fixed /usr/bin/tar as agent. Legacy SBX copy unchanged. Meaningful archive/transport/cancellation regressions and actual schema/directory0700/0600 checks GREEN; independent review found no new important defect. Final make test -race exit0 (CLI9.344s, launcher41.350s, unchanged packages cached), make vet/build/diffcheck exit0. Exact native stoppedconfirmed.
 Task 7 auth steering: user explicitly cannot login now. Both device flows ended without auth; exact original Codex stoppedconfirmed. No authenticated model gate counted passed; no further login attempted. Minimal seccomp SHAde699bf...0af8 independently audited, host/Linuxprobe builds/vet pass, helper staging/cleanup/state assertions repaired. Another disposable guest requires additional approval because prior scope was one and policy is fixed at create. Approval question pending; no new minimal guest created. Product policy and actual model/MCP gates remain open; Task7 not complete.
 Task 7 minimal-policy spike: user approved one additional disposable guest. Root /private/tmp/paseo-sbx-userns-live-1919452979 exact CIDb09beb00...47c4c SHAde699bf...0af8 with no addedcaps/privileged, no-new-privileges and soleworkspace successfully ran actualCodex0.159.2 and0.161.0 all confinement assertions; forbidden adminsyscalls/socketfamilies denied. Hosthelper exit0 and exact stopped assertion running=false passed. No existingguest/daemon/productpolicy modified. Minimal spike verification gap closed.
+
+## Closure maintenance — 2026-10-12
+
+User requested handling Claude's scope/test/evidence review before further work.
+Feature work is frozen. New Codex opt-in is implemented through `a1b5f9c`,
+`31c5125`, `ddcd4fd`, `737f398`, and helper ownership correction `69652ee`.
+Historical real Service acceptance covers confinement and restart, not model/MCP.
+
+Independent resumed review of `737f398..69652ee` identified P2 canceled-context
+ownership verification. Controller extracted the existing verifier without changing
+behavior, observed cancellation regression RED (`context canceled`), then added
+independent bounded read-only verification; focused regression GREEN. CID/policy
+rejection and the previously verified cleanup target remain protected.
+
+Regular `make test` and `make vet` now include both offline helpers explicitly.
+The restricted helper run failed category initialize fixtures because localhost
+relay binding was denied; with socket access the helper target passed. First full
+maintenance suite failed `TestLaunchStdioAndExit`: inherited `PASEO_AGENT_CWD`
+overrode the fixture's temporary process cwd. Focused RED reproduced it. The
+fixture now clears that variable, without changing production launcher behavior.
+
+Decision: prepare three stacked review units (TUI, categories/native, userns),
+with ranges and intermediate-head validation requirements in `branch-closure.md`.
+No merge/push/history rewrite and no deletion of main's plan changes occurred.
+36 tracked plus three pending raw docs logs were preserved in ignored local
+artifacts; result reports and hash inventories remain. Final fresh test results
+are recorded in the closure status after completion.
+
+Task 7/product acceptance remains incomplete: authenticated inference, model-driven
+MCP, amd64 live confinement and AppArmor-enabled host acceptance are open.
+
+Closure follow-up: newly wired category tests exposed a deleted-log dependency;
+the observed failure is fixed with an embedded two-frame actual initialize fixture.
+A 3-second timeout was insufficient for three nested race subprocess default exit
+delays; the bounded 10-second deadline retains negative parser expectations and
+does not modify GORACE. macOS `/private/tmp` daemon fixtures skip explicitly on
+other OSes, while cross-platform ownership/cancellation/path rejection remain.
+CI now invokes the same Make targets. No live helper guard was weakened.
+
+Final closure verification: `make test` with local sockets exit0 (all packages;
+userns helper1.025s, category helper21.521s), `make vet`, `make build`, explicit
+helper build and Linux/amd64 helper test compile exit0; diff check exit0.
+39 archive copies independently match inventory byte counts/SHA256. Independent
+maintenance review reports no remaining Critical/Important findings. Remaining
+acceptance and intermediate-head checks stand; no full completion/merge claim.
 Task 7 product steering: user explicitly chose opt-in implementation for new Codex containers. Existing resources/daemon/default policy remain unchanged. Runtime option/persisted identity/inspect checks/CLI+TUI flow and Service-created live acceptance will be implemented under that authorization, without another equivalent design approval. Auth/model verification remains deferred by user; Task7 overall not complete.
