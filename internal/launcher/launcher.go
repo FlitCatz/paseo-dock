@@ -69,6 +69,34 @@ func nativeCommand(ctx context.Context, entry config.Entry, action nativeAction,
 	return process.Command(ctx, "docker", append(command, args...)...), nil
 }
 
+// nativeAssetRelativeSource keeps every component below the plugin root in the
+// archive source, while allowing symlinks in the path leading to that root.
+func nativeAssetRelativeSource(root, path string) (string, error) {
+	raw, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+	var ancestors []string
+	for ancestor := raw; ; ancestor = filepath.Dir(ancestor) {
+		ancestors = append(ancestors, ancestor)
+		if ancestor == filepath.Dir(ancestor) {
+			break
+		}
+	}
+	// The first match from the filesystem root leaves any in-tree symlinks in
+	// the relative path for writeNativeArchive to reject with Lstat.
+	for i := len(ancestors) - 1; i >= 0; i-- {
+		canonical, err := config.Canonical(ancestors[i])
+		if err != nil {
+			return "", err
+		}
+		if canonical == root {
+			return filepath.Rel(ancestors[i], raw)
+		}
+	}
+	return "", fmt.Errorf("native plugin asset path has no ancestor matching plugin root: %s", raw)
+}
+
 func prepareNativeContext(ctx context.Context, runtime, key string, args []string, workspace string, entry config.Entry, stderr io.Writer) ([]string, map[string]string, func(), error) {
 	// Legacy prepareNative has no registry parameter; production always supplies
 	// runtime/key. A Docker mutation requires the frozen trusted target.
@@ -167,11 +195,7 @@ func prepareNativeContext(ctx context.Context, runtime, key string, args []strin
 					return fail(e)
 				}
 			}
-			raw, e := filepath.Abs(args[i+1])
-			if e != nil {
-				return fail(e)
-			}
-			relativeSource, e = filepath.Rel(root, raw)
+			relativeSource, e = nativeAssetRelativeSource(root, args[i+1])
 			if e != nil {
 				return fail(e)
 			}
