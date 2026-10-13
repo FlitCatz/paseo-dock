@@ -370,7 +370,10 @@ func actionWarning(kind operations.Kind) string {
 	return ""
 }
 func (m *Dashboard) managementKey(k string, input ...string) (bool, tea.Cmd) {
-	if k == "esc" || k == "ctrl+c" {
+	blocked := len(m.pruneBlocked) > 0
+	typed := m.confirm != nil && m.confirm.requiredText() != ""
+	quit := k == "ctrl+c" || k == "q" && !typed && !blocked
+	if k == "esc" || quit {
 		m.newFlow()
 	}
 	if m.exitPrompt {
@@ -388,7 +391,8 @@ func (m *Dashboard) managementKey(k string, input ...string) (bool, tea.Cmd) {
 		}
 		return true, nil
 	}
-	if m.confirm == nil && (k == "q" || k == "ctrl+c") {
+	if quit {
+		m.confirm = nil
 		if m.busy() {
 			m.exitPrompt = true
 			m.modal.GotoTop()
@@ -396,6 +400,19 @@ func (m *Dashboard) managementKey(k string, input ...string) (bool, tea.Cmd) {
 		}
 		m.cancel()
 		return true, tea.Quit
+	}
+	if blocked {
+		switch k {
+		case "down", "j":
+			m.modal.ScrollDown(1)
+		case "up", "k":
+			m.modal.ScrollUp(1)
+		case "pgdown":
+			m.modal.ScrollDown(max(1, m.modal.Height()-1))
+		case "pgup":
+			m.modal.ScrollUp(max(1, m.modal.Height()-1))
+		}
+		return true, nil
 	}
 	if m.confirm != nil {
 		c := m.confirm
@@ -512,7 +529,13 @@ func (m *Dashboard) managementContent() string {
 		c := m.confirm
 		if c.request.Kind == operations.KindRemove {
 			t := c.request.Target
-			lines := []string{"확인: " + c.label, "Category: " + string(t.Entry.EffectiveCategory()), "Workspace: " + t.Workspace, "Profile: " + t.Profile, "Sandbox: " + t.Entry.Sandbox, "Container ID: " + t.Entry.ContainerID, "Image: " + t.Entry.Image, "삭제되는 것: sandbox/container 및 로그인 상태·세션·guest 파일, sandbox 범위 secret(SBX)", "registry 항목, 업데이트·버전 기록, 해당 Paseo provider", "보존되는 것: workspace 폴더(bind mount 원본), image·template, 다른 profile", c.warning, "정확히 입력: " + t.Profile, "> " + c.typed, "Enter 실행(일치할 때만) · Esc 취소 · ↑↓ 스크롤"}
+			lines := []string{"확인: " + c.label, "Category: " + string(t.Entry.EffectiveCategory()), "Workspace: " + t.Workspace, "Profile: " + t.Profile}
+			if t.Entry.EffectiveCategory() == config.CategoryContainer {
+				lines = append(lines, "Container ID: "+t.Entry.ContainerID)
+			} else {
+				lines = append(lines, "Sandbox: "+t.Entry.Sandbox)
+			}
+			lines = append(lines, "Image: "+t.Entry.Image, "삭제되는 것: sandbox/container 및 로그인 상태·세션·guest 파일, sandbox 범위 secret(SBX)", "registry 항목, 업데이트·버전 기록, 해당 Paseo provider", "보존되는 것: workspace 폴더(bind mount 원본), image·template, 다른 profile", c.warning, "정확히 입력: "+t.Profile, "> "+c.typed, "Enter 실행(일치할 때만) · Esc 취소 · ↑↓ 스크롤")
 			return strings.Join(lines, "\n")
 		}
 		if c.request.Kind == operations.KindPrune && c.request.RemoveRuntimes {
@@ -545,6 +568,7 @@ func (m *Dashboard) managementContent() string {
 		for _, t := range m.pruneBlocked {
 			lines = append(lines, t.Workspace+" / "+t.Profile+" / "+t.ResourceIdentity())
 		}
+		lines = append(lines, "Esc 닫기 · ↑↓/jk 스크롤")
 		return strings.Join(lines, "\n")
 	}
 	if m.actionMenu {
