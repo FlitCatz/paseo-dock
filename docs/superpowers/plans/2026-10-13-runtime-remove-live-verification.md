@@ -90,10 +90,10 @@ helper는 기존 20개 sandbox를 이름만 비교하지 않고 **원본 JSON의
 
 sandbox 2개/container 2개는 remove/prune으로 없어졌고 시험 image는 보존 검증 후 exact ID로 삭제했다. 시험 daemon도 정확한 home에 대해서만 종료했고 실제 status가 stopped다. sbx rm --all, 전역 sbx prune, 기존 template/image 변경은 수행하지 않았다.
 
-workspace-prune은 시나리오에서 제거했다. workspace-remove/sentinel, 임시 source/overlay/idle 입력/ownership/Paseo config/launcher root는 **재현 증거로 남긴다**. 실행 중인 시험 자원은 없다. 기존 running sandbox 1개는 그대로 보존했다. 증거 디렉터리와 테스트 로그는 삭제하지 않는다.
+missing workspace를 만들기 위해 helper가 workspace-prune 디렉터리를 삭제했다(prune --remove-runtimes 시나리오 029–035는 실행했다). workspace-remove/sentinel, 임시 source/overlay/idle 입력/ownership/Paseo config/launcher root는 **재현 증거로 남긴다**. 실행 중인 시험 자원은 없다. 기존 running sandbox 1개는 그대로 보존했다. 증거 디렉터리와 테스트 로그는 삭제하지 않는다.
 
 최종 helper에 panic 후 상태 보존→ownership 기반 cleanup, 강제 종료 후 수동 cleanup/audit 진입점을 추가했다. 성공 실행 후 실제 audit/cleanup도 실행하여 자원이 이미 없음을 확인했다. 자원이 남은 실패 cleanup 분기를 별도로 고장 주입해 실행하지는 않았다. cleanup inspect exit 1(048/049/051)은 이미 정리된 fixture의 not-found이며 최종 전체 목록으로 부재를 확인했다.
 
-**제약:** runtime base 경로만 검증용 치환했다. fixture는 직접 생성/registry 등록했으며 제품 생성·relay·로그인 흐름은 이번 삭제 검증 대상이 아니다. TUI 직접 조작은 이번 live run에서 하지 않았고 원본 관련 tests로 검증했다. 거부 직후 별도 read-only 관찰 assertion은 감독 후속 리뷰로 helper에 추가했지만 이번 최초 live run에서 실행되지 않았다. 최초 실행은 running 거부의 backend inspect 로그, registry/provider 불변, 후속 stop/remove 성공을 검증했다. 자원 상한을 지키기 위해 재생성하지 않았다.
+**제약:** runtime base 경로만 검증용 치환했다. fixture는 직접 생성/registry 등록했으며 제품 생성·relay·로그인 흐름은 이번 삭제 검증 대상이 아니다. TUI 직접 조작은 이번 live run에서 하지 않았고 원본 관련 tests로 검증했다. 거부 직후 별도 read-only 관찰 assertion은 감독 후속 리뷰로 helper에 추가했지만 이번 최초 live run에서 실행되지 않았다. external-commands.jsonl에서 command 020의 제품 backend 명령은 `sbx ls --json` 하나(15행, 대상 status running), command 021은 `docker inspect --type container <CID>` 하나(16행, State.Running=true)뿐이고 stop/rm은 없었으며, 첫 제품 stop은 command 022의 `sbx stop`(17행)이다. 최초 실행은 running 거부의 backend inspect 로그, registry/provider 불변, 후속 stop/remove 성공을 검증했다. 자원 상한을 지키기 위해 재생성하지 않았다.
 
 이번 변경은 이 결과 문서와 일회성 Go helper/README뿐이다. 감독이 최종 파일 리뷰를 승인했으며 세 파일의 검증 기록을 별도 commit으로 남긴다.
