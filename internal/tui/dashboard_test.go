@@ -399,6 +399,54 @@ func TestDashboardUnmanagedSelectsReadOnlyRow(t *testing.T) {
 		t.Fatal("unmanaged view does not retain an actual read-only selection")
 	}
 }
+
+func TestDashboardUnmanagedRowHasNoCategorySuffix(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	m := NewDashboard(&dashboardBackend{}, config.Catalog{}, "")
+	defer m.cancel()
+	s := fixtureSnapshot()
+	s.Unmanaged = []operations.Sandbox{{Target: operations.Target{Entry: config.Entry{Sandbox: "external-sandbox"}}, RuntimeState: "running"}}
+	deliver(m, s)
+	dashboardKey(m, "v")
+	m.Focus = 1
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	for _, line := range strings.Split(m.View().Content, "\n") {
+		if strings.HasPrefix(line, "║ ›") && strings.Contains(line, "external-sandbox") {
+			if !strings.Contains(line, "읽기 전용") || strings.Contains(line, "  L") {
+				t.Fatalf("unmanaged row mislabeled: %q", line)
+			}
+			return
+		}
+	}
+	t.Fatal("unmanaged row not rendered")
+}
+
+func TestDashboardDetailResourceAndRuntimeLabels(t *testing.T) {
+	for _, tc := range []struct {
+		name, want, absent string
+		entry              config.Entry
+	}{
+		{"container", "Container ID: cid-one", "Sandbox: stale-sandbox", config.Entry{Category: config.CategoryContainer, Agent: "codex", Tool: "gsd", ContainerID: "cid-one", Sandbox: "stale-sandbox"}},
+		{"sandbox", "Sandbox: sandbox-one", "Container ID:", config.Entry{Category: config.CategorySandbox, Agent: "codex", Sandbox: "sandbox-one"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := NewDashboard(&dashboardBackend{}, config.Catalog{}, "")
+			defer m.cancel()
+			s := fixtureSnapshot()
+			s.Workspaces[0].Sandboxes[0].Target.Entry = tc.entry
+			deliver(m, s)
+			content := m.detailContent()
+			for _, want := range []string{tc.want, "Runtime ID: runtime-a", "Runtime: running"} {
+				if !strings.Contains(content, want) {
+					t.Errorf("missing %q in %q", want, content)
+				}
+			}
+			if strings.Contains(content, tc.absent) {
+				t.Errorf("unexpected %q in %q", tc.absent, content)
+			}
+		})
+	}
+}
 func TestDashboardTemplateTabVisibleOnNarrowScreen(t *testing.T) {
 	b := &dashboardBackend{snapshot: fixtureSnapshot()}
 	m := NewDashboard(b, config.Catalog{}, "")

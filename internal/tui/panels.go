@@ -10,6 +10,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"io"
 	"os"
+	"paseo-sbx/internal/config"
 	"paseo-sbx/internal/operations"
 	"slices"
 	"strings"
@@ -104,7 +105,7 @@ func (m *Dashboard) detailContent() string {
 	}
 	lines := []string{}
 	if w := m.selectedWorkspace(); w != nil {
-		lines = append(lines, "Workspace: "+w.Path, "Runtime: "+w.ID)
+		lines = append(lines, "Workspace: "+w.Path, "Runtime ID: "+w.ID)
 		if w.Missing {
 			lines = append(lines, "경로 없음 · sandbox 보존")
 		}
@@ -119,7 +120,13 @@ func (m *Dashboard) detailContent() string {
 		if sandboxID(s) != m.ProfileID {
 			continue
 		}
-		lines = append(lines, "Profile: "+sandboxID(s), "Sandbox: "+s.Target.Entry.Sandbox, "Image: "+s.Target.Entry.Image, "Runtime: "+s.RuntimeState)
+		lines = append(lines, "Profile: "+sandboxID(s))
+		if s.Target.Entry.EffectiveCategory() == config.CategoryContainer {
+			lines = append(lines, "Container ID: "+s.Target.Entry.ContainerID)
+		} else {
+			lines = append(lines, "Sandbox: "+s.Target.Entry.Sandbox)
+		}
+		lines = append(lines, "Image: "+s.Target.Entry.Image, "Runtime: "+s.RuntimeState)
 		if m.Unmanaged {
 			lines = append(lines, "읽기 전용 · 관리 registry에 등록되지 않음")
 		}

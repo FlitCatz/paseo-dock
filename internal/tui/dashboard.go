@@ -402,7 +402,6 @@ func (m *Dashboard) syncLists() {
 		if glyph == "" {
 			glyph = "?"
 		}
-		category := map[config.Category]string{config.CategorySandbox: "S", config.CategoryContainer: "C", config.CategoryLegacySandbox: "L"}[s.Target.Entry.EffectiveCategory()]
 		label := glyph + " " + id
 		if s.Active {
 			label += "  활성"
@@ -410,7 +409,11 @@ func (m *Dashboard) syncLists() {
 		if m.Unmanaged {
 			label += "  읽기 전용"
 		}
-		suffix := "  " + category
+		suffix := ""
+		if !m.Unmanaged {
+			category := map[config.Category]string{config.CategorySandbox: "S", config.CategoryContainer: "C", config.CategoryLegacySandbox: "L"}[s.Target.Entry.EffectiveCategory()]
+			suffix = "  " + category
+		}
 		if matches(label + suffix) {
 			ss = append(ss, panelItem{id: id, label: label, suffix: suffix})
 		}
