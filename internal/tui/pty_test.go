@@ -228,6 +228,8 @@ func TestDashboardPTYRestore(t *testing.T) {
 			send("jjj\r")
 			wait("Enter 실행", offset)
 			send("\r")
+			// Jobs keep the current tab; select 로그 to inspect the result.
+			send("]")
 			wait("완료", offset)
 			send(exitKey)
 			wait("DASHBOARD_EXIT", offset)

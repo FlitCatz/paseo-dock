@@ -165,7 +165,7 @@ func TestProviderConfigurationDiagnosticSurvivesSnapshot(t *testing.T) {
 				_ = os.Mkdir(path, 0700)
 			}
 			m := restartedDashboard(t, s, w)
-			detail := m.detailContent()
+			detail := m.settingsContent()
 			if m.Snapshot.Paseo.Status != "running" || m.Snapshot.Paseo.Error != "" || m.selectedSandbox().Registration != "unknown" {
 				t.Fatal("provider observation conflated with daemon connectivity")
 			}
@@ -191,7 +191,7 @@ func TestWhollyFailedVersionCheckSurvivesRestart(t *testing.T) {
 	if check == nil || len(check.Errors) == 0 || !check.CheckedAt.IsZero() || len(check.Versions) != 0 {
 		t.Fatalf("failed check ledger lost or fabricated: %+v", check)
 	}
-	detail := restarted.detailContent()
+	detail := restarted.versionContent()
 	if !strings.Contains(detail, "guest home unavailable") || !strings.Contains(detail, "버전 확인 오류") || strings.Contains(detail, "버전 마지막 확인:") {
 		t.Fatalf("failed check hidden or presented as confirmed: %s", detail)
 	}

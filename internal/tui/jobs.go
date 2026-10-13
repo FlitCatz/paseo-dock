@@ -116,8 +116,6 @@ func (m *Dashboard) enqueue(r operations.Request) tea.Cmd {
 	}
 	m.nextJobID++
 	m.jobs = append(m.jobs, &job{id: m.nextJobID, request: freezeRequest(r), state: "queued", log: newJobLog(), previewFlow: m.flowGeneration})
-	m.Focus = 3
-	m.detailTab = 1
 	return m.dispatchJob()
 }
 func (m *Dashboard) dispatchJob() tea.Cmd {

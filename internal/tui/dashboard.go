@@ -6,6 +6,7 @@ import (
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"context"
+	"fmt"
 	"io"
 	"paseo-sbx/internal/config"
 	"paseo-sbx/internal/operations"
@@ -31,7 +32,7 @@ type Dashboard struct {
 	Backend                                               Backend
 	Catalog                                               config.Catalog
 	Snapshot                                              operations.Snapshot
-	WorkspaceID, ProfileID, Search                        string
+	WorkspaceID, ProfileID, TemplateID, Search            string
 	Focus                                                 int
 	Width, Height                                         int
 	LastSuccess                                           time.Time
@@ -45,9 +46,8 @@ type Dashboard struct {
 	lastSlow                                              time.Time
 	templatesWanted                                       bool
 	slowWanted                                            bool
-	templateTab                                           bool
-	detailTab                                             int
-	workspaces, sandboxes                                 list.Model
+	rightTab                                              int
+	workspaces, sandboxes, templates                      list.Model
 	details, logs, modal                                  viewport.Model
 	help                                                  help.Model
 	jobs                                                  []*job
@@ -70,6 +70,7 @@ func NewDashboard(b Backend, c config.Catalog, w string) *Dashboard {
 	m := &Dashboard{Backend: b, Catalog: c, WorkspaceID: w, ctx: ctx, cancel: cancel, Width: 80, Height: 24, details: viewport.New(), logs: viewport.New(), help: help.New()}
 	m.workspaces = newPanelList()
 	m.sandboxes = newPanelList()
+	m.templates = newPanelList()
 	m.modal = viewport.New()
 	return m
 }
@@ -219,15 +220,11 @@ func (m *Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.cancel()
 			return m, tea.Quit
 		case "tab":
-			m.Focus = (m.Focus + 1) % 4
-			if m.Focus >= 2 {
-				m.detailTab = m.Focus - 2
-			}
+			return m, m.focusPanel((m.Focus + 1) % 4)
 		case "shift+tab":
-			m.Focus = (m.Focus + 3) % 4
-			if m.Focus >= 2 {
-				m.detailTab = m.Focus - 2
-			}
+			return m, m.focusPanel((m.Focus + 3) % 4)
+		case "1", "2", "3":
+			return m, m.focusPanel(int(k[0] - '1'))
 		case "/":
 			m.Searching = true
 			m.Search = ""
@@ -239,27 +236,23 @@ func (m *Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "r":
 			return m, m.refresh(time.Now(), true)
 		case "t":
-			m.templateTab = !m.templateTab
-			if m.templateTab {
-				m.Focus = 2
-				m.templatesWanted = true
-				return m, m.refresh(time.Now(), false)
-			}
+			return m, m.focusPanel(2)
 		case "v":
 			m.Unmanaged = !m.Unmanaged
 			m.ProfileID = ""
 			m.reconcileSelection()
-		case "left", "right", "h", "l":
-			if m.Focus >= 2 {
-				m.detailTab = 1 - m.detailTab
-				m.Focus = 2 + m.detailTab
-			}
+		case "left", "h", "[":
+			m.rightTab = (m.rightTab + 3) % 4
+		case "right", "l", "]":
+			m.rightTab = (m.rightTab + 1) % 4
 		case "up", "k", "down", "j":
-			if m.Focus < 2 {
+			if m.Focus < 3 {
 				m.syncLists()
 				l := &m.workspaces
 				if m.Focus == 1 {
 					l = &m.sandboxes
+				} else if m.Focus == 2 {
+					l = &m.templates
 				}
 				if k == "up" || k == "k" {
 					l.CursorUp()
@@ -271,13 +264,15 @@ func (m *Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.WorkspaceID = item.id
 						m.ProfileID = ""
 						m.reconcileSelection()
-					} else {
+					} else if m.Focus == 1 {
 						m.ProfileID = item.id
+					} else {
+						m.TemplateID = item.id
 					}
 				}
 			} else {
 				var cmd tea.Cmd
-				if m.Focus == 3 {
+				if m.rightTab == 1 {
 					m.logs, cmd = m.logs.Update(msg)
 				} else {
 					m.details, cmd = m.details.Update(msg)
@@ -288,6 +283,15 @@ func (m *Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	m.syncLists()
 	return m, nil
+}
+func (m *Dashboard) focusPanel(which int) tea.Cmd {
+	enteringTemplates := m.Focus != 2 && which == 2
+	m.Focus = which
+	if !enteringTemplates {
+		return nil
+	}
+	m.templatesWanted = true
+	return m.refresh(time.Now(), false)
 }
 func (m *Dashboard) unknownRuntime(sbxOnly bool) {
 	for i := range m.Snapshot.Workspaces {
@@ -366,8 +370,18 @@ func (m *Dashboard) syncLists() {
 		if label == "" {
 			label = w.ID
 		}
-		if matches(label) {
-			ws = append(ws, panelItem{id: w.ID, label: label})
+		active := 0
+		for _, s := range w.Sandboxes {
+			if s.Active {
+				active++
+			}
+		}
+		suffix := fmt.Sprintf("  %d/%d", active, len(w.Sandboxes))
+		if w.Missing {
+			suffix = "  (missing)"
+		}
+		if matches(w.Path) || matches(label) {
+			ws = append(ws, panelItem{id: w.ID, label: label, suffix: suffix})
 		}
 	}
 	workspaceVisible := false
@@ -384,19 +398,48 @@ func (m *Dashboard) syncLists() {
 	}
 	for _, s := range m.rows() {
 		id := sandboxID(s)
-		label := id + "  " + string(s.Target.Entry.EffectiveCategory()) + "  " + s.RuntimeState + "  " + s.Registration
+		glyph := map[string]string{"running": "●", "stopped": "○", "missing": "✕"}[s.RuntimeState]
+		if glyph == "" {
+			glyph = "?"
+		}
+		category := map[config.Category]string{config.CategorySandbox: "S", config.CategoryContainer: "C", config.CategoryLegacySandbox: "L"}[s.Target.Entry.EffectiveCategory()]
+		label := glyph + " " + id
 		if s.Active {
 			label += "  활성"
 		}
 		if m.Unmanaged {
 			label += "  읽기 전용"
 		}
-		if matches(label) {
-			ss = append(ss, panelItem{id: id, label: label})
+		suffix := "  " + category
+		if matches(label + suffix) {
+			ss = append(ss, panelItem{id: id, label: label, suffix: suffix})
 		}
 	}
 	m.workspaces.SetItems(ws)
 	m.sandboxes.SetItems(ss)
+	var ts []list.Item
+	for _, t := range m.Snapshot.TemplateRows {
+		label := t.Repository + ":" + t.Tag
+		if matches(label) {
+			ts = append(ts, panelItem{id: t.ID, label: label})
+		}
+	}
+	m.templates.SetItems(ts)
+	templateVisible := false
+	for i, item := range ts {
+		if item.(panelItem).id == m.TemplateID {
+			m.templates.Select(i)
+			templateVisible = true
+			break
+		}
+	}
+	if !templateVisible {
+		m.TemplateID = ""
+		if len(ts) > 0 {
+			m.TemplateID = ts[0].(panelItem).id
+			m.templates.Select(0)
+		}
+	}
 	profileVisible := false
 	for _, item := range ss {
 		if item.(panelItem).id == m.ProfileID {

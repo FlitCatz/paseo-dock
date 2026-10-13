@@ -707,19 +707,23 @@ func TestJobConfirmationScrollsOnSmallScreen(t *testing.T) {
 	m.Height = 5
 	keyCmd(m, "u")
 	m.View()
-	for i := 0; i < 5; i++ {
+	view, seen := "", ""
+	for i := 0; i < 30; i++ {
+		view = m.View().Content
+		seen += strings.Map(func(r rune) rune {
+			if unicode.IsSpace(r) || strings.ContainsRune("╔═╗║╚╝", r) {
+				return -1
+			}
+			return r
+		}, ansi.Strip(strings.Split(view, "\n")[2]))
+		if strings.Contains(seen, "중지된sandbox를") && strings.Contains(seen, "시작할수있습니다.") {
+			break
+		}
 		keyCmd(m, "j")
 	}
-	view := m.View().Content
-	// Frames reduce the viewport width, so a Korean word may span two rows.
-	// Check the visible text across wrapping without treating border/padding as content.
-	visible := strings.Map(func(r rune) rune {
-		if unicode.IsSpace(r) || strings.ContainsRune("╔═╗║╚╝", r) {
-			return -1
-		}
-		return r
-	}, ansi.Strip(view))
-	if !strings.Contains(visible, "중지된sandbox를시작할수있습니다.") {
+	// The centered popup has one content row here; both halves of the
+	// wrapped warning must be reachable by scrolling.
+	if !strings.Contains(seen, "중지된sandbox를") || !strings.Contains(seen, "시작할수있습니다.") {
 		t.Fatalf("small screen cannot reach start warning: %q", view)
 	}
 	keyCmd(m, "esc")

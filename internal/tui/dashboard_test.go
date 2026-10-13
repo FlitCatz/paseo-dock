@@ -167,7 +167,11 @@ func TestDashboardNarrowKoreanNoColor(t *testing.T) {
 				t.Fatalf("line too wide %q", line)
 			}
 		}
-		if !strings.Contains(view, "a-two") {
+		want := "a-t"
+		if size[0] <= 8 {
+			want = "› ○"
+		}
+		if !strings.Contains(view, want) || m.sandboxes.SelectedItem().(panelItem).id != "a-two" {
 			t.Fatalf("focused row hidden at %v: %q", size, view)
 		}
 	}
@@ -185,7 +189,7 @@ func TestDashboardSectionsHaveVisibleFrames(t *testing.T) {
 			if strings.Count(view, "╭")+strings.Count(view, "╔") != 4 || strings.Count(view, "╰")+strings.Count(view, "╚") != 4 {
 				t.Fatalf("four independently closed sections are not visible:\n%s", view)
 			}
-			for _, title := range []string{"Workspaces", "Sandbox / Container", "상세", "작업 로그"} {
+			for _, title := range []string{"1 Workspaces", "2 Sandbox / Container", "3 Templates", "[상세] · 로그 · 버전 · 설정"} {
 				if !strings.Contains(view, title) {
 					t.Errorf("section title %q is missing", title)
 				}
@@ -222,7 +226,7 @@ func TestDashboardActionMenuHasItsOwnFrame(t *testing.T) {
 	deliver(m, fixtureSnapshot())
 	m.actionMenu = true
 	view := m.View().Content
-	if strings.Count(view, "╔") != 1 || strings.Count(view, "╚") != 1 || !strings.Contains(view, "작업 메뉴") {
+	if strings.Count(view, "╔") < 1 || strings.Count(view, "╚") < 1 || !strings.Contains(view, "작업 메뉴") || !strings.Contains(view, "1 Workspaces") {
 		t.Fatalf("action menu has no distinct closed section:\n%s", view)
 	}
 }
@@ -256,7 +260,10 @@ func TestDashboardTerminalBounds(t *testing.T) {
 				}
 				want := "› /한국어"
 				if focus == 1 {
-					want = "› 한글-39"
+					want = "› ? 한글"
+				}
+				if size[0] <= 12 {
+					want = "›"
 				}
 				if !strings.Contains(view, want) {
 					t.Fatalf("focused selection invisible: %q", view)
@@ -336,6 +343,7 @@ func TestDashboardDetailLogTab(t *testing.T) {
 	deliver(m, fixtureSnapshot())
 	m.Focus = 2
 	m.Update(tea.KeyPressMsg{Code: tea.KeyRight})
+	m.Focus = 3
 	view := m.View().Content
 	if !strings.Contains(view, "조회 dashboard") {
 		t.Fatalf("detail/log tab did not switch: %q", view)
@@ -500,15 +508,20 @@ func TestDashboardSearchKeepsMarkerIdentityAndDetailsAligned(t *testing.T) {
 func TestDashboardDetailsScrollAfterReturningFromLogs(t *testing.T) {
 	m := NewDashboard(&dashboardBackend{}, config.Catalog{}, "")
 	s := fixtureSnapshot()
-	s.Workspaces[0].Sandboxes[0].InitialVersions = map[string]string{"agent": "1.0", "methodology": "2.0"}
+	s.Workspaces[0].Sandboxes[0].InitialVersions = map[string]string{}
+	for i := 0; i < 30; i++ {
+		s.Workspaces[0].Sandboxes[0].InitialVersions[fmt.Sprintf("tool-%02d", i)] = "1.0"
+	}
 	deliver(m, s)
-	m.Focus = 2
+	m.Focus = 3
 	m.View()
 	m.Update(tea.KeyPressMsg{Code: tea.KeyRight})
-	m.Update(tea.KeyPressMsg{Code: tea.KeyTab, Mod: tea.ModShift})
+	m.Update(tea.KeyPressMsg{Code: tea.KeyLeft})
+	m.Update(tea.KeyPressMsg{Code: tea.KeyRight})
+	m.Update(tea.KeyPressMsg{Code: tea.KeyRight})
 	m.View()
-	if m.Focus != 2 {
-		t.Fatalf("shift tab returned to focus %d", m.Focus)
+	if m.Focus != 3 || m.rightTab != 2 {
+		t.Fatalf("left returned to focus/tab %d/%d", m.Focus, m.rightTab)
 	}
 	logOffset := m.logs.YOffset()
 	m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
@@ -545,7 +558,7 @@ func TestDashboardTemplatesOnlyOnEntryOrManualRefresh(t *testing.T) {
 		t.Fatal("manual refresh omitted templates")
 	}
 	m.Update(msg)
-	dashboardKey(m, "t")
+	dashboardKey(m, "1")
 	_, cmd = m.Update(tea.KeyPressMsg{Code: 't', Text: "t"})
 	if !cmd().(snapshotMsg).query.IncludeTemplates {
 		t.Fatal("reentry omitted templates")

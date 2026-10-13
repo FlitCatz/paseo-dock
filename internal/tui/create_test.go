@@ -48,7 +48,7 @@ func TestAdvancedSavedSelectionActions(t *testing.T) {
 	keyCmd(m, "a")
 	m.advancedIndex = 2
 	cmd := keyCmd(m, "enter")
-	if cmd == nil || !m.templateTab {
+	if cmd == nil || m.Focus != 2 {
 		t.Fatal("template view did not open")
 	}
 	msg := cmd().(snapshotMsg)

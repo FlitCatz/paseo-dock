@@ -16,7 +16,7 @@ import (
 	"time"
 )
 
-type panelItem struct{ id, label string }
+type panelItem struct{ id, label, suffix string }
 
 func (i panelItem) FilterValue() string { return i.label }
 
@@ -31,7 +31,8 @@ func (panelDelegate) Render(w io.Writer, m list.Model, index int, item list.Item
 	if index == m.Index() {
 		mark = "› "
 	}
-	line := ansi.Truncate(mark+i.label, m.Width(), "…")
+	line := ansi.Truncate(mark+i.label, max(1, m.Width()-ansi.StringWidth(i.suffix)), "…") + i.suffix
+	line = ansi.Truncate(line, m.Width(), "…")
 	style := lipgloss.NewStyle()
 	if os.Getenv("NO_COLOR") == "" && index == m.Index() {
 		style = style.Foreground(lipgloss.Color("86"))
@@ -54,12 +55,12 @@ type dashboardKeys struct{}
 
 func (dashboardKeys) ShortHelp() []keys.Binding {
 	return []keys.Binding{
-		keys.NewBinding(keys.WithKeys("tab"), keys.WithHelp("Tab", "패널")), keys.NewBinding(keys.WithKeys("up", "down", "j", "k"), keys.WithHelp("↑↓/jk", "이동")), keys.NewBinding(keys.WithKeys("/"), keys.WithHelp("/", "검색")), keys.NewBinding(keys.WithKeys("r"), keys.WithHelp("r", "갱신")), keys.NewBinding(keys.WithKeys("?"), keys.WithHelp("?", "도움말")), keys.NewBinding(keys.WithKeys("q"), keys.WithHelp("q", "종료")),
+		keys.NewBinding(keys.WithKeys("u"), keys.WithHelp("u", "업데이트")), keys.NewBinding(keys.WithKeys("s"), keys.WithHelp("s", "shell")), keys.NewBinding(keys.WithKeys("x"), keys.WithHelp("x", "중지")), keys.NewBinding(keys.WithKeys("d"), keys.WithHelp("d", "삭제")), keys.NewBinding(keys.WithKeys("n"), keys.WithHelp("n", "생성")), keys.NewBinding(keys.WithKeys("enter"), keys.WithHelp("Enter", "메뉴")), keys.NewBinding(keys.WithKeys("?"), keys.WithHelp("?", "도움말")),
 	}
 }
 func (dashboardKeys) FullHelp() [][]keys.Binding {
 	return [][]keys.Binding{dashboardKeys{}.ShortHelp(), {
-		keys.NewBinding(keys.WithKeys("v"), keys.WithHelp("v", "미등록 sandbox (읽기 전용)")), keys.NewBinding(keys.WithKeys("t"), keys.WithHelp("t", "template 탭")), keys.NewBinding(keys.WithKeys("left", "right"), keys.WithHelp("←→", "상세/로그")), keys.NewBinding(keys.WithKeys("esc"), keys.WithHelp("Esc", "검색 취소")),
+		keys.NewBinding(keys.WithKeys("1", "2", "3"), keys.WithHelp("1/2/3", "목록 포커스")), keys.NewBinding(keys.WithKeys("tab", "shift+tab"), keys.WithHelp("Tab/Shift+Tab", "패널 순환")), keys.NewBinding(keys.WithKeys("[", "]", "left", "right", "h", "l"), keys.WithHelp("[ ]/←→/hl", "오른쪽 탭")), keys.NewBinding(keys.WithKeys("up", "down", "j", "k"), keys.WithHelp("↑↓/jk", "이동")), keys.NewBinding(keys.WithKeys("/"), keys.WithHelp("/", "검색")), keys.NewBinding(keys.WithKeys("r"), keys.WithHelp("r", "갱신")), keys.NewBinding(keys.WithKeys("q"), keys.WithHelp("q", "종료")), keys.NewBinding(keys.WithKeys("v"), keys.WithHelp("v", "미등록 sandbox (읽기 전용)")), keys.NewBinding(keys.WithKeys("t"), keys.WithHelp("t", "Templates 포커스")), keys.NewBinding(keys.WithKeys("esc"), keys.WithHelp("Esc", "검색 취소")),
 		keys.NewBinding(keys.WithKeys("enter"), keys.WithHelp("Enter", "작업")), keys.NewBinding(keys.WithKeys("u"), keys.WithHelp("u", "업데이트")), keys.NewBinding(keys.WithKeys("s"), keys.WithHelp("s", "shell")), keys.NewBinding(keys.WithKeys("x"), keys.WithHelp("x", "중지")), keys.NewBinding(keys.WithKeys("d"), keys.WithHelp("d", "삭제")), keys.NewBinding(keys.WithKeys("c"), keys.WithHelp("c", "취소 요청")),
 		keys.NewBinding(keys.WithKeys("R"), keys.WithHelp("R", "고정 대상 재시도")),
 		keys.NewBinding(keys.WithKeys("n"), keys.WithHelp("n", "새 환경 생성")), keys.NewBinding(keys.WithKeys("a"), keys.WithHelp("a", "고급 build/load/prune/삭제")),
@@ -91,10 +92,13 @@ func versionLines(title string, values map[string]string) []string {
 	return lines
 }
 func (m *Dashboard) detailContent() string {
-	if m.templateTab {
+	if m.Focus == 2 {
 		lines := []string{"Templates (읽기 전용)", connectionText("template", m.Snapshot.Templates)}
 		for _, t := range m.Snapshot.TemplateRows {
-			lines = append(lines, t.Repository+":"+t.Tag+" "+t.ID)
+			if t.ID == m.TemplateID {
+				lines = append(lines, "Repository: "+t.Repository, "Tag: "+t.Tag, "ID: "+t.ID)
+				break
+			}
 		}
 		return strings.Join(lines, "\n")
 	}
@@ -115,24 +119,12 @@ func (m *Dashboard) detailContent() string {
 		if sandboxID(s) != m.ProfileID {
 			continue
 		}
-		lines = append(lines, "Profile: "+sandboxID(s), "Sandbox: "+s.Target.Entry.Sandbox, "Image: "+s.Target.Entry.Image, "Runtime: "+s.RuntimeState, "Paseo 등록: "+s.Registration)
-		lines = append(lines, runtimeSettings(s.Target.Entry)...)
-		if s.RegistrationError != "" {
-			lines = append(lines, "Paseo 등록 확인 오류: "+s.RegistrationError)
-		}
+		lines = append(lines, "Profile: "+sandboxID(s), "Sandbox: "+s.Target.Entry.Sandbox, "Image: "+s.Target.Entry.Image, "Runtime: "+s.RuntimeState)
 		if m.Unmanaged {
 			lines = append(lines, "읽기 전용 · 관리 registry에 등록되지 않음")
 		}
 		if s.ImageMismatch {
 			lines = append(lines, "이미지 구성 불일치 · 재사용 불가")
-		}
-		lines = append(lines, versionLines("이미지 기준 (guest 미확인)", s.InitialVersions)...)
-		if s.VersionCheck != nil {
-			if !s.VersionCheck.CheckedAt.IsZero() {
-				lines = append(lines, "버전 마지막 확인: "+s.VersionCheck.CheckedAt.Format(time.RFC3339))
-				lines = append(lines, versionLines("마지막 확인", s.VersionCheck.Versions)...)
-			}
-			lines = append(lines, versionLines("버전 확인 오류", s.VersionCheck.Errors)...)
 		}
 		if s.Update != nil {
 			status := "미확인"
@@ -147,10 +139,6 @@ func (m *Dashboard) detailContent() string {
 			lines = append(lines, "업데이트: "+status)
 			if !s.Update.Attempt.IsZero() {
 				lines = append(lines, "업데이트 마지막 확인: "+s.Update.Attempt.Format(time.RFC3339))
-				lines = append(lines, versionLines("업데이트 마지막 확인", s.Update.Versions)...)
-				lines = append(lines, versionLines("업데이트 오류", s.Update.Errors)...)
-			} else {
-				lines = append(lines, "업데이트 버전 미확인")
 			}
 		}
 	}
@@ -158,6 +146,45 @@ func (m *Dashboard) detailContent() string {
 		return "선택 항목 없음"
 	}
 	return strings.Join(lines, "\n")
+}
+func (m *Dashboard) versionContent() string {
+	lines := []string{}
+	for _, s := range m.rows() {
+		if sandboxID(s) == m.ProfileID {
+			lines = append(lines, versionLines("이미지 기준 (guest 미확인)", s.InitialVersions)...)
+			if s.VersionCheck != nil {
+				if !s.VersionCheck.CheckedAt.IsZero() {
+					lines = append(lines, "버전 마지막 확인: "+s.VersionCheck.CheckedAt.Format(time.RFC3339), "마지막 확인:")
+					lines = append(lines, versionLines("마지막 확인", s.VersionCheck.Versions)...)
+				}
+				lines = append(lines, versionLines("버전 확인 오류", s.VersionCheck.Errors)...)
+			}
+			if s.Update != nil {
+				lines = append(lines, versionLines("업데이트 마지막 확인", s.Update.Versions)...)
+				lines = append(lines, versionLines("업데이트 오류", s.Update.Errors)...)
+				if s.Update.Attempt.IsZero() {
+					lines = append(lines, "업데이트 버전 미확인")
+				}
+			}
+		}
+	}
+	if len(lines) == 0 {
+		return "버전 정보 없음"
+	}
+	return strings.Join(lines, "\n")
+}
+func (m *Dashboard) settingsContent() string {
+	for _, s := range m.rows() {
+		if sandboxID(s) == m.ProfileID {
+			lines := runtimeSettings(s.Target.Entry)
+			lines = append(lines, "Paseo 등록: "+s.Registration)
+			if s.RegistrationError != "" {
+				lines = append(lines, "Paseo 등록 확인 오류: "+s.RegistrationError)
+			}
+			return strings.Join(lines, "\n")
+		}
+	}
+	return "설정 정보 없음"
 }
 
 // Section dimensions include the frame; tiny terminals retain the selected row.
@@ -224,15 +251,24 @@ func renderSection(title, body string, width, height int, focused bool) string {
 func (m *Dashboard) panel(which, width, height int) string {
 	width = max(1, width)
 	height = max(1, height)
-	title := []string{"Workspaces", "Sandbox / Container", "상세", "작업 로그"}[which]
+	title := []string{"1 Workspaces", "2 Sandbox / Container", "3 Templates", ""}[which]
 	if which == 1 && m.Unmanaged {
-		title = "미등록 · 읽기 전용"
+		title = "2 미등록 · 읽기 전용"
 	}
-	if which == 2 && m.templateTab {
-		title = "Templates"
+	if which == 3 {
+		tabs := []string{"상세", "로그", "버전", "설정"}
+		if m.busy() {
+			tabs[1] += "•"
+		}
+		for i := range tabs {
+			if i == m.rightTab {
+				tabs[i] = "[" + tabs[i] + "]"
+			}
+		}
+		title = strings.Join(tabs, " · ")
 	}
 	if m.Width < 80 || m.Height < 20 {
-		title = fmt.Sprintf("%d/4 %s", which+1, title)
+		title = fmt.Sprintf("%d/4 %s", which+1, strings.TrimPrefix(title, fmt.Sprintf("%d ", which+1)))
 	}
 	contentWidth, available, _, _ := sectionDimensions(width, height)
 	var body string
@@ -244,17 +280,50 @@ func (m *Dashboard) panel(which, width, height int) string {
 		m.sandboxes.SetSize(contentWidth, available)
 		body = m.sandboxes.View()
 	case 2:
-		m.details.SetWidth(contentWidth)
-		m.details.SetHeight(available)
-		m.details.SetContent(m.detailContent())
-		body = m.details.View()
+		m.templates.SetSize(contentWidth, available)
+		body = m.templates.View()
 	case 3:
-		m.logs.SetWidth(contentWidth)
-		m.logs.SetHeight(available)
-		m.logs.SetContent(m.logContent())
-		body = m.logs.View()
+		if m.rightTab == 1 {
+			m.logs.SetWidth(contentWidth)
+			m.logs.SetHeight(available)
+			m.logs.SetContent(m.logContent())
+			body = m.logs.View()
+		} else {
+			m.details.SetWidth(contentWidth)
+			m.details.SetHeight(available)
+			switch m.rightTab {
+			case 0:
+				m.details.SetContent(m.detailContent())
+			case 2:
+				m.details.SetContent(m.versionContent())
+			case 3:
+				m.details.SetContent(m.settingsContent())
+			}
+			body = m.details.View()
+		}
 	}
 	return renderSection(title, body, width, height, which == m.Focus)
+}
+func overlayPopup(base, popup string, width, height int) string {
+	baseLines, popupLines := strings.Split(base, "\n"), strings.Split(popup, "\n")
+	startY := max(0, (height-len(popupLines))/2)
+	popupWidth := ansi.StringWidth(popupLines[0])
+	startX := max(0, (width-popupWidth)/2)
+	for i, line := range popupLines {
+		y := startY + i
+		if y >= len(baseLines) {
+			break
+		}
+		left := ansi.Truncate(baseLines[y], startX, "")
+		left += strings.Repeat(" ", max(0, startX-ansi.StringWidth(left)))
+		rightStart := startX + popupWidth
+		right := ""
+		if rightStart < width {
+			right = ansi.TruncateLeft(baseLines[y], rightStart, "")
+		}
+		baseLines[y] = left + line + right
+	}
+	return strings.Join(baseLines, "\n")
 }
 func (m *Dashboard) View() tea.View {
 	if m.creating != nil && !m.exitPrompt {
@@ -271,7 +340,10 @@ func (m *Dashboard) View() tea.View {
 	}
 	m.help.SetWidth(width)
 	m.help.ShowAll = m.Help
-	footer := m.help.View(dashboardKeys{})
+	footer := "u 업데이트 · s shell · x 중지 · d 삭제 · n 생성 · Enter 메뉴 · ? 도움말"
+	if m.Help {
+		footer = m.help.View(dashboardKeys{})
+	}
 	if m.Searching || m.Search != "" {
 		footer = "검색: " + m.Search + " · Esc 취소"
 	}
@@ -288,15 +360,27 @@ func (m *Dashboard) View() tea.View {
 	var body string
 	switch {
 	case width >= 80 && height >= 20:
-		top := (available - 1) / 2
-		left := width * 2 / 5
+		left := max(28, width/3)
 		right := width - left - 1
-		body = lipgloss.JoinHorizontal(lipgloss.Top, m.panel(0, left, top), " ", m.panel(1, right, top)) + "\n\n" + lipgloss.JoinHorizontal(lipgloss.Top, m.panel(2, left, available-top-1), " ", m.panel(3, right, available-top-1))
+		heights := [3]int{available / 4, available / 4, available / 4}
+		heights[min(m.Focus, 2)] += available - heights[0] - heights[1] - heights[2]
+		stack := m.panel(0, left, heights[0]) + "\n" + m.panel(1, left, heights[1]) + "\n" + m.panel(2, left, heights[2])
+		body = lipgloss.JoinHorizontal(lipgloss.Top, stack, " ", m.panel(3, right, available))
 	default:
 		body = m.panel(m.Focus, width, available)
 	}
 	if content := m.managementContent(); content != "" {
-		contentWidth, contentHeight, _, _ := sectionDimensions(width, available)
+		if m.confirm != nil {
+			content = "Enter 실행(조건 충족 시) · Esc 취소\n" + content
+		}
+		popupWidth := min(70, max(1, width-4))
+		popupContentWidth, _, _, _ := sectionDimensions(popupWidth, max(3, available-2))
+		wrapped := content
+		if !m.actionMenu {
+			wrapped = ansi.Hardwrap(content, popupContentWidth, true)
+		}
+		popupHeight := min(max(3, available-2), max(3, strings.Count(wrapped, "\n")+3))
+		contentWidth, contentHeight, _, _ := sectionDimensions(popupWidth, popupHeight)
 		m.modal.SetWidth(contentWidth)
 		m.modal.SetHeight(contentHeight)
 		if !m.actionMenu {
@@ -316,12 +400,15 @@ func (m *Dashboard) View() tea.View {
 		switch {
 		case m.exitPrompt:
 			title = "종료 확인"
+		case len(m.pruneBlocked) > 0:
+			title = "실행 차단"
 		case m.confirm != nil:
 			title = "실행 확인"
 		case m.actionMenu:
 			title = "작업 메뉴"
 		}
-		body = renderSection(title, m.modal.View(), width, available, true)
+		popup := renderSection(title, m.modal.View(), popupWidth, popupHeight, true)
+		body = overlayPopup(body, popup, width, available)
 	}
 	if m.actionError != "" {
 		footer = m.actionError + " · " + footer

@@ -9,7 +9,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"time"
 
 	"charm.land/bubbles/v2/filepicker"
 	"charm.land/bubbles/v2/textinput"
@@ -240,10 +239,7 @@ func (m *Dashboard) advancedKey(k string) (bool, tea.Cmd) {
 		case "enter":
 			m.advancedMenu = false
 			if m.advancedIndex == 2 {
-				m.templateTab = true
-				m.Focus = 2
-				m.templatesWanted = true
-				return true, m.refresh(time.Now(), false)
+				return true, m.focusPanel(2)
 			}
 			if m.advancedIndex >= 3 {
 				return true, m.enqueue(operations.Request{Kind: operations.KindPrune, DryRun: true, RemoveRuntimes: m.advancedIndex == 4, PaseoHome: "~/.paseo"})
