@@ -89,7 +89,7 @@ Docker의 기본 AppArmor 적용과 진단 방법은 [공식 문서](https://doc
 | r / ? | 상태·연결·template 수동 갱신 / 도움말 |
 | Enter | 선택 대상의 작업 메뉴; ↑↓/jk 선택, Enter 확인·실행, Esc 취소 |
 | u / s | 선택 sandbox 업데이트 확인 / shell·로그인 진입 |
-| n | 경로·메모리 입력과 directory picker → 선택 wizard → 생성 확인 |
+| n | 경로·설정 파일·포트 입력과 directory picker → 선택 wizard → 생성 확인 |
 | a | 저장된 선택으로 build/load, template 보기, 누락 workspace 정리 미리보기 |
 | t / v | template 탭 / 미등록 sandbox의 읽기 전용 보기 |
 | c / R | 실행 작업 취소 요청·대기 작업 취소 / 최근 실패 작업의 고정 대상 재시도 확인 |
@@ -122,7 +122,9 @@ installer 중단을 증명하지 못하면 **확인 필요**로 표시합니다.
 자동 rollback은 하지 않습니다. 작업 중 `q`/Ctrl+C는 `k`/Esc로 계속 실행하거나 `c`/Enter로
 취소 후 완료까지 기다리고 종료할 수 있습니다.
 
-생성 확인에는 실제 조합·utilities·CPU 2·메모리·build/load·Paseo 적용 여부가 표시됩니다.
+생성 확인에는 실제 조합·utilities·build/load·Paseo 적용 여부가 표시됩니다.
+CPU 2·메모리는 sandbox에서만 표시하며, sandbox 최종 확인에서 `m`으로 메모리를 수정합니다.
+container는 호스트 자원을 공유하며 이 프로그램은 개별 CPU·메모리 제한을 설정하지 않습니다.
 이미지·설정이 다른 기존 sandbox는 자동 재사용하지 않습니다. 일부 생성 또는 OpenSpec 초기화가
 실패하면 실제 남은 대상과 오류가 로그에 남습니다. 로그와 guest 상태를 확인한 뒤 `R`로 같은
 대상·선택을 재시도하거나 수정한 선택으로 새 생성 흐름을 시작합니다. Paseo 해제는 sandbox와
@@ -187,14 +189,67 @@ Esc 또는 Shift+Tab으로 이전 그룹, Ctrl+C로 취소합니다. 체크 상�
 돌아가도 유지됩니다. 작은 터미널에서는 현재 항목을 따라 스크롤하고, `NO_COLOR=1`로
 색상을 끌 수 있습니다. 마지막 화면에 실제 생성할 조합과 Paseo 등록 여부가 표시되며,
 이 화면에서는 Enter로만 생성을 확정합니다.
-확정하면 선택한 이미지 빌드 → sbx template 로드 → sandbox 생성 순서로 실행합니다.
-이미 로드된 template을 사용하려면 `--skip-build`를 전달합니다.
+확정하면 sandbox는 이미지 빌드 → sbx template 로드 → sandbox 생성,
+container는 이미지 빌드 → Docker container 생성 순서로 실행합니다.
+이미 준비된 이미지/template을 사용하려면 `--skip-build`를 전달합니다.
 선택 옵션을 지정한 상태에서도 TUI를 열려면 `--interactive`를 전달합니다.
 `--workspace`를 생략하고 TUI를 실행하면 현재 디렉터리를 workspace로 사용합니다.
 
-예를 들어 Codex에 Superpowers·Ponytail을 선택하면 sandbox 두 개만 생성합니다.
-모델 작업은 시작하지 않습니다. 기본 자원은 sandbox당 2 CPU와 2 GiB입니다.
-필요하면 `--memory 4g`로 늘립니다.
+예를 들어 container에서 Codex에 Superpowers·Ponytail을 선택하면 container 두 개만 생성합니다.
+모델 작업은 시작하지 않습니다. sandbox의 기본 자원은 2 CPU와 2 GiB이며,
+`--memory 4g` 또는 최종 확인의 `m`으로 변경합니다. container에 `--memory`를 지정하면
+적용되지 않는 설정을 조용히 무시하지 않고 오류를 반환합니다.
+
+### 설정 파일로 생성
+
+[examples/create-container.json](examples/create-container.json)의 저장소 URL과 workspace를 수정한 뒤 실행합니다.
+
+```bash
+./paseo-sbx create --config ./examples/create-container.json
+# 화면에서 선택과 생성 내용을 검토하려면:
+./paseo-sbx create --config ./examples/create-container.json --interactive
+# 파일의 값을 이번 실행에서만 덮어쓰기:
+./paseo-sbx create --config ./examples/create-container.json --build=false --apply=false --ports 8080:3000
+```
+
+```json
+{
+  "schema": 2,
+  "repository": {
+    "url": "https://github.com/owner/repo.git",
+    "ref": "main"
+  },
+  "workspace": "~/work/repo",
+  "category": "container",
+  "pairs": [{"agent": "codex", "methodology": "superpowers"}],
+  "utilities": [],
+  "codex_userns": false,
+  "ports": ["3000:3000"],
+  "build": true,
+  "apply": true
+}
+```
+
+`repository`는 선택 사항입니다. 지정하면 workspace가 없는 경우 branch/tag를 clone한 뒤
+생성합니다. `ref`를 생략하면 원격 저장소의 기본 branch를 사용합니다. 기존 workspace는
+Git 저장소 루트여야 하며 `origin` URL 문자열이 일치해야 합니다. `ref`를 지정했다면
+현재 HEAD가 로컬의 해당 branch/tag commit과 일치해야 합니다. 기존 저장소에서는
+fetch·pull·checkout·reset을 실행하지 않으며, 수정 파일을 보존합니다. Clone 실패 시 임시
+checkout을 정리합니다. 비공개 저장소는 호스트 Git의 기존 SSH/credential 설정을 사용합니다.
+
+파일의 상대 `workspace`와 `paseo_home`은 설정 파일 디렉터리 기준입니다. `~`도 지원합니다.
+`schema` 생략 시 2, `build` 생략 시 true, `apply` 생략 시 false입니다.
+`namespace`, `paseo_home`도 지정할 수 있습니다. 명시한 CLI 옵션이 파일보다 우선하며
+`--apply=false`, `--utilities=`처럼 false/빈 값으로 덮어쓸 수 있습니다.
+`--profile`/`--profiles`/`--selection`/`--agents`·`--methodologies`/`--agent`는 파일의 agent·pairs 선택을 대체합니다.
+`--selection`은 기존 선택 전용 JSON 형식을 그대로 지원합니다.
+
+관리 화면에서는 `n` → `Create config JSON`에 파일 경로를 입력합니다. Workspace 입력을
+비우면 파일의 경로를 사용하고, 화면에 입력한 경로·포트가 있으면 파일보다 우선합니다.
+최종 Enter 이전에는 clone이나 생성 작업을 실행하지 않습니다.
+
+Sandbox용 파일은 `"category": "sandbox", "agent": "codex", "memory": "4g"`처럼 지정하고
+`pairs`, `utilities`, `ports`는 생략합니다. Container용 파일에는 `memory`를 넣지 않습니다.
 
 OpenSpec은 세 에이전트 모두 지원합니다. 선택한 이미지에 `@fission-ai/openspec` 1.14.0을
 설치하고, sandbox 생성 후 공식 CLI로 해당 workspace의 프로젝트 파일을 초기화합니다.

@@ -52,6 +52,7 @@ type Request struct {
 	// Targets continues to pin the prior active scope.
 	RestoreTargets, PruneTargets                                   []Target
 	Selection                                                      config.Selection
+	Repository                                                     config.Repository
 	Ports                                                          []config.PortMapping
 	Namespace, Platforms, Memory, PaseoHome                        string
 	Push, KeepArchive, BuildFirst, Apply, DryRun, RestoreSelection bool

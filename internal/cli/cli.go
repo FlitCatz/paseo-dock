@@ -143,7 +143,9 @@ func (a *App) execute(args []string) error {
 	f.StringVar(&categoryText, "category", "", "sandbox or container runtime category")
 	f.StringVar(&agent, "agent", "", "agent-only creation or existing agent target")
 	namespace := "paseo-sbx"
-	memory := "2g"
+	memory := ""
+	var createConfigPath string
+	var repository config.Repository
 	home := "~/.paseo"
 	var push, keep, apply, printBake, buildFirst, interactive, skipBuild, all, dryRun, codexUserNS bool
 	var yes, removeRuntimes bool
@@ -167,9 +169,10 @@ func (a *App) execute(args []string) error {
 			f.BoolVar(&keep, "keep-archive", false, "retain image archives")
 		}
 	case "create":
+		f.StringVar(&createConfigPath, "config", "", "read creation options and repository from JSON")
 		f.BoolVar(&codexUserNS, "codex-userns", false, "opt in new Codex containers to workspace-write isolation; expands kernel syscall access for all guest processes, no added capabilities")
 		f.StringVar(&portsText, "ports", "", "comma-separated host:container ports, bound to 127.0.0.1 (container only)")
-		f.StringVar(&memory, "memory", memory, "memory per sandbox")
+		f.StringVar(&memory, "memory", memory, "sandbox-only memory (default 2g); invalid for container")
 		f.StringVar(&namespace, "namespace", namespace, "image namespace")
 		f.BoolVar(&buildFirst, "build", false, "build and load selected images before creating")
 		f.BoolVar(&apply, "apply", false, "register selected providers and reload Paseo after creating")
@@ -221,6 +224,21 @@ func (a *App) execute(args []string) error {
 		}
 	} else if f.NArg() != 0 {
 		return errors.New("unexpected arguments")
+	}
+	if command == "create" && createConfigPath != "" {
+		c, err := config.LoadCreateConfig(createConfigPath)
+		if err != nil {
+			return err
+		}
+		selection, err := a.Catalog.Normalize(c.Selection())
+		if err != nil {
+			return fmt.Errorf("create config: %w", err)
+		}
+		c.CreateSelection = config.CreateSelection(selection)
+		if err = applyCreateConfig(f, c); err != nil {
+			return err
+		}
+		repository = c.Repository
 	}
 	category := config.Category(categoryText)
 	if category != "" && category != config.CategorySandbox && category != config.CategoryContainer {
@@ -289,7 +307,12 @@ func (a *App) execute(args []string) error {
 					}
 				}
 			}
-			result, err := tui.RunWithPorts(a.Catalog, initial, workspace, memory, ports, a.In, a.Out, apply)
+			if createConfigPath == "" {
+				buildFirst = !skipBuild
+			} else if skipBuild {
+				buildFirst = false
+			}
+			result, err := tui.RunCreation(a.Catalog, initial, tui.CreationOptions{Workspace: workspace, Memory: memory, Ports: ports, Repository: repository, PaseoHome: home, Apply: apply, BuildFirst: buildFirst, SelectCategory: createConfigPath != ""}, a.In, a.Out)
 			if err != nil {
 				return err
 			}
@@ -297,8 +320,11 @@ func (a *App) execute(args []string) error {
 			if _, err = a.Catalog.Normalize(result.Selection); err != nil {
 				return err
 			}
-			apply = apply || result.Apply
-			buildFirst = !skipBuild
+			apply = result.Apply
+			if result.Category == config.CategoryContainer && memory != "" {
+				return config.ValidateMemory(result.Category, memory)
+			}
+			memory = result.Memory
 			if result.Category == config.CategoryContainer {
 				ports = result.Ports
 			}
@@ -320,10 +346,13 @@ func (a *App) execute(args []string) error {
 	case "load":
 		return a.submit(operations.Request{Kind: operations.KindLoad, Namespace: namespace, KeepArchive: keep})
 	case "create":
+		if err := config.ValidateMemory(a.Selection.Category, memory); err != nil {
+			return err
+		}
 		if a.Selection.CodexUserNS {
 			fmt.Fprintln(a.Err, "Codex policy: codex-userns-v1 · workspace-write isolation · expanded kernel syscall access for all guest processes in each opted-in Codex container · no added capabilities or privileged mode.")
 		}
-		return a.submit(operations.Request{Kind: operations.KindCreate, Target: operations.Target{Workspace: workspace}, Namespace: namespace, Memory: memory, Ports: ports, BuildFirst: buildFirst, Apply: apply, PaseoHome: home})
+		return a.submit(operations.Request{Kind: operations.KindCreate, Target: operations.Target{Workspace: workspace}, Repository: repository, Namespace: namespace, Memory: memory, Ports: ports, BuildFirst: buildFirst, Apply: apply, PaseoHome: home})
 	case "prune":
 		return a.pruneWithConfirmation(home, dryRun, removeRuntimes, yes)
 	case "remove":

@@ -1,0 +1,17 @@
+{
+  "schema": 2,
+  "repository": {
+    "url": "https://github.com/owner/repo.git",
+    "ref": "main"
+  },
+  "workspace": "~/work/repo",
+  "category": "container",
+  "pairs": [
+    { "agent": "codex", "methodology": "superpowers" }
+  ],
+  "utilities": [],
+  "codex_userns": false,
+  "ports": ["3000:3000"],
+  "build": true,
+  "apply": true
+}
