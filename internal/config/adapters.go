@@ -1,7 +1,7 @@
 package config
 
 func SupportedAdapter(adapter string) bool {
-	return adapter == "codex" || adapter == "claude" || adapter == "antigravity-cli"
+	return adapter == "codex" || adapter == "claude" || adapter == "antigravity-cli" || adapter == "omp" || adapter == "gjc"
 }
 
 // Antigravity runs its native CLI in a shell sandbox.
@@ -24,4 +24,10 @@ func AgentCommand(adapter string) string {
 		return "agy"
 	}
 	return adapter
+}
+
+// LegacySandboxAdapter reports agents available to legacy schema-1 SBX
+// selections; agents added later are container-only.
+func LegacySandboxAdapter(adapter string) bool {
+	return adapter == "codex" || adapter == "claude" || adapter == "antigravity-cli"
 }

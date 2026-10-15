@@ -238,9 +238,9 @@ missing data above is supplied.
    - (a) Antigravity offers only `none` for now. This is my recommendation.
    - (b) Look up Google's separate ACP server again (network; it needed QEMU on arm64 in October).
 
-## Phase 2 implementation notes (items 1–5, without omp/gjc and ACP pins)
+## Phase 2 implementation notes
 
-These differ from the text above:
+These differ from, or settle, the text above:
 
 - **Pairs instead of agent and tool lists.** A bundle entry stores `Pairs` rather than separate
   `Agents`/`Tools` lists. The wizard picks methodologies per agent, so a bundle is not a cross
@@ -250,20 +250,37 @@ These differ from the text above:
 - **When a selection becomes a bundle.** Only new requests with two or more pairs get a
   default name: CLI selection options, the wizard and config files. A selection saved before
   this change has no name and keeps its one-container-per-pair entries when reused or
-  restored. `Normalize` never renames saved selections.
-- **Updates.** Bundles are not updated in place yet:
-  - Automatic updates skip them.
-  - `update` and `versions` on a bundle return a clear error.
-  - Bundles keep the pinned image versions; refresh one by recreating from a rebuilt image.
-- **ACP check scope.** The check runs at create, before activation, and at `register`. On
-  failure it stops the whole create or register, rather than deactivating only that agent's
-  provider. No agent can select `acp` until the adapters are pinned. Until then, choosing it
-  fails validation, and the launcher refuses `--acp` with "no ACP server is pinned".
-- **Repeated `create` in one workspace.** This keeps today's activation rule: a new container
-  `create` replaces the active container selection in that workspace. Earlier containers stay
-  registered in the registry but inactive.
+  restored. Schema-1 legacy SBX stays limited to codex, claude and antigravity-cli; omp and gjc
+  are container-only.
+- **Updates.** `update`, `versions`, TUI `u` and the daily automatic update treat a bundle like
+  a single container:
+  - Each agent is updated or probed under `agent:<id>`.
+  - Each methodology runs once under `methodology:<id>`. A git plugin shared by several agents
+    is fetched once and reinstalled for each of them, with rollback for all of them on failure.
+  - omp and gjc stay pinned to the image.
+  - ACP sessions use the image's pinned codex/claude CLI, which matches the adapters' SDK
+    ranges. Native sessions use the updated CLI.
+- **Logins.** Logins and updates live in the container's writable layer. They survive
+  updates, stop/start and Paseo restarts. Removing and recreating a container loses them;
+  each agent then needs a new login.
+- **ACP check.** It runs at `register` (including `create --apply`), and at `create` when no
+  register follows.
+  - A failing agent's provider ID is recorded in the workspace registry's
+    `disabled_providers` and is not generated.
+  - The container's other agents still register.
+  - The command ends with an error naming each failed agent.
+  - A later passing `register` re-enables the provider.
+- **Repeated `create`.** Containers from earlier creates in the same workspace stay active
+  alongside the new one; a sandbox selection still replaces the previous sandbox. The saved
+  selection (dashboard `a`, restore) is the latest create's. Restore after unregister
+  reactivates only that selection; re-running `create` with an earlier selection reuses and
+  reactivates its container.
+- **ACP translation.** The launcher translates every ACP session's JSON-RPC stdin like Codex
+  app-server: it rewrites the Paseo MCP endpoint and credentials to the session relay and
+  checks every `cwd` against the workspace. omp `native` needs no translation, because Paseo
+  bridges its MCP tools on the host.
 
-## Proposed pins (rev 3, pending approval)
+## Pins (rev 3, approved)
 
 Found with read-only lookups of GitHub releases, the npm registry and docs. Nothing was
 installed, built or run.
@@ -280,6 +297,8 @@ Findings:
 - **Licenses:**
   - omp and gjc are MIT. omp ships `LICENSE` and `THIRD-PARTY-NOTICES.txt` as release assets;
     bake both into the image.
+  - gjc's release has no license asset, so `LICENSE` (sha256 `a6625a82…cb0f1`) and `NOTICE.md`
+    (sha256 `6cafdd23…cddd`) come from the v0.18.11 tag and are pinned in the lock.
   - `codex-acp` and `claude-agent-acp` are Apache-2.0.
   - `claude-agent-sdk` is "SEE LICENSE IN README.md" (Anthropic terms), the same terms as the
     Claude Code we already install.

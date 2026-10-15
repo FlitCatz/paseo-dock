@@ -137,7 +137,7 @@ func ActiveProviders(installed []config.Installed) map[string]ProviderTarget {
 		for _, p := range i.Registry.ActiveProfiles() {
 			if e, ok := i.Registry.Profiles[p]; ok {
 				for _, t := range ProviderTargets(p, e) {
-					if t.Mode == config.ConnectionNone {
+					if t.Mode == config.ConnectionNone || slices.Contains(i.Registry.DisabledProviders, t.ID) {
 						continue
 					}
 					targets[t.ID] = t
@@ -311,6 +311,10 @@ func (a *execution) register(runtime, home string, apply bool) error {
 	if len(reg.ActiveProfiles()) == 0 {
 		return errors.New("no complete active selection; finish create before registering")
 	}
+	// A failed ACP check disables only that agent's provider: the rest of the
+	// workspace still registers, and the failure is reported afterwards.
+	var acpErrs []error
+	disabled := slices.Clone(reg.DisabledProviders)
 	for _, key := range reg.ActiveProfiles() {
 		entry := reg.Profiles[key]
 		if entry.EffectiveCategory() != config.CategoryContainer {
@@ -320,11 +324,17 @@ func (a *execution) register(runtime, home string, apply bool) error {
 		if err != nil {
 			return err
 		}
-		if err := a.checkACP(backend, key, entry); err != nil {
+		acpErrs = append(acpErrs, a.recordACP(backend, &reg, key, entry))
+	}
+	if !slices.Equal(disabled, reg.DisabledProviders) {
+		if err := a.writeJSON(filepath.Join(runtime, "registry.json"), reg); err != nil {
 			return err
 		}
 	}
-	return a.syncProviders(home, apply, true)
+	if err := a.syncProviders(home, apply, true); err != nil {
+		return err
+	}
+	return errors.Join(acpErrs...)
 }
 
 // Restore is opt-in and requires both the prior active scope and the complete

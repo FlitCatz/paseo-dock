@@ -26,6 +26,8 @@ type Lock struct {
 	Tools          map[string]json.RawMessage `json:"tools"`
 	Utilities      map[string]json.RawMessage `json:"utilities,omitempty"`
 	AgentArtifacts map[string]json.RawMessage `json:"agent_artifacts,omitempty"`
+	// ACPAdapters pins the ACP servers installed for agents connected over acp.
+	ACPAdapters map[string]ACPAdapter `json:"acp_adapters,omitempty"`
 }
 
 type Entry struct {
@@ -54,6 +56,9 @@ type Registry struct {
 	Active    []string         `json:"active_profiles"`
 	Catalog   *Catalog         `json:"catalog,omitempty"`
 	Selection *Selection       `json:"selection,omitempty"`
+	// DisabledProviders lists ACP providers whose last check failed; the
+	// other agents of the same container stay registered.
+	DisabledProviders []string `json:"disabled_providers,omitempty"`
 }
 
 func Load(root string) (Lock, error) {

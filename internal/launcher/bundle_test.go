@@ -40,9 +40,6 @@ func TestProviderEntryResolvesBundleAgent(t *testing.T) {
 	if err := validateEntry(runtime, key, stored.ForAgent(agent)); err != nil {
 		t.Fatal(err)
 	}
-	if updateTarget(context.Background(), runtime, key, stored.ForAgent(agent), nil) != nil {
-		t.Fatal("bundle update not skipped")
-	}
 	tampered := reg
 	tampered.Profiles = map[string]config.Entry{}
 	bad := entry
@@ -60,8 +57,12 @@ func TestAgentArgv(t *testing.T) {
 		t.Fatal(argv, err)
 	}
 	entry.Connections = map[string]string{"codex": config.ConnectionACP}
-	if _, err := agentArgv(entry.ForAgent("codex"), []string{"--acp"}); err == nil || !strings.Contains(err.Error(), "no ACP server is pinned") {
-		t.Fatal(err)
+	if argv, err := agentArgv(entry.ForAgent("codex"), []string{"--acp"}); err != nil || strings.Join(argv, " ") != "env CODEX_PATH=/opt/paseo-sbx/runtime/bin/codex codex-acp" {
+		t.Fatal(argv, err)
+	}
+	gjc := config.Entry{Category: config.CategoryContainer, Agent: "gjc", Tool: "native"}
+	if argv, err := agentArgv(gjc, []string{"--acp"}); err != nil || strings.Join(argv, " ") != "env GJC_ACP_PERMISSION_MODE=prompt gjc acp" {
+		t.Fatal(argv, err)
 	}
 	if _, err := agentArgv(entry.ForAgent("codex"), []string{"app-server"}); err == nil {
 		t.Fatal("ACP provider accepted non-ACP launch")

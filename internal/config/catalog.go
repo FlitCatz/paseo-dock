@@ -192,9 +192,14 @@ func (s Selection) Profiles() []string {
 	}
 	return out
 }
+
+// AllProfiles lists the legacy SBX profiles; container-only agents are excluded.
 func (c Catalog) AllProfiles() []string {
 	var out []string
 	for _, a := range c.Agents {
+		if !LegacySandboxAdapter(a.Adapter) {
+			continue
+		}
 		for _, m := range c.Methodologies {
 			if slices.Contains(m.Agents, a.ID) {
 				out = append(out, a.ID+"-"+m.ID)

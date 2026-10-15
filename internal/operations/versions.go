@@ -23,10 +23,7 @@ func (a *execution) checkVersions(target Target) (Result, error) {
 	if err != nil {
 		return result, err
 	}
-	if target.Entry.Bundle() {
-		return result, errors.New("version check is not supported for multi-agent containers yet; see the pinned image versions")
-	}
-	if !config.SupportedAdapter(target.Entry.Agent) {
+	if slices.ContainsFunc(target.Entry.AgentIDs(), func(a string) bool { return !config.SupportedAdapter(a) }) {
 		return result, errors.New("unsupported agent adapter")
 	}
 	release, err := operationlock.Acquire(a.ctx, target.Runtime, []string{operationlock.EntryKey(target.Entry)})
@@ -93,53 +90,87 @@ func (a *execution) checkVersions(target Target) (Result, error) {
 	if err != nil {
 		fail("environment", err)
 	} else {
-		confirm("agent", config.AgentCommand(target.Entry.Agent), "--version")
+		// A bundle reports each agent and methodology under its own key.
+		agents := []string{target.Entry.Agent}
+		if target.Entry.Bundle() {
+			agents = target.Entry.AgentIDs()
+		}
+		for _, agent := range agents {
+			id := "agent"
+			if target.Entry.Bundle() {
+				id = "agent:" + agent
+			}
+			confirm(id, config.AgentCommand(agent), "--version")
+		}
 		if target.Category != config.CategorySandbox {
 			raw, err := probe("cat", home+"/.local/share/paseo-sbx/installed.json")
 			var manifest struct {
-				Agent string      `json:"agent"`
-				Tool  string      `json:"tool"`
-				Lock  config.Lock `json:"lock"`
+				Agent string        `json:"agent"`
+				Tool  string        `json:"tool"`
+				Pairs []config.Pair `json:"pairs"`
+				Lock  config.Lock   `json:"lock"`
 			}
 			if err == nil {
 				err = json.Unmarshal([]byte(raw), &manifest)
 			}
-			if err == nil && (manifest.Agent != target.Entry.Agent || manifest.Tool != target.Entry.Tool) {
+			if err == nil && (manifest.Agent != target.Entry.Agent || manifest.Tool != target.Entry.Tool || !samePairs(manifest.Pairs, target.Entry.Pairs)) {
 				err = errors.New("guest installation manifest identity mismatch")
+			}
+			tools := []string{target.Entry.Tool}
+			if target.Entry.Bundle() {
+				tools = nil
+				for _, p := range target.Entry.Pairs {
+					if !slices.Contains(tools, p.Methodology) {
+						tools = append(tools, p.Methodology)
+					}
+				}
+				slices.Sort(tools)
+			}
+			methodologyID := func(tool string) string {
+				if target.Entry.Bundle() {
+					return "methodology:" + tool
+				}
+				return "methodology"
 			}
 			if err != nil {
 				fail("methodology", fmt.Errorf("cannot read guest installation manifest: %w", err))
-			} else if target.Entry.Tool != "native" {
+				tools = nil
+			}
+			for _, toolID := range tools {
+				if toolID == "native" {
+					continue
+				}
+				id := methodologyID(toolID)
 				var tool struct {
 					Repository string `json:"repository"`
 					Package    string `json:"package"`
 				}
-				err = json.Unmarshal(manifest.Lock.Tools[target.Entry.Tool], &tool)
+				err = json.Unmarshal(manifest.Lock.Tools[toolID], &tool)
 				if err != nil {
-					fail("methodology", err)
-				} else {
-					// Catalog validation prevents arbitrary manifest-defined executables.
-					var reg config.Registry
-					err = config.ReadJSON(filepath.Join(target.Runtime, "registry.json"), &reg)
-					installer := ""
-					if err == nil {
-						for _, m := range reg.EffectiveCatalog().Methodologies {
-							if m.ID == target.Entry.Tool {
-								installer = m.Installer
-								break
-							}
+					fail(id, err)
+					continue
+				}
+				// Catalog validation prevents arbitrary manifest-defined executables.
+				var reg config.Registry
+				err = config.ReadJSON(filepath.Join(target.Runtime, "registry.json"), &reg)
+				installer := ""
+				if err == nil {
+					for _, m := range reg.EffectiveCatalog().Methodologies {
+						if m.ID == toolID {
+							installer = m.Installer
+							break
 						}
 					}
-					switch {
-					case err != nil:
-						fail("methodology", err)
-					case installer == "git-plugin" && tool.Repository != "":
-						confirm("methodology", "git", "-C", home+"/.local/share/paseo-sbx/marketplace/plugins/"+target.Entry.Tool, "rev-parse", "HEAD")
-					case installer == "openspec":
-						confirm("methodology", "openspec", "--version")
-					default:
-						fail("methodology", errors.New("installed methodology has no supported current-version probe; image lock is unconfirmed"))
-					}
+				}
+				switch {
+				case err != nil:
+					fail(id, err)
+				case installer == "git-plugin" && tool.Repository != "":
+					confirm(id, "git", "-C", home+"/.local/share/paseo-sbx/marketplace/plugins/"+toolID, "rev-parse", "HEAD")
+				case installer == "openspec":
+					confirm(id, "openspec", "--version")
+				default:
+					fail(id, errors.New("installed methodology has no supported current-version probe; image lock is unconfirmed"))
 				}
 			}
 			raw, err = probe("cat", home+"/.local/share/paseo-sbx/utilities/installed.json")
@@ -150,15 +181,21 @@ func (a *execution) checkVersions(target Target) (Result, error) {
 			}
 			if err == nil {
 				err = json.Unmarshal([]byte(raw), &utilities)
-				if err == nil && (utilities.Agent != target.Entry.Agent || utilities.Utilities == nil) {
+				if err == nil && (!slices.Contains(agents, utilities.Agent) || utilities.Utilities == nil) {
 					err = errors.New("invalid utility installation manifest")
 				}
 			}
 			if err != nil {
 				// An absent utilities manifest is normal for images with no selected utilities.
-				// Only suppress this when the registry selection independently confirms none.
+				// Only suppress this when the trusted record independently confirms none:
+				// container entries record their own utilities (a workspace may hold
+				// several containers); other categories use the saved selection.
 				var reg config.Registry
-				if !readFailed || config.ReadJSON(filepath.Join(target.Runtime, "registry.json"), &reg) != nil || reg.Selection == nil || len(reg.Selection.Utilities) > 0 {
+				expected := len(target.Entry.Utilities) > 0
+				if target.Category != config.CategoryContainer {
+					expected = config.ReadJSON(filepath.Join(target.Runtime, "registry.json"), &reg) != nil || reg.Selection == nil || len(reg.Selection.Utilities) > 0
+				}
+				if !readFailed || expected {
 					fail("utilities", fmt.Errorf("cannot read guest utility manifest: %w", err))
 				}
 			} else {
@@ -208,4 +245,16 @@ func sortedRawKeys(entries map[string]json.RawMessage) []string {
 	}
 	slices.Sort(keys)
 	return keys
+}
+
+// samePairs compares a guest manifest's bundle pairs with the registry entry;
+// single-pair manifests carry no pairs.
+func samePairs(manifest, entry []config.Pair) bool {
+	manifest, entry = slices.Clone(manifest), slices.Clone(entry)
+	key := func(a, b config.Pair) int {
+		return strings.Compare(a.Agent+"/"+a.Methodology, b.Agent+"/"+b.Methodology)
+	}
+	slices.SortFunc(manifest, key)
+	slices.SortFunc(entry, key)
+	return slices.Equal(manifest, entry)
 }

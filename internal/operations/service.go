@@ -43,6 +43,9 @@ type execution struct {
 	uncertain bool
 	ports     []config.PortMapping
 	remaining []Target
+	// acpErr reports agents whose ACP check failed during create; their
+	// providers stay disabled while the rest of the create completes.
+	acpErr error
 }
 
 func New(root string) (*Service, error) {
@@ -343,13 +346,6 @@ func (s *Service) Execute(ctx context.Context, r Request, emit func(Event)) (res
 				failures = append(failures, e)
 				break
 			}
-			// Multi-agent containers keep their pinned image versions for now.
-			if r.Kind == KindUpdate && t.Entry.Bundle() {
-				if !r.AutomaticUpdate {
-					failures = append(failures, fmt.Errorf("%s: multi-agent containers are not updated in place yet; recreate from a rebuilt image", t.Profile))
-				}
-				continue
-			}
 			release, e := operationlock.Acquire(ctx, t.Runtime, []string{operationlock.EntryKey(t.Entry)})
 			if e != nil {
 				if r.Kind == KindUpdate && r.AutomaticUpdate && errors.Is(e, operationlock.ErrConflict) {
@@ -488,6 +484,9 @@ func (s *Service) Execute(ctx context.Context, r Request, emit func(Event)) (res
 			if err == nil {
 				err = a.register(runtime, r.PaseoHome, true)
 			}
+		}
+		if err == nil {
+			err = a.acpErr
 		}
 		runtime, e := a.selectedRuntime(r.Target.Workspace)
 		if e == nil {
