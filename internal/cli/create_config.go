@@ -3,6 +3,7 @@ package cli
 import (
 	"flag"
 	"paseo-sbx/internal/config"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -15,7 +16,7 @@ func applyCreateConfig(f *flag.FlagSet, c config.CreateConfig) error {
 		"workspace": c.Workspace, "category": string(c.Category), "utilities": strings.Join(c.Utilities, ","),
 		"ports": strings.Join(c.Ports, ","), "apply": strconv.FormatBool(c.Apply), "codex-userns": strconv.FormatBool(c.CodexUserNS),
 	}
-	for key, value := range map[string]string{"memory": c.Memory, "namespace": c.Namespace, "paseo-home": c.PaseoHome} {
+	for key, value := range map[string]string{"memory": c.Memory, "namespace": c.Namespace, "paseo-home": c.PaseoHome, "name": c.Name, "connections": connectionsFlag(c.Connections)} {
 		if value != "" {
 			values[key] = value
 		}
@@ -44,4 +45,13 @@ func applyCreateConfig(f *flag.FlagSet, c config.CreateConfig) error {
 		}
 	}
 	return nil
+}
+
+func connectionsFlag(connections map[string]string) string {
+	items := make([]string, 0, len(connections))
+	for agent, mode := range connections {
+		items = append(items, agent+"="+mode)
+	}
+	slices.Sort(items)
+	return strings.Join(items, ",")
 }

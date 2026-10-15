@@ -237,3 +237,63 @@ missing data above is supplied.
 4. **Antigravity ACP**: the pinned `agy` has no ACP mode. Choose one:
    - (a) Antigravity offers only `none` for now. This is my recommendation.
    - (b) Look up Google's separate ACP server again (network; it needed QEMU on arm64 in October).
+
+## Phase 2 implementation notes (items 1–5, without omp/gjc and ACP pins)
+
+These differ from the text above:
+
+- **Pairs instead of agent and tool lists.** A bundle entry stores `Pairs` rather than separate
+  `Agents`/`Tools` lists. The wizard picks methodologies per agent, so a bundle is not a cross
+  product.
+- **CLI flag.** The flag is `--connections agent=mode,...` (one comma list). The create config
+  key is `connections`. The TUI final screen uses digit keys.
+- **When a selection becomes a bundle.** Only new requests with two or more pairs get a
+  default name: CLI selection options, the wizard and config files. A selection saved before
+  this change has no name and keeps its one-container-per-pair entries when reused or
+  restored. `Normalize` never renames saved selections.
+- **Updates.** Bundles are not updated in place yet:
+  - Automatic updates skip them.
+  - `update` and `versions` on a bundle return a clear error.
+  - Bundles keep the pinned image versions; refresh one by recreating from a rebuilt image.
+- **ACP check scope.** The check runs at create, before activation, and at `register`. On
+  failure it stops the whole create or register, rather than deactivating only that agent's
+  provider. No agent can select `acp` until the adapters are pinned. Until then, choosing it
+  fails validation, and the launcher refuses `--acp` with "no ACP server is pinned".
+- **Repeated `create` in one workspace.** This keeps today's activation rule: a new container
+  `create` replaces the active container selection in that workspace. Earlier containers stay
+  registered in the registry but inactive.
+
+## Proposed pins (rev 3, pending approval)
+
+Found with read-only lookups of GitHub releases, the npm registry and docs. Nothing was
+installed, built or run.
+
+| item | pin | source and checksum |
+| --- | --- | --- |
+| omp | `v18.10.3` (the host-verified version; latest is v18.11.0) | `https://github.com/can1357/oh-my-pi/releases/download/v18.10.3/omp-linux-arm64` sha256 `7f580e1fe06ebffe16ae46cc6881051aca4980db7f654702feefed5651555862`; `…/omp-linux-x64` sha256 `366ffcda80db57b825921b6ff4b0e5e623bc62cf18478f2828cd8a322fc72ff9` (matches the release `SHA256SUMS.txt` and the GitHub asset digests) |
+| gjc | `v0.18.11` (latest stable, host-verified) | `https://github.com/Yeachan-Heo/gajae-code/releases/download/v0.18.11/gjc-linux-arm64` sha256 `2f404c9648fde9ba766df06918ed618e119ad6c2757f6b00f0be47e4f4180ec8`; `…/gjc-linux-x64` sha256 `9e2ac3e801776664df7c987db4dc83f2c98a419b657eff94439099e8eb0cf966` (matches `gajae-release-binaries.sha256`) |
+| codex ACP | `@agentclientprotocol/codex-acp@2.1.1` | sha512 `dppZxW3f8kNbTDbR25+lBLtNst5DIC/Sm7GtRF69PI1Ilqv12tDSsIb0hJQW0iNzkx+JdDvX76HOyv5Uibu1qQ==`. It depends on `@openai/codex ^0.159.1`, which covers our 0.159.2. Run with `CODEX_PATH=/opt/paseo-sbx/runtime/bin/codex` so it uses the pinned CLI. |
+| claude ACP | `@agentclientprotocol/claude-agent-acp@0.84.0` | sha512 `Zhjyxvm7USDB/BAFx2L6U6rA3spJ6qwEDFbLgByzpmQMeZGuAlZPXhMcAc+Xsndj9kDh+OFJNjETRwGJCR1eTQ==`. It bundles `@anthropic-ai/claude-agent-sdk 0.3.284`, which corresponds to Claude Code 2.1.284. Run with `CLAUDE_CODE_EXECUTABLE=/opt/paseo-sbx/runtime/bin/claude` (2.1.285); support for that variable is confirmed at tag v0.84.0. |
+
+Findings:
+
+- **Licenses:**
+  - omp and gjc are MIT. omp ships `LICENSE` and `THIRD-PARTY-NOTICES.txt` as release assets;
+    bake both into the image.
+  - `codex-acp` and `claude-agent-acp` are Apache-2.0.
+  - `claude-agent-sdk` is "SEE LICENSE IN README.md" (Anthropic terms), the same terms as the
+    Claude Code we already install.
+- **Superseded adapters:**
+  - `@zed-industries/codex-acp` is archived ("development has moved"). Its latest 0.16.0 embeds
+    codex rust-v0.137.0, so it is not a fit.
+  - `@zed-industries/claude-code-acp` is deprecated and renamed.
+- **Runtime needs:**
+  - omp and gjc are standalone Bun-compiled binaries that need no Bun at runtime. gjc is
+    glibc-only; omp also offers musl builds.
+  - The container base (`sandbox-templates:codex`) is Ubuntu 26.04 (glibc). I read this from the
+    local image's `/etc/os-release` with a read-only `docker save`.
+  - gjc does not need omp.
+  - omp's x64 binary bundles both AVX2 and baseline builds.
+- **Not verified:** no ACP handshake was run for any pin. No pinned binary was executed on
+  Linux, and no adapter was run against the pinned codex or claude versions. The ACP
+  `initialize` check at create is the runtime guard.

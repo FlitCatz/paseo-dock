@@ -195,10 +195,51 @@ container는 이미지 빌드 → Docker container 생성 순서로 실행합니
 선택 옵션을 지정한 상태에서도 TUI를 열려면 `--interactive`를 전달합니다.
 `--workspace`를 생략하고 TUI를 실행하면 현재 디렉터리를 workspace로 사용합니다.
 
-예를 들어 container에서 Codex에 Superpowers·Ponytail을 선택하면 container 두 개만 생성합니다.
+예를 들어 container에서 Codex에 Superpowers·Ponytail을 선택하면 container 하나에 두 조합을 모두 설치합니다.
+별도 container가 필요하면 `create`를 조합마다 따로 실행합니다.
 모델 작업은 시작하지 않습니다. sandbox의 기본 자원은 2 CPU와 2 GiB이며,
 `--memory 4g` 또는 최종 확인의 `m`으로 변경합니다. container에 `--memory`를 지정하면
 적용되지 않는 설정을 조용히 무시하지 않고 오류를 반환합니다.
+
+### 여러 agent를 container 하나에
+
+container `create` 한 번은 선택한 모든 agent·methodology 조합을 container 하나에 설치합니다.
+조합이 하나이고 연결 방식이 기본값이면 기존과 같은 `container/<agent>-<methodology>` 기록,
+image tag, provider ID를 그대로 사용하므로 기존 container와 등록은 바뀌지 않습니다.
+조합이 둘 이상이거나 이름·연결 방식을 지정하면 `container/<이름>` 기록 하나를 만듭니다.
+기본 이름은 정렬한 agent와 methodology를 이은 값(예: `claude-codex-ponytail-superpowers`)이며
+`--name`(설정 파일 `name`)으로 지정합니다. 이름은 영문 소문자로 시작하는 1–48자의 소문자·숫자·`-`입니다.
+같은 이름에 다른 조합·연결 방식을 요청하면 기존 container를 보존하고 거부합니다.
+이 변경 이전에 저장된 이름 없는 여러 조합 선택은 다시 사용해도 기존처럼 조합별 container로 유지합니다.
+같은 workspace에서 새로 `create`하면 이전 container 기록은 유지하되 활성 선택은 새 선택으로 바뀝니다.
+
+```bash
+./bin/paseo-sbx create --workspace /absolute/path/to/project --category container \
+  --profiles codex-superpowers,claude-ponytail,antigravity-cli-native --name dev \
+  --connections claude=none --build
+```
+
+Paseo 연결 방식은 agent마다 고릅니다(`--connections agent=mode,...`, 설정 파일
+`"connections": {"claude": "none"}`, TUI 최종 확인의 숫자 키).
+
+| agent | 연결 방식 | 기본값 | Paseo provider |
+| --- | --- | --- | --- |
+| Codex | `native`, `none` | `native` | `extends: "codex"` |
+| Claude Code | `native`, `none` | `native` | `extends: "claude"` |
+| Antigravity CLI | `none` | `none` | 없음 (`paseo-sbx run`과 shell로 사용) |
+
+Paseo는 config 로드 시점에 plugin provider를 알 수 없어 `extends`에 기본 provider와 `acp`만
+허용합니다. 그래서 Antigravity plugin provider를 상속하는 등록은 만들지 않습니다.
+`acp` 연결은 각 agent의 ACP 서버를 고정한 뒤 추가하며, 등록 전에 container 안에서 ACP
+`initialize` 응답을 확인합니다.
+provider ID는 agent마다 `container-<이름>-<agent>`이며 label은 `SBX <이름> · <agent>`입니다.
+
+agent 인증·설정은 container 안의 서로 다른 경로(`~/.codex`, `~/.claude`·`~/.claude.json`,
+`~/.gemini`)에 저장되므로 함께 쓸 수 있으며 agent마다 한 번씩 로그인합니다.
+여러 agent를 같은 container에서 동시에 실행할 수 있습니다. launcher의 짧은 시작 lock이
+겹치면 최대 30초 기다립니다. 여러 agent container는 아직 내부 자동 업데이트·버전 확인을
+하지 않으며 image에 고정한 버전을 사용합니다. 갱신하려면 새 image로 다시 만듭니다.
+`--codex-userns`는 Codex를 포함한 container 전체(모든 guest 프로세스)에 적용됩니다.
 
 ### 설정 파일로 생성
 
@@ -239,7 +280,7 @@ checkout을 정리합니다. 비공개 저장소는 호스트 Git의 기존 SSH/
 
 파일의 상대 `workspace`와 `paseo_home`은 설정 파일 디렉터리 기준입니다. `~`도 지원합니다.
 `schema` 생략 시 2, `build` 생략 시 true, `apply` 생략 시 false입니다.
-`namespace`, `paseo_home`도 지정할 수 있습니다. 명시한 CLI 옵션이 파일보다 우선하며
+`namespace`, `paseo_home`, `name`, `connections`도 지정할 수 있습니다. 명시한 CLI 옵션이 파일보다 우선하며
 `--apply=false`, `--utilities=`처럼 false/빈 값으로 덮어쓸 수 있습니다.
 `--profile`/`--profiles`/`--selection`/`--agents`·`--methodologies`/`--agent`는 파일의 agent·pairs 선택을 대체합니다.
 `--selection`은 기존 선택 전용 JSON 형식을 그대로 지원합니다.

@@ -499,7 +499,7 @@ func Resolve(base, profile string, args []string) (string, error) {
 	type candidate struct{ runtime, workspace string }
 	var best, fallback *candidate
 	for _, i := range installed {
-		key, _, err := providerEntry(i.Registry, profile)
+		key, _, _, err := providerEntry(i.Registry, profile)
 		if err != nil || !i.Registry.IsActive(key) || i.Missing() {
 			continue
 		}
@@ -536,10 +536,12 @@ func LaunchIO(runtime, profile string, args []string, in io.Reader, out, stderr 
 	if err := config.ReadJSON(filepath.Join(runtime, "registry.json"), &registry); err != nil {
 		return 1, errors.New("cannot read trusted sandbox registry")
 	}
-	key, entry, err := providerEntry(registry, profile)
+	key, entry, agent, err := providerEntry(registry, profile)
 	if err != nil {
 		return 1, err
 	}
+	// A bundle runs the agent named by the provider ID; validation reverts the view.
+	entry = entry.ForAgent(agent)
 	if !registry.IsActive(key) || !config.SupportedAdapter(entry.Agent) || sandboxupdate.Identity(entry) == "" {
 		return 1, errors.New("invalid sandbox profile")
 	}
@@ -599,7 +601,9 @@ func LaunchIO(runtime, profile string, args []string, in io.Reader, out, stderr 
 	defer stopUpdateSignals()
 	for _, p := range registry.ActiveProfiles() {
 		if e, ok := registry.Profiles[p]; ok {
-			profiles = append(profiles, operations.ProviderID(p, e))
+			for _, t := range operations.ProviderTargets(p, e) {
+				profiles = append(profiles, t.ID)
+			}
 		}
 	}
 	runner := func(args []string, check bool) error {
@@ -674,7 +678,7 @@ func LaunchIO(runtime, profile string, args []string, in io.Reader, out, stderr 
 		fmt.Fprintln(stderr, "paseo-sbx: update failed; launching installed agent:", updateErr)
 	}
 	command := []string{"exec", "-i"}
-	releaseStartup, err := operationlock.Acquire(ctx, runtime, []string{operationlock.EntryKey(entry)})
+	releaseStartup, err := acquireStartup(ctx, runtime, operationlock.EntryKey(entry))
 	if err != nil {
 		return 1, err
 	}
@@ -702,8 +706,12 @@ func LaunchIO(runtime, profile string, args []string, in io.Reader, out, stderr 
 			command = append(command, "--env", name+"="+v)
 		}
 	}
-	command = append(command, "--workdir", cwd, resource, config.AgentCommand(entry.Agent))
-	command = append(command, args...)
+	argv, err := agentArgv(entry, args)
+	if err != nil {
+		return 1, err
+	}
+	command = append(command, "--workdir", cwd, resource)
+	command = append(command, argv...)
 	child := exec.Command(executable, command...)
 	child.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	child.Stdout = out
@@ -798,6 +806,10 @@ func LaunchIO(runtime, profile string, args []string, in io.Reader, out, stderr 
 	return exitStatus(err), nil
 }
 func validateEntry(runtime, key string, entry config.Entry) error {
+	if entry.Bundle() {
+		// Bundle entries store no single agent; drop the per-agent view.
+		entry.Agent, entry.Tool = "", ""
+	}
 	var reg config.Registry
 	if err := config.ReadJSON(filepath.Join(runtime, "registry.json"), &reg); err != nil {
 		return err
@@ -811,36 +823,51 @@ func validateEntry(runtime, key string, entry config.Entry) error {
 	return nil
 }
 
-func providerEntry(reg config.Registry, id string) (string, config.Entry, error) {
+func providerEntry(reg config.Registry, id string) (string, config.Entry, string, error) {
 	for key, entry := range reg.Profiles {
-		if operations.ProviderID(key, entry) != id {
+		agent := ""
+		for _, t := range operations.ProviderTargets(key, entry) {
+			if t.ID == id {
+				agent = t.Agent
+			}
+		}
+		if agent == "" {
 			continue
 		}
 		if entry.EffectiveCategory() != config.CategoryLegacySandbox && key != entry.Key() {
-			return "", entry, errors.New("provider registry key mismatch")
+			return "", entry, "", errors.New("provider registry key mismatch")
 		}
 		if err := reg.ValidateIdentity(key, entry); err != nil {
-			return "", entry, err
+			return "", entry, "", err
 		}
 		catalog := reg.EffectiveCatalog()
-		if entry.EffectiveCategory() == config.CategorySandbox {
-			agent, ok := catalog.Agent(entry.Agent)
-			if !ok || agent.Adapter != entry.Agent || entry.Tool != "" || len(entry.Utilities) != 0 {
-				return "", entry, errors.New("invalid sandbox provider")
+		if entry.Bundle() {
+			if !catalog.ValidBundle(entry) {
+				return "", entry, "", errors.New("invalid bundle provider")
+			}
+		} else if entry.EffectiveCategory() == config.CategorySandbox {
+			item, ok := catalog.Agent(entry.Agent)
+			if !ok || item.Adapter != entry.Agent || entry.Tool != "" || len(entry.Utilities) != 0 {
+				return "", entry, "", errors.New("invalid sandbox provider")
 			}
 		} else {
 			pair, ok := catalog.Pair(strings.TrimPrefix(key, "container/"))
-			agent, known := catalog.Agent(pair.Agent)
-			if !ok || !known || agent.Adapter != entry.Agent {
-				return "", entry, errors.New("invalid provider profile")
+			item, known := catalog.Agent(pair.Agent)
+			if !ok || !known || item.Adapter != entry.Agent {
+				return "", entry, "", errors.New("invalid provider profile")
 			}
 		}
-		return key, entry, nil
+		return key, entry, agent, nil
 	}
-	return "", config.Entry{}, errors.New("provider missing from trusted registry")
+	return "", config.Entry{}, "", errors.New("provider missing from trusted registry")
 }
 
 func updateTarget(ctx context.Context, runtime, key string, entry config.Entry, stderr io.Writer) error {
+	if entry.Bundle() {
+		// Multi-agent containers are not updated automatically yet; they keep
+		// the pinned image versions.
+		return nil
+	}
 	release, err := operationlock.Acquire(ctx, runtime, []string{operationlock.EntryKey(entry)})
 	if err != nil {
 		if errors.Is(err, operationlock.ErrConflict) {
@@ -938,4 +965,39 @@ func LaunchArguments(args []string) (string, []string, error) {
 		return "", nil, errors.New("profile is required")
 	}
 	return args[0], args[1:], nil
+}
+
+// Startup holds the container lock only briefly, so a second agent launching
+// into the same container waits instead of failing.
+const startupLockWait = 30 * time.Second
+
+func acquireStartup(ctx context.Context, runtime, key string) (func(), error) {
+	deadline := time.Now().Add(startupLockWait)
+	for {
+		release, err := operationlock.Acquire(ctx, runtime, []string{key})
+		if err == nil || !errors.Is(err, operationlock.ErrConflict) || time.Now().After(deadline) {
+			return release, err
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
+}
+
+// agentArgv builds the guest command. A container agent connected over ACP
+// receives --acp from its provider and runs its pinned ACP server instead.
+func agentArgv(entry config.Entry, args []string) ([]string, error) {
+	if entry.EffectiveCategory() == config.CategoryContainer && entry.Connection(entry.Agent) == config.ConnectionACP {
+		if len(args) == 0 || args[0] != "--acp" {
+			return nil, errors.New("ACP provider requires --acp")
+		}
+		acp := config.ACPCommand(entry.Agent)
+		if len(acp) == 0 {
+			return nil, fmt.Errorf("no ACP server is pinned for %s", entry.Agent)
+		}
+		return append(acp, args[1:]...), nil
+	}
+	return append([]string{config.AgentCommand(entry.Agent)}, args...), nil
 }

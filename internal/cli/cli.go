@@ -140,6 +140,7 @@ func (a *App) execute(args []string) error {
 	f := flag.NewFlagSet(command, flag.ContinueOnError)
 	f.SetOutput(a.Err)
 	var profile, workspace, platforms, profiles, utilities, selectionPath, agents, methods, categoryText, agent, portsText string
+	var bundleName, connectionsText string
 	f.StringVar(&categoryText, "category", "", "sandbox or container runtime category")
 	f.StringVar(&agent, "agent", "", "agent-only creation or existing agent target")
 	namespace := "paseo-sbx"
@@ -157,6 +158,8 @@ func (a *App) execute(args []string) error {
 		f.StringVar(&agents, "agents", "", "comma-separated agents (requires --methodologies)")
 		f.StringVar(&methods, "methodologies", "", "comma-separated methodologies (requires --agents)")
 		f.StringVar(&workspace, "workspace", "", "workspace path for saved selection")
+		f.StringVar(&bundleName, "name", "", "container name; installs every selected pair into one container")
+		f.StringVar(&connectionsText, "connections", "", "comma-separated agent=mode Paseo connections (native, acp, none)")
 	}
 	switch command {
 	case "build", "load":
@@ -289,9 +292,9 @@ func (a *App) execute(args []string) error {
 			if runtime, err := a.selectedRuntime(workspace); err == nil {
 				initial, _ = readSavedSelection(runtime)
 			}
-			if profile != "" || profiles != "" || selectionPath != "" || agents != "" || methods != "" || setUtilities || category != "" || agent != "" {
+			if profile != "" || profiles != "" || selectionPath != "" || agents != "" || methods != "" || setUtilities || category != "" || agent != "" || bundleName != "" || connectionsText != "" {
 				var err error
-				initial, err = a.creationSelection(category, agent, workspace, profile, profiles, utilities, selectionPath, agents, methods, setUtilities, userNSOverride)
+				initial, err = a.creationSelection(category, agent, workspace, profile, profiles, utilities, selectionPath, agents, methods, setUtilities, userNSOverride, bundleName, connectionsText)
 				if err != nil {
 					return err
 				}
@@ -301,7 +304,7 @@ func (a *App) execute(args []string) error {
 					initial = config.Selection{Schema: 2, Category: config.CategoryContainer, CodexUserNS: *userNSOverride}
 				} else {
 					var err error
-					initial, err = a.creationSelection("", "", workspace, "", "", "", "", "", "", false, userNSOverride)
+					initial, err = a.creationSelection("", "", workspace, "", "", "", "", "", "", false, userNSOverride, bundleName, connectionsText)
 					if err != nil {
 						return err
 					}
@@ -329,7 +332,7 @@ func (a *App) execute(args []string) error {
 				ports = result.Ports
 			}
 		} else {
-			s, err := a.creationSelection(category, agent, workspace, profile, profiles, utilities, selectionPath, agents, methods, setUtilities, userNSOverride)
+			s, err := a.creationSelection(category, agent, workspace, profile, profiles, utilities, selectionPath, agents, methods, setUtilities, userNSOverride, bundleName, connectionsText)
 			if err != nil {
 				return err
 			}

@@ -516,7 +516,14 @@ func (a *execution) createCategory(w, runtime, namespace, memory string, saved c
 			entry.Agent = a.Selection.Agent
 			entry.Sandbox = "paseo-" + strings.ReplaceAll(profile, "/", "-") + "-" + filepath.Base(runtime)
 		} else {
+			if a.Selection.Name != "" {
+				bundle := a.Selection.BundleEntry()
+				entry.Name, entry.Pairs, entry.Connections = bundle.Name, bundle.Pairs, bundle.Connections
+			}
 			for _, pair := range a.Selection.Pairs {
+				if entry.Bundle() {
+					break
+				}
 				candidate := config.Entry{Category: entry.Category, Agent: pair.Agent, Tool: pair.Methodology}
 				if candidate.Key() == profile {
 					entry.Agent = pair.Agent
@@ -525,7 +532,7 @@ func (a *execution) createCategory(w, runtime, namespace, memory string, saved c
 				}
 			}
 			entry.Network = "bridge"
-			if a.Selection.CodexUserNS && entry.Agent == "codex" {
+			if a.Selection.CodexUserNS && slices.Contains(entry.AgentIDs(), "codex") {
 				entry.SecurityPolicy = containerpolicy.ID
 				entry.SecurityPolicyDigest = containerpolicy.SHA256
 			}
@@ -610,12 +617,21 @@ func (a *execution) createCategory(w, runtime, namespace, memory string, saved c
 		if err != nil && entry.Category == config.CategoryContainer {
 			a.uncertain = true
 		}
-		if err == nil && entry.Tool == "openspec" {
-			tool := entry.Agent
+		// A bundle initializes OpenSpec once for every agent paired with it.
+		var openspecTools []string
+		for _, pair := range append([]config.Pair{{Agent: entry.Agent, Methodology: entry.Tool}}, entry.Pairs...) {
+			if pair.Methodology != "openspec" {
+				continue
+			}
+			tool := pair.Agent
 			if tool == "antigravity-cli" {
 				tool = "antigravity"
 			}
-			err = backend.Exec(a.ctx, entry, []string{"env", "OPENSPEC_TELEMETRY=0", "openspec", "init", w, "--tools", tool, "--profile", "core", "--no-animation"}, nil, a.Out, a.Err)
+			openspecTools = append(openspecTools, tool)
+		}
+		if err == nil && len(openspecTools) > 0 {
+			slices.Sort(openspecTools)
+			err = backend.Exec(a.ctx, entry, []string{"env", "OPENSPEC_TELEMETRY=0", "openspec", "init", w, "--tools", strings.Join(openspecTools, ","), "--profile", "core", "--no-animation"}, nil, a.Out, a.Err)
 			if err != nil {
 				err = fmt.Errorf("OpenSpec initialization failed; resource retained: %w", err)
 			}
@@ -623,6 +639,13 @@ func (a *execution) createCategory(w, runtime, namespace, memory string, saved c
 		release()
 		if err != nil {
 			return err
+		}
+	}
+	if a.Selection.Category == config.CategoryContainer {
+		for _, key := range a.profiles() {
+			if err := a.checkACP(backend, key, registry.Profiles[key]); err != nil {
+				return err
+			}
 		}
 	}
 	if len(verifyRelay) > 0 && verifyRelay[0] && a.Selection.Category == config.CategoryContainer {

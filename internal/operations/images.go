@@ -124,6 +124,17 @@ func (a *execution) image(profile, namespace string) string {
 			}
 			return ""
 		}
+		if a.Selection.Name != "" {
+			entry := a.Selection.BundleEntry()
+			if entry.Key() != profile {
+				return ""
+			}
+			tag, _, err := bundleImageSpec(a.Catalog, entry, a.Lock)
+			if err != nil {
+				return ""
+			}
+			return namespace + "/" + profile + ":" + tag
+		}
 		for _, pair := range a.Selection.Pairs {
 			entry := config.Entry{Category: a.Selection.Category, Agent: pair.Agent, Tool: pair.Methodology, Utilities: a.Selection.Utilities}
 			if entry.Key() == profile {
@@ -164,6 +175,16 @@ func (a *execution) bakeConfig(namespace, platforms string, resolve stableResolv
 	targets := map[string]any{}
 	names := []string{}
 	for _, p := range a.profiles() {
+		if a.Selection != nil && a.Selection.Schema == 2 && a.Selection.Name != "" {
+			t, err := a.bundleBakeTarget(p, namespace, platforms, a.Selection.BundleEntry())
+			if err != nil {
+				return nil, err
+			}
+			name := strings.ReplaceAll(p, "/", "-")
+			targets[name] = t
+			names = append(names, name)
+			continue
+		}
 		category := config.CategoryLegacySandbox
 		profile := p
 		if a.Selection != nil && a.Selection.Schema == 2 {

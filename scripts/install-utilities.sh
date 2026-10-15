@@ -82,9 +82,12 @@ for utility in "${selected_utilities[@]}"; do
       python_version=$(lock_value "utilities.$utility.python")
       headroom_version=$(lock_value "utilities.$utility.version")
       headroom_package=$(lock_value "utilities.$utility.package")
-      uv python install "$python_version"
-      uv venv --python "$python_version" "$utility_dir/headroom/venv"
-      uv pip install --python "$utility_dir/headroom/venv/bin/python" "$headroom_package==$headroom_version"
+      # A bundle shares one Headroom runtime between its agents.
+      if [[ ! -x "$utility_dir/headroom/venv/bin/headroom" ]]; then
+        uv python install "$python_version"
+        uv venv --python "$python_version" "$utility_dir/headroom/venv"
+        uv pip install --python "$utility_dir/headroom/venv/bin/python" "$headroom_package==$headroom_version"
+      fi
       ln -sf "$utility_dir/headroom/venv/bin/headroom" "$bin_dir/headroom"
       headroom --version
       if [[ "$agent_kind" == codex ]]; then

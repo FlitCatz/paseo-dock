@@ -123,7 +123,7 @@ func validateDockerEntry(e config.Entry, creating bool, allowMissingWorkspace ..
 		if e.SecurityPolicyDigest != "" {
 			return e, fmt.Errorf("Docker policy digest without policy")
 		}
-	} else if e.SecurityPolicy != containerpolicy.ID || e.SecurityPolicyDigest != containerpolicy.SHA256 || e.Agent != "codex" {
+	} else if e.SecurityPolicy != containerpolicy.ID || e.SecurityPolicyDigest != containerpolicy.SHA256 || !slices.Contains(e.AgentIDs(), "codex") {
 		return e, fmt.Errorf("unsupported Docker security policy or digest")
 	}
 	if e.Category != config.CategoryContainer {

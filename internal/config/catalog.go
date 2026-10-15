@@ -40,6 +40,9 @@ type Selection struct {
 	Schema      int      `json:"schema"`
 	Pairs       []Pair   `json:"pairs"`
 	Utilities   []string `json:"utilities"`
+	// A container with Name holds every pair in one bundle entry.
+	Name        string            `json:"name,omitempty"`
+	Connections map[string]string `json:"connections,omitempty"`
 }
 
 func DefaultCatalog() Catalog { var c Catalog; _ = json.Unmarshal(catalogJSON, &c); return c }
@@ -154,9 +157,32 @@ func (c Catalog) Normalize(s Selection) (Selection, error) {
 		s.Utilities = append(s.Utilities, id)
 	}
 	slices.Sort(s.Utilities)
+	if s.Category != CategoryContainer {
+		return s, nil
+	}
+	connections, err := normalizeConnections(s.Pairs, s.Connections)
+	if err != nil {
+		return s, err
+	}
+	s.Connections = connections
+	// Connections exist only on new requests, which always use a bundle.
+	if s.Name == "" && len(s.Connections) > 0 {
+		s.Name = DefaultBundleName(s.Pairs)
+	}
+	if s.Name != "" && !ValidBundleName(s.Name) {
+		return s, fmt.Errorf("invalid container name %q: use 1-48 lowercase letters, digits or hyphens, starting with a letter", s.Name)
+	}
 	return s, nil
 }
+
+// BundleEntry returns the identity fields of the selection's bundle entry.
+func (s Selection) BundleEntry() Entry {
+	return Entry{Category: s.Category, Name: s.Name, Pairs: slices.Clone(s.Pairs), Connections: s.Connections, Utilities: slices.Clone(s.Utilities)}
+}
 func (s Selection) Profiles() []string {
+	if s.Category == CategoryContainer && s.Name != "" {
+		return []string{s.BundleEntry().Key()}
+	}
 	out := make([]string, 0, len(s.Pairs))
 	for _, p := range s.Pairs {
 		out = append(out, Entry{Category: s.Category, Agent: p.Agent, Tool: p.Methodology}.Key())

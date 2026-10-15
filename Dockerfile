@@ -25,13 +25,22 @@ ARG AGENT
 ARG AGENT_VERSION
 ARG AGENT_SOURCE
 ARG AGENT_MANIFEST
-RUN if [ "$AGENT" = codex ]; then \
-      npm install --global --prefix /opt/paseo-sbx/runtime "@openai/codex@$AGENT_VERSION"; \
-    elif [ "$AGENT" = claude ]; then \
-      npm install --global --prefix /opt/paseo-sbx/runtime "@anthropic-ai/claude-code@$AGENT_VERSION"; \
-    elif [ "$AGENT" = antigravity-cli ]; then \
-      /opt/paseo-sbx/install/install-runtime --agent antigravity-cli --destination /opt/paseo-sbx/runtime/bin/agy; \
-    else echo "Unsupported agent adapter: $AGENT" >&2; exit 1; fi
+# A bundle lists every agent; each version comes from the copied lock.
+ARG AGENTS=""
+RUN set -e; \
+    agents="$AGENT"; \
+    if [ -n "$AGENTS" ]; then agents=$(printf '%s' "$AGENTS" | tr ',' ' '); fi; \
+    for agent in $agents; do \
+      version="$AGENT_VERSION"; \
+      if [ -n "$AGENTS" ]; then version=$(jq -er --arg agent "$agent" '.agents[$agent]' /opt/paseo-sbx/install/versions.lock.json); fi; \
+      if [ "$agent" = codex ]; then \
+        npm install --global --prefix /opt/paseo-sbx/runtime "@openai/codex@$version"; \
+      elif [ "$agent" = claude ]; then \
+        npm install --global --prefix /opt/paseo-sbx/runtime "@anthropic-ai/claude-code@$version"; \
+      elif [ "$agent" = antigravity-cli ]; then \
+        /opt/paseo-sbx/install/install-runtime --agent antigravity-cli --destination /opt/paseo-sbx/runtime/bin/agy; \
+      else echo "Unsupported agent adapter: $agent" >&2; exit 1; fi; \
+    done
 COPY versions.lock.json scripts/install-tools.sh scripts/install-utilities.sh scripts/agent-instructions.md /opt/paseo-sbx/install/
 USER agent
 ENV PATH="/home/agent/.local/bin:${PATH}"
@@ -39,9 +48,28 @@ ARG TOOL
 ARG METHOD_INSTALLER
 ARG UTILITIES=""
 ARG CATEGORY="container"
-RUN bash /opt/paseo-sbx/install/install-tools.sh "$AGENT" "$TOOL" "$METHOD_INSTALLER" \
-    && bash /opt/paseo-sbx/install/install-utilities.sh "$AGENT" "$UTILITIES" \
-    && printf '%s\n' "$AGENT_MANIFEST" > /home/agent/.local/share/paseo-sbx/agent.json
+# A bundle installs each agent:methodology:installer pair into one image.
+ARG PAIRS=""
+ARG AGENT_MANIFESTS=""
+RUN set -e; \
+    if [ -z "$PAIRS" ]; then \
+      bash /opt/paseo-sbx/install/install-tools.sh "$AGENT" "$TOOL" "$METHOD_INSTALLER"; \
+      bash /opt/paseo-sbx/install/install-utilities.sh "$AGENT" "$UTILITIES"; \
+      printf '%s\n' "$AGENT_MANIFEST" > /home/agent/.local/share/paseo-sbx/agent.json; \
+    else \
+      for pair in $(printf '%s' "$PAIRS" | tr ',' ' '); do \
+        agent=${pair%%:*}; rest=${pair#*:}; \
+        bash /opt/paseo-sbx/install/install-tools.sh "$agent" "${rest%%:*}" "${rest#*:}"; \
+      done; \
+      mkdir -p /home/agent/.local/share/paseo-sbx/agents; \
+      for agent in $(printf '%s' "$AGENTS" | tr ',' ' '); do \
+        bash /opt/paseo-sbx/install/install-utilities.sh "$agent" "$UTILITIES"; \
+        printf '%s' "$AGENT_MANIFESTS" | jq -ce --arg agent "$agent" '.[$agent]' > "/home/agent/.local/share/paseo-sbx/agents/$agent.json"; \
+      done; \
+      jq -n --arg pairs "$PAIRS" --slurpfile lock /opt/paseo-sbx/install/versions.lock.json \
+        '{pairs: ($pairs | split(",") | map(split(":") | {agent: .[0], tool: .[1]})), lock: $lock[0]}' \
+        > /home/agent/.local/share/paseo-sbx/installed.json; \
+    fi
 LABEL org.opencontainers.image.title="Paseo development container" \
       io.paseo-sbx.category="${CATEGORY}" \
       io.paseo-sbx.agent="${AGENT}" io.paseo-sbx.tool="${TOOL}" io.paseo-sbx.utilities="${UTILITIES}" \

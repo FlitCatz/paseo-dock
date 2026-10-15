@@ -1,3 +1,9 @@
+    if [[ -e "$registered" ]]; then
+      # Claude snapshots marketplaces; refresh it to see plugins added since.
+      claude plugin marketplace update paseo-sbx
+    else
+      claude plugin marketplace add "$marketplace_dir"; touch "$registered"
+    fi
 #!/usr/bin/env bash
 set -euo pipefail
 agent_kind=$1
@@ -20,34 +26,41 @@ elif [[ "$method_installer" == gsd-core || ( -z "$method_installer" && "$tool_ki
     ANTIGRAVITY_CONFIG_DIR="$HOME/.gemini/antigravity-cli" \
       npx --yes "$gsd_package@$gsd_version" --antigravity --global
     # GSD 1.15.0's generated @ references retain its default runtime root.
-    ln -s antigravity-cli "$HOME/.gemini/antigravity"
+    ln -sfn antigravity-cli "$HOME/.gemini/antigravity"
   else
     npx --yes "$gsd_package@$gsd_version" "--$agent_kind" --global
   fi
 else
   repo_url=$(node -e 'console.log(require(process.argv[1]).tools[process.argv[2]].repository)' "$lock_file" "$tool_kind")
   revision=$(node -e 'console.log(require(process.argv[1]).tools[process.argv[2]].revision)' "$lock_file" "$tool_kind")
-  git init --quiet "$marketplace_dir/plugins/$tool_kind"
-  git -C "$marketplace_dir/plugins/$tool_kind" remote add origin "$repo_url"
-  git -C "$marketplace_dir/plugins/$tool_kind" fetch --quiet --depth 1 origin "$revision"
-  git -C "$marketplace_dir/plugins/$tool_kind" checkout --quiet --detach FETCH_HEAD
+  # A bundle may pair one methodology with several agents; fetch it once.
+  if [[ ! -d "$marketplace_dir/plugins/$tool_kind/.git" ]]; then
+    git init --quiet "$marketplace_dir/plugins/$tool_kind"
+    git -C "$marketplace_dir/plugins/$tool_kind" remote add origin "$repo_url"
+    git -C "$marketplace_dir/plugins/$tool_kind" fetch --quiet --depth 1 origin "$revision"
+    git -C "$marketplace_dir/plugins/$tool_kind" checkout --quiet --detach FETCH_HEAD
+  fi
   node - "$marketplace_dir" "$tool_kind" <<'NODE'
 const fs = require('fs');
-const [root, name] = process.argv.slice(2);
+const [root] = process.argv.slice(2);
+// List every fetched plugin so earlier installs in a bundle stay resolvable.
+const names = fs.readdirSync(`${root}/plugins`).filter(n => fs.existsSync(`${root}/plugins/${n}/.git`)).sort();
 fs.mkdirSync(`${root}/.agents/plugins`, {recursive: true});
 fs.mkdirSync(`${root}/.claude-plugin`, {recursive: true});
 fs.writeFileSync(`${root}/.agents/plugins/marketplace.json`, JSON.stringify({
-  name: 'paseo-sbx', plugins: [{name, source: {source: 'local', path: `./plugins/${name}`}}]
+  name: 'paseo-sbx', plugins: names.map(name => ({name, source: {source: 'local', path: `./plugins/${name}`}}))
 }));
 fs.writeFileSync(`${root}/.claude-plugin/marketplace.json`, JSON.stringify({
-  name: 'paseo-sbx', owner: {name: 'paseo-sbx'}, plugins: [{name, source: `./plugins/${name}`}]
+  name: 'paseo-sbx', owner: {name: 'paseo-sbx'}, plugins: names.map(name => ({name, source: `./plugins/${name}`}))
 }));
 NODE
+  # Register the shared marketplace once per agent; later pairs reuse it.
+  registered="$marketplace_dir/.registered-$agent_kind"
   if [[ "$agent_kind" == codex ]]; then
-    codex plugin marketplace add "$marketplace_dir"
+    [[ -e "$registered" ]] || { codex plugin marketplace add "$marketplace_dir"; touch "$registered"; }
     codex plugin add "$tool_kind@paseo-sbx"
   elif [[ "$agent_kind" == claude ]]; then
-    claude plugin marketplace add "$marketplace_dir"
+    [[ -e "$registered" ]] || { claude plugin marketplace add "$marketplace_dir"; touch "$registered"; }
     claude plugin install "$tool_kind@paseo-sbx" --scope user
   elif [[ "$agent_kind" == antigravity-cli && "$tool_kind" == ponytail ]]; then
     agy plugin install "$marketplace_dir/plugins/$tool_kind"
@@ -64,16 +77,24 @@ NODE
   fi
 fi
 
+# Shared instructions are appended once per agent, even when a bundle pairs
+# the agent with several methodologies.
+instructions_marker="$HOME/.local/share/paseo-sbx/instructions-$agent_kind"
+append_instructions() {
+  [[ -e "$instructions_marker" ]] && return 0
+  cat /opt/paseo-sbx/install/agent-instructions.md >> "$1"
+  touch "$instructions_marker"
+}
 if [[ "$agent_kind" == codex ]]; then
-  cat /opt/paseo-sbx/install/agent-instructions.md >> "$HOME/.codex/AGENTS.md"
+  append_instructions "$HOME/.codex/AGENTS.md"
   if [[ "$tool_kind" == superpowers ]]; then
     printf '\nUse the using-superpowers skill before starting work.\n' >> "$HOME/.codex/AGENTS.md"
   fi
 elif [[ "$agent_kind" == claude ]]; then
-  cat /opt/paseo-sbx/install/agent-instructions.md >> "$HOME/.claude/CLAUDE.md"
+  append_instructions "$HOME/.claude/CLAUDE.md"
 elif [[ "$agent_kind" == antigravity-cli ]]; then
   mkdir -p "$HOME/.gemini"
-  cat /opt/paseo-sbx/install/agent-instructions.md >> "$HOME/.gemini/GEMINI.md"
+  append_instructions "$HOME/.gemini/GEMINI.md"
   if [[ "$tool_kind" == superpowers ]]; then
     printf '\nUse the using-superpowers skill before starting work.\n' >> "$HOME/.gemini/GEMINI.md"
   fi
