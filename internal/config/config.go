@@ -42,6 +42,10 @@ type Entry struct {
 	Workspace            string        `json:"workspace"`
 	Sandbox              string        `json:"sandbox"`
 	Image                string        `json:"image"`
+	// Name marks a bundle: one container holding every selected pair.
+	Name        string            `json:"name,omitempty"`
+	Pairs       []Pair            `json:"pairs,omitempty"`
+	Connections map[string]string `json:"connections,omitempty"`
 }
 type Registry struct {
 	Schema    int              `json:"schema,omitempty"`

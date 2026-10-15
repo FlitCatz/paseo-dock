@@ -89,3 +89,25 @@ jobs:
           args=(docker buildx bake -f ci-bake.json "container-$PROFILE")
           if [ "$PUBLISH" = true ]; then args+=(--push); fi
           "${args[@]}"
+  bundle:
+    # One container holds every selected pair; build every catalog pair together
+    # to catch install conflicts between agents and methodologies.
+    needs: boundaries
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: false
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - name: Build all pairs into one image
+        env:
+          PROFILES: ${{ needs.boundaries.outputs.profiles }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          profiles=$(node -e 'console.log(JSON.parse(process.env.PROFILES).join(","))')
+          go run ./cmd/paseo-sbx build --profiles "$profiles" --name ci-all --namespace "ghcr.io/${REPOSITORY,,}" \
+            --platforms linux/amd64,linux/arm64 --print-bake > ci-bake.json
+          docker buildx bake -f ci-bake.json container-ci-all

@@ -258,7 +258,7 @@ func (s *Service) Snapshot(ctx context.Context, q Query) (Snapshot, error) {
 			if entry.EffectiveCategory() != config.CategoryContainer {
 				managed[entry.Sandbox] = true
 			}
-			row := Sandbox{Target: Target{Category: entry.EffectiveCategory(), Workspace: w.Path, Runtime: runtime, Profile: profile, Entry: entry}, Active: reg.IsActive(profile), RuntimeState: "unknown", Registration: providerRegistration(providers, providerErr, base, providerID(profile, entry), entry.Agent), InitialVersions: s.initialVersions(reg, profile, entry)}
+			row := Sandbox{Target: Target{Category: entry.EffectiveCategory(), Workspace: w.Path, Runtime: runtime, Profile: profile, Entry: entry}, Active: reg.IsActive(profile), RuntimeState: "unknown", Registration: entryRegistration(providers, providerErr, base, profile, entry), InitialVersions: s.initialVersions(reg, profile, entry)}
 			if providerErr != nil {
 				row.RegistrationError = fmt.Sprintf("%s: %v", filepath.Join(home, "config.json"), providerErr)
 			}
@@ -428,6 +428,10 @@ func (s *Service) imageMismatch(reg config.Registry, profile, image string) bool
 	if entry.EffectiveCategory() == config.CategorySandbox {
 		return false
 	}
+	if entry.Bundle() {
+		tag, _, err := bundleImageSpec(reg.EffectiveCatalog(), entry, s.Lock)
+		return err != nil || !strings.HasSuffix(image, "/"+profile+":"+tag)
+	}
 	if entry.EffectiveCategory() == config.CategoryContainer {
 		tag, _, err := ImageSpec(config.CategoryContainer, entry, s.Lock)
 		return err != nil || !strings.HasSuffix(image, "/"+profile+":"+tag)
@@ -484,7 +488,19 @@ func (s *Service) initialVersions(reg config.Registry, profile string, entry con
 			}
 		}
 	}
-	add("methodology", s.Lock.Tools[entry.Tool])
+	if entry.Bundle() {
+		delete(versions, "agent")
+		for _, a := range entry.AgentIDs() {
+			if v := s.Lock.Agents[a]; v != "" {
+				versions[a] = v
+			}
+		}
+		for _, p := range entry.Pairs {
+			add(p.Methodology, s.Lock.Tools[p.Methodology])
+		}
+	} else {
+		add("methodology", s.Lock.Tools[entry.Tool])
+	}
 	utilities := entry.Utilities
 	if entry.EffectiveCategory() == config.CategoryLegacySandbox && reg.Selection != nil {
 		utilities = reg.Selection.Utilities

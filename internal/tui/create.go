@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"maps"
 	"os"
 	"paseo-sbx/internal/config"
 	"paseo-sbx/internal/operations"
@@ -368,6 +369,11 @@ func (m *Dashboard) restoreTargets(w *operations.Workspace) ([]operations.Target
 				if saved.Category == config.CategorySandbox {
 					if entry.Agent != saved.Agent || entry.EffectiveCategory() != saved.Category {
 						return nil, fmt.Errorf("saved agent entry changed: %s", profile)
+					}
+				} else if saved.Name != "" {
+					bundle := saved.BundleEntry()
+					if entry.Name != bundle.Name || !slices.Equal(entry.Pairs, bundle.Pairs) || !maps.Equal(entry.Connections, bundle.Connections) {
+						return nil, fmt.Errorf("saved bundle entry changed: %s", profile)
 					}
 				} else {
 					matches := false

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"paseo-sbx/internal/config"
 	"paseo-sbx/internal/gateway"
@@ -105,20 +106,76 @@ func (a *execution) checkDockerRelay(runtime, key string, e config.Entry) error 
 	return relay.CheckReachability()
 }
 
-func ActiveAdapters(installed []config.Installed) map[string]string {
-	adapters := map[string]string{}
+// ProviderTarget is one Paseo provider of a registry entry.
+type ProviderTarget struct {
+	ID, Agent, Mode, Label string
+}
+
+// ProviderTargets lists one provider ID per agent of an entry, including agents
+// connected as none (the launcher still serves them for paseo-sbx run).
+// Single-agent entries keep their historical provider ID.
+func ProviderTargets(profile string, e config.Entry) []ProviderTarget {
+	if !e.Bundle() {
+		mode := config.ConnectionNative
+		if e.EffectiveCategory() == config.CategoryContainer {
+			mode = e.Connection(e.Agent)
+		}
+		id := providerID(profile, e)
+		return []ProviderTarget{{ID: id, Agent: e.Agent, Mode: mode, Label: "SBX " + id}}
+	}
+	var out []ProviderTarget
+	for _, agent := range e.AgentIDs() {
+		mode := e.Connection(agent)
+		out = append(out, ProviderTarget{ID: "container-" + e.Name + "-" + agent, Agent: agent, Mode: mode, Label: "SBX " + e.Name + " · " + agent})
+	}
+	return out
+}
+
+func ActiveProviders(installed []config.Installed) map[string]ProviderTarget {
+	targets := map[string]ProviderTarget{}
 	for _, i := range installed {
 		for _, p := range i.Registry.ActiveProfiles() {
 			if e, ok := i.Registry.Profiles[p]; ok {
-				adapters[providerID(p, e)] = e.Agent
+				for _, t := range ProviderTargets(p, e) {
+					if t.Mode == config.ConnectionNone {
+						continue
+					}
+					targets[t.ID] = t
+				}
 			}
 		}
 	}
+	return targets
+}
+
+func ActiveAdapters(installed []config.Installed) map[string]string {
+	adapters := map[string]string{}
+	for id, t := range ActiveProviders(installed) {
+		adapters[id] = t.Agent
+	}
 	return adapters
 }
+
+// ProviderConfig generates native-mode providers keyed by provider ID.
 func ProviderConfig(launcher string, adapters map[string]string) map[string]any {
+	targets := map[string]ProviderTarget{}
+	for id, agent := range adapters {
+		targets[id] = ProviderTarget{ID: id, Agent: agent, Mode: config.ConnectionNative, Label: "SBX " + id}
+	}
+	return ProviderConfigTargets(launcher, targets)
+}
+
+func ProviderConfigTargets(launcher string, targets map[string]ProviderTarget) map[string]any {
 	providers := map[string]any{}
-	for p, agent := range adapters {
+	for p, t := range targets {
+		agent := t.Agent
+		switch t.Mode {
+		case config.ConnectionNone:
+			continue
+		case config.ConnectionACP:
+			providers[p] = map[string]any{"extends": "acp", "label": t.Label, "enabled": true, "command": []string{launcher, p, "--acp"}, "paseoTools": map[string]any{"enabled": true, "disabledTools": disabledTools}}
+			continue
+		}
 		if agent == "antigravity-cli" && !strings.HasPrefix(p, "container-") && !strings.HasPrefix(p, "sbx-") {
 			// The existing plugin owns this provider. Per-agent options select SBX.
 			continue
@@ -127,7 +184,7 @@ func ProviderConfig(launcher string, adapters map[string]string) map[string]any 
 		if agent == "antigravity-cli" {
 			command = append(command, "--acp")
 		}
-		provider := map[string]any{"extends": config.ProviderAdapter(agent), "label": "SBX " + p, "enabled": true, "command": command, "paseoTools": map[string]any{"enabled": true, "disabledTools": disabledTools}}
+		provider := map[string]any{"extends": config.ProviderAdapter(agent), "label": t.Label, "enabled": true, "command": command, "paseoTools": map[string]any{"enabled": true, "disabledTools": disabledTools}}
 		providers[p] = provider
 	}
 	return map[string]any{"version": 1, "daemon": map[string]any{"mcp": map[string]any{"enabled": true, "injectIntoAgents": true}}, "agents": map[string]any{"providers": providers}}
@@ -177,8 +234,9 @@ func MergeManagedConfig(current, generated map[string]any, base string) {
 		case []string:
 			command = v
 		}
-		nativeID := strings.HasPrefix(p, "antigravity-cli-") || strings.HasPrefix(p, "container-antigravity-cli-") || p == "sbx-antigravity-cli"
-		managed := len(command) == 2 || (len(command) == 3 && command[2] == "--acp" && nativeID)
+		// ACP providers of any agent carry a trailing --acp; ownership still
+		// requires the trusted launcher and a matching provider ID.
+		managed := len(command) == 2 || (len(command) == 3 && command[2] == "--acp")
 		if managed && ownedCommand(command[0], base) && command[1] == p {
 			if _, ok := wanted[p]; !ok {
 				delete(providers, p)
@@ -253,6 +311,19 @@ func (a *execution) register(runtime, home string, apply bool) error {
 	if len(reg.ActiveProfiles()) == 0 {
 		return errors.New("no complete active selection; finish create before registering")
 	}
+	for _, key := range reg.ActiveProfiles() {
+		entry := reg.Profiles[key]
+		if entry.EffectiveCategory() != config.CategoryContainer {
+			continue
+		}
+		backend, err := a.backend(entry.EffectiveCategory())
+		if err != nil {
+			return err
+		}
+		if err := a.checkACP(backend, key, entry); err != nil {
+			return err
+		}
+	}
 	return a.syncProviders(home, apply, true)
 }
 
@@ -282,7 +353,7 @@ func (a *execution) restoreRegistration(runtime string, r Request) error {
 	if err != nil {
 		return err
 	}
-	if saved.Schema != confirmed.Schema || saved.Category != confirmed.Category || saved.Agent != confirmed.Agent || !slices.Equal(saved.Pairs, confirmed.Pairs) || !slices.Equal(saved.Utilities, confirmed.Utilities) {
+	if saved.Schema != confirmed.Schema || saved.Category != confirmed.Category || saved.Agent != confirmed.Agent || !slices.Equal(saved.Pairs, confirmed.Pairs) || !slices.Equal(saved.Utilities, confirmed.Utilities) || saved.Name != confirmed.Name || !maps.Equal(saved.Connections, confirmed.Connections) {
 		return errors.New("confirmed saved selection changed")
 	}
 	desired := saved.Profiles()
@@ -305,6 +376,13 @@ func (a *execution) restoreRegistration(runtime string, r Request) error {
 		if saved.Category == config.CategorySandbox {
 			if target.Entry.Category != saved.Category || target.Entry.Agent != saved.Agent || target.Entry.Tool != "" || len(target.Entry.Utilities) != 0 || target.Entry.Image == "" {
 				return errors.New("incomplete or incompatible sandbox entry")
+			}
+			continue
+		}
+		if saved.Name != "" {
+			bundle := saved.BundleEntry()
+			if !target.Entry.Bundle() || target.Profile != bundle.Key() || !historical.ValidBundle(target.Entry) || target.Entry.Name != bundle.Name || !slices.Equal(target.Entry.Pairs, bundle.Pairs) || !maps.Equal(target.Entry.Connections, bundle.Connections) || target.Entry.Image == "" {
+				return errors.New("incomplete or incompatible saved bundle entry")
 			}
 			continue
 		}
@@ -393,7 +471,7 @@ func (a *execution) syncProviders(home string, apply bool, verifyRelays ...bool)
 	if err = a.installLauncher(base, workspaces); err != nil {
 		return err
 	}
-	generated := ProviderConfig(config.LauncherPath(base), ActiveAdapters(live))
+	generated := ProviderConfigTargets(config.LauncherPath(base), ActiveProviders(live))
 	if err = a.filterProviderBases(generated); err != nil {
 		return err
 	}

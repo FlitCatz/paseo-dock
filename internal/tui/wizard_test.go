@@ -68,7 +68,8 @@ func TestWizardOnlyChosenCombinations(t *testing.T) {
 	key(m, tea.KeyEnter) // Superpowers + Ponytail
 	key(m, tea.KeySpace)
 	key(m, tea.KeyEnter) // RTK only
-	if !strings.Contains(m.View().Content, "codex-superpowers") || strings.Contains(m.View().Content, "claude-superpowers") {
+	// Both chosen pairs go into one container named after them.
+	if !strings.Contains(m.View().Content, "container/codex-ponytail-superpowers") || !strings.Contains(m.View().Content, "Container: codex-ponytail-superpowers") || strings.Contains(m.View().Content, "claude-superpowers") {
 		t.Fatal(m.View().Content)
 	}
 	key(m, tea.KeyEnter)
@@ -113,7 +114,7 @@ func TestWizardPerAgentMethodsAndHeadroomDisclosure(t *testing.T) {
 	if !m.Result.Apply || len(m.Result.Selection.Pairs) != 2 {
 		t.Fatal(m.Result)
 	}
-	if m.Result.Selection.Profiles()[0] != "container/claude-gsd-core" || m.Result.Selection.Profiles()[1] != "container/codex-superpowers" {
+	if strings.Join(m.Result.Selection.Profiles(), ",") != "container/claude-codex-gsd-core-superpowers" {
 		t.Fatal(m.Result.Selection)
 	}
 }
@@ -204,7 +205,7 @@ func TestContinuousFormNavigation(t *testing.T) {
 		t.Fatal("Tab confirmed resource creation")
 	}
 	key(m, tea.KeyEnter)
-	if !m.Confirmed || strings.Join(m.Result.Selection.Profiles(), ",") != "container/claude-superpowers,container/codex-openspec" {
+	if !m.Confirmed || strings.Join(m.Result.Selection.Profiles(), ",") != "container/claude-codex-openspec-superpowers" {
 		t.Fatal(m.Result)
 	}
 }
@@ -254,4 +255,35 @@ func newEmbeddedContainerModel(c config.Catalog, s config.Selection, w, memory s
 	m := newContainerModel(c, s, w, memory)
 	m.embedded = true
 	return m
+}
+
+func TestWizardCyclesAgentConnections(t *testing.T) {
+	m := newContainerModel(config.DefaultCatalog(), config.Selection{}, "/workspace", "2g")
+	key(m, tea.KeySpace)
+	key(m, tea.KeyDown)
+	key(m, tea.KeySpace)
+	key(m, tea.KeyEnter) // Codex + Claude
+	key(m, tea.KeySpace)
+	key(m, tea.KeyEnter) // Codex Superpowers
+	key(m, tea.KeySpace)
+	key(m, tea.KeyEnter) // Claude Superpowers
+	key(m, tea.KeyEnter) // no utilities
+	view := m.View().Content
+	if !strings.Contains(view, "Container: claude-codex-superpowers") || !strings.Contains(view, "Paseo codex: native · 1: native/none") || !strings.Contains(view, "Paseo claude: native · 2: native/none") {
+		t.Fatal(view)
+	}
+	key(m, '2')
+	if !strings.Contains(m.View().Content, "Paseo claude: none") {
+		t.Fatal(m.View().Content)
+	}
+	key(m, tea.KeyEnter)
+	if !m.Confirmed || m.Result.Selection.Connections["claude"] != config.ConnectionNone || len(m.Result.Selection.Connections) != 1 {
+		t.Fatal(m.Result.Selection)
+	}
+	// A saved derived name follows new pairs; a chosen name is kept.
+	derived := NewModel(config.DefaultCatalog(), m.Result.Selection, "/workspace", "2g")
+	chosen := NewModel(config.DefaultCatalog(), config.Selection{Schema: 2, Category: config.CategoryContainer, Name: "dev", Pairs: m.Result.Selection.Pairs}, "/workspace", "2g")
+	if derived.Name != "" || chosen.Name != "dev" || derived.Connections["claude"] != config.ConnectionNone {
+		t.Fatal(derived.Name, chosen.Name, derived.Connections)
+	}
 }

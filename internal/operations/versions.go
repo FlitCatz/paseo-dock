@@ -23,6 +23,9 @@ func (a *execution) checkVersions(target Target) (Result, error) {
 	if err != nil {
 		return result, err
 	}
+	if target.Entry.Bundle() {
+		return result, errors.New("version check is not supported for multi-agent containers yet; see the pinned image versions")
+	}
 	if !config.SupportedAdapter(target.Entry.Agent) {
 		return result, errors.New("unsupported agent adapter")
 	}

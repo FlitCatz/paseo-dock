@@ -15,6 +15,7 @@ import (
 	"paseo-sbx/internal/config"
 	"paseo-sbx/internal/operations"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -183,7 +184,11 @@ func (a *App) runPlugin(args []string) error {
 		if current.EffectiveCategory() != config.CategoryContainer && current.EffectiveCategory() != config.CategoryLegacySandbox {
 			continue
 		}
-		if current.Agent != agent.Adapter || current.Tool != pair.Methodology || !reg.IsActive(candidate) || current.Workspace != w || (category != "" && current.EffectiveCategory() != category) {
+		selected := current.Agent == agent.Adapter && current.Tool == pair.Methodology
+		if current.Bundle() {
+			selected = slices.Contains(current.Pairs, pair)
+		}
+		if !selected || !reg.IsActive(candidate) || current.Workspace != w || (category != "" && current.EffectiveCategory() != category) {
 			continue
 		}
 		if current.EffectiveCategory() == config.CategoryContainer && current.ContainerID == "" || current.EffectiveCategory() != config.CategoryContainer && current.Sandbox == "" {
@@ -203,7 +208,7 @@ func (a *App) runPlugin(args []string) error {
 	if err = a.installLauncher(base, []string{w}); err != nil {
 		return err
 	}
-	settings := map[string]any{"provider": "antigravity-cli", "cwd": w, "providerOptions": map[string]any{"agyPath": config.LauncherPath(base), "extraArgs": []string{"--paseo-sbx-profile", operations.ProviderID(key, entry)}}, "featureValues": map[string]any{"shareMcp": "off"}}
+	settings := map[string]any{"provider": "antigravity-cli", "cwd": w, "providerOptions": map[string]any{"agyPath": config.LauncherPath(base), "extraArgs": []string{"--paseo-sbx-profile", antigravityProviderID(key, entry)}}, "featureValues": map[string]any{"shareMcp": "off"}}
 	if *model != "" {
 		settings["model"] = *model
 	}
@@ -231,4 +236,15 @@ func (a *App) runPlugin(args []string) error {
 	fmt.Fprintln(a.Out, "Created Antigravity agent:", id)
 	fmt.Fprintf(a.Out, "View in Paseo, or run: paseo agent attach %s --home %q\n", id, h)
 	return nil
+}
+
+// antigravityProviderID names the launcher profile serving Antigravity in an
+// entry; a bundle has one provider ID per agent.
+func antigravityProviderID(key string, entry config.Entry) string {
+	for _, t := range operations.ProviderTargets(key, entry) {
+		if t.Agent == "antigravity-cli" {
+			return t.ID
+		}
+	}
+	return operations.ProviderID(key, entry)
 }

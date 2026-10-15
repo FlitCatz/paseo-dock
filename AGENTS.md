@@ -7,6 +7,10 @@
 - 기존 Dockerfile·Shell·CI 설정은 유지·수정할 수 있지만, 새 실행 로직은 Go로 구현한다.
 - 다른 언어가 꼭 필요한 경우 이유와 범위를 설명하고 사용자의 명시적 동의를 받은 뒤 진행한다.
 
+## Paseo provider 등록
+
+- Paseo `config.json`의 provider `extends`는 config가 plugin 등록보다 먼저 로드되므로 내장 provider(`claude, codex, copilot, opencode, pi, omp`)와 `acp`만 허용한다. plugin provider(예: `antigravity`, `antigravity-cli`)를 상속하면 config 전체가 거부된다.
+
 ## 설계 및 계획 검토
 
 - 검토가 필요한 설계·계획은 파일 링크뿐 아니라 본문도 채팅에 제시한다.

@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"slices"
 )
 
@@ -40,6 +41,9 @@ func (e Entry) Key() string {
 	case CategorySandbox:
 		return "sandbox/" + e.Agent
 	case CategoryContainer:
+		if e.Bundle() {
+			return "container/" + e.Name
+		}
 		return "container/" + e.Agent + "-" + e.Tool
 	case CategoryLegacySandbox:
 		return e.Agent + "-" + e.Tool
@@ -57,6 +61,9 @@ func (e Entry) EqualIdentity(other Entry) bool {
 	ep, op := e.Ports, other.Ports
 	eu, ou := e.Utilities, other.Utilities
 	if e.Category != other.Category || e.ContainerID != other.ContainerID || e.ImageID != other.ImageID || e.Network != other.Network || e.Agent != other.Agent || e.Tool != other.Tool || e.Workspace != other.Workspace || e.Sandbox != other.Sandbox || e.Image != other.Image {
+		return false
+	}
+	if e.Name != other.Name || !slices.Equal(e.Pairs, other.Pairs) || !maps.Equal(e.Connections, other.Connections) {
 		return false
 	}
 	ep = slices.Clone(ep)
@@ -132,6 +139,9 @@ func (s Selection) validateFormat() error {
 		if s.Schema != 2 || s.Category != CategoryContainer || !eligible {
 			return fmt.Errorf("codex_userns requires a schema-2 container selection containing codex")
 		}
+	}
+	if (s.Name != "" || len(s.Connections) > 0) && (s.Schema != 2 || s.Category != CategoryContainer) {
+		return fmt.Errorf("container name and connections require a schema-2 container selection")
 	}
 	if s.Schema == 1 {
 		if s.Category != "" || s.Agent != "" {

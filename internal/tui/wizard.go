@@ -49,6 +49,10 @@ type Model struct {
 	Width, Height            int
 	Color                    bool
 	embedded                 bool
+
+	// Name and Connections carry container bundle choices; defaults are derived.
+	Name        string
+	Connections map[string]string
 }
 
 func NewEmbeddedModel(c config.Catalog, s config.Selection, workspace, memory string) *Model {
@@ -88,6 +92,14 @@ func NewModel(c config.Catalog, s config.Selection, workspace, memory string) *M
 		m.utilities[u] = true
 	}
 	m.CodexUserNS = s.CodexUserNS
+	m.Connections = map[string]string{}
+	for agent, mode := range s.Connections {
+		m.Connections[agent] = mode
+	}
+	// A derived default name follows later pair changes; only a chosen name sticks.
+	if s.Name != config.DefaultBundleName(s.Pairs) {
+		m.Name = s.Name
+	}
 	if m.Memory == "" {
 		m.Memory = "2g"
 	}
@@ -145,6 +157,16 @@ func (m *Model) selection() config.Selection {
 	for _, u := range m.Catalog.Utilities {
 		if m.utilities[u.ID] {
 			s.Utilities = append(s.Utilities, u.ID)
+		}
+	}
+	s.Name = m.Name
+	s.UseBundle()
+	for agent, mode := range m.Connections {
+		if m.agents[agent] {
+			if s.Connections == nil {
+				s.Connections = map[string]string{}
+			}
+			s.Connections[agent] = mode
 		}
 	}
 	return s
@@ -260,6 +282,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if k.Mod == 0 && m.Step == 3 && m.userNSEligible() {
 			m.CodexUserNS = !m.CodexUserNS
 			m.Result.Selection.CodexUserNS = m.CodexUserNS
+		}
+	case '1', '2', '3', '4', '5', '6', '7', '8', '9':
+		if k.Mod == 0 && m.Step == 3 && m.Category == config.CategoryContainer {
+			m.cycleConnection(int(k.Code - '1'))
 		}
 	case tea.KeyEscape:
 		switch m.Step {
@@ -544,6 +570,10 @@ func (m *Model) View() tea.View {
 			body = append(body, "┃    "+paint(green, "✓ "+profile))
 		}
 		body = append(body, "┃    Utilities: "+strings.Join(m.Result.Selection.Utilities, ", "))
+		if m.Result.Selection.Name != "" {
+			body = append(body, "┃    Container: "+m.Result.Selection.Name+" (선택한 모든 조합을 container 하나에 설치)")
+		}
+		body = append(body, m.connectionLines()...)
 		flow := "Existing image → Docker container"
 		if m.BuildFirst {
 			flow = "Build → Docker store"
@@ -673,4 +703,47 @@ func (m *Model) boundedView(lines []string) tea.View {
 	v := tea.NewView(strings.Join(lines, "\n"))
 	v.AltScreen = true
 	return v
+}
+
+// cycleConnection advances the Nth chosen agent to its next supported Paseo
+// connection mode and revalidates the confirmed selection.
+func (m *Model) cycleConnection(index int) {
+	agents := m.chosenAgents()
+	if index < 0 || index >= len(agents) {
+		return
+	}
+	agent := agents[index]
+	modes := config.ConnectionModes(agent)
+	if len(modes) < 2 {
+		return
+	}
+	current := config.DefaultConnection(agent)
+	if mode, ok := m.Connections[agent]; ok {
+		current = mode
+	}
+	m.Connections[agent] = modes[(slices.Index(modes, current)+1)%len(modes)]
+	s, err := m.Catalog.Normalize(m.selection())
+	if err != nil {
+		m.Error = err.Error()
+		return
+	}
+	m.Error = ""
+	m.Result.Selection = s
+}
+
+// connectionLines shows each chosen agent's Paseo connection on the final step.
+func (m *Model) connectionLines() []string {
+	var lines []string
+	for i, agent := range m.chosenAgents() {
+		mode := config.DefaultConnection(agent)
+		if chosen, ok := m.Result.Selection.Connections[agent]; ok {
+			mode = chosen
+		}
+		hint := ""
+		if modes := config.ConnectionModes(agent); len(modes) > 1 {
+			hint = fmt.Sprintf(" · %d: %s", i+1, strings.Join(modes, "/"))
+		}
+		lines = append(lines, "┃    Paseo "+agent+": "+mode+hint)
+	}
+	return lines
 }

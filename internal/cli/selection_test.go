@@ -72,7 +72,7 @@ func TestOpenSpecFailurePreservesActivationAndCanRetry(t *testing.T) {
 
 func TestBuildUsesOnlySelectedPairs(t *testing.T) {
 	var out, stderr bytes.Buffer
-	if code := Run("../..", []string{"build", "--profiles", "codex-superpowers,codex-ponytail", "--utilities", "rtk", "--print-bake"}, &bytes.Buffer{}, &out, &stderr); code != 0 {
+	if code := Run("../..", []string{"build", "--profile", "codex-ponytail", "--utilities", "rtk", "--print-bake"}, &bytes.Buffer{}, &out, &stderr); code != 0 {
 		t.Fatal(stderr.String())
 	}
 	var cfg struct {
@@ -84,7 +84,7 @@ func TestBuildUsesOnlySelectedPairs(t *testing.T) {
 	if err := json.Unmarshal(out.Bytes(), &cfg); err != nil {
 		t.Fatal(err)
 	}
-	if len(cfg.Target) != 2 || cfg.Target["container-claude-superpowers"].Args != nil || cfg.Target["container-codex-ponytail"].Args["UTILITIES"] != "rtk" {
+	if len(cfg.Target) != 1 || cfg.Target["container-claude-superpowers"].Args != nil || cfg.Target["container-codex-ponytail"].Args["UTILITIES"] != "rtk" {
 		t.Fatal(out.String())
 	}
 	if cfg.Target["container-codex-ponytail"].Tags[0] == "paseo-sbx/codex-ponytail:2026.09.30" {
@@ -226,5 +226,42 @@ func TestStopUsesPreservedRegistryAfterCatalogRemoval(t *testing.T) {
 	got, _ := os.ReadFile(log)
 	if string(got) != "stop preserved" {
 		t.Fatal(string(got))
+	}
+}
+
+func TestBuildBundlesSelectedPairsIntoOneImage(t *testing.T) {
+	var out, stderr bytes.Buffer
+	if code := Run("../..", []string{"build", "--profiles", "codex-superpowers,claude-ponytail,codex-ponytail", "--utilities", "rtk", "--name", "ci-all", "--print-bake"}, &bytes.Buffer{}, &out, &stderr); code != 0 {
+		t.Fatal(stderr.String())
+	}
+	var cfg struct {
+		Group  map[string]struct{ Targets []string } `json:"group"`
+		Target map[string]struct {
+			Args   map[string]string `json:"args"`
+			Tags   []string          `json:"tags"`
+			Labels map[string]string `json:"labels"`
+		} `json:"target"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &cfg); err != nil {
+		t.Fatal(err)
+	}
+	target, ok := cfg.Target["container-ci-all"]
+	if len(cfg.Target) != 1 || !ok || strings.Join(cfg.Group["default"].Targets, ",") != "container-ci-all" {
+		t.Fatal(out.String())
+	}
+	args := target.Args
+	if args["AGENTS"] != "codex,claude" || args["PAIRS"] != "claude:ponytail:git-plugin,codex:ponytail:git-plugin,codex:superpowers:git-plugin" || args["UTILITIES"] != "rtk" || args["AGENT"] != "" {
+		t.Fatal(args)
+	}
+	lock, err := config.Load("../..")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if args["BASE_IMAGE"] != lock.BaseImages["codex"] || !strings.HasPrefix(target.Tags[0], "paseo-sbx/container/ci-all:"+lock.Tag+"-") || target.Labels["io.paseo-sbx.agent"] != "codex,claude" {
+		t.Fatal(target)
+	}
+	var manifests map[string]map[string]any
+	if err := json.Unmarshal([]byte(args["AGENT_MANIFESTS"]), &manifests); err != nil || manifests["codex"]["version"] != lock.Agents["codex"] || manifests["claude"]["version"] != lock.Agents["claude"] {
+		t.Fatal(args["AGENT_MANIFESTS"], err)
 	}
 }

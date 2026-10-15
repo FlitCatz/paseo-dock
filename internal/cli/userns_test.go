@@ -45,14 +45,12 @@ func TestCLICodexUserNSCreatePropagation(t *testing.T) {
 	if err := a.execute([]string{"create", "--workspace", workspace, "--category", "container", "--profiles", "codex-superpowers,claude-superpowers", "--codex-userns", "--ports", "8080:3000"}); err != nil {
 		t.Fatal(err)
 	}
-	if a.Selection == nil || !a.Selection.CodexUserNS || len(b.created) != 2 {
+	// Both pairs share one container; it contains Codex, so the policy applies.
+	if a.Selection == nil || !a.Selection.CodexUserNS || len(b.created) != 1 || b.created[0].Name != "claude-codex-superpowers" {
 		t.Fatalf("lost opt-in: %+v / %+v", a.Selection, b.created)
 	}
 	for _, e := range b.created {
-		want := ""
-		if e.Agent == "codex" {
-			want = "codex-userns-v1"
-		}
+		want := "codex-userns-v1"
 		if e.SecurityPolicy != want || len(e.Ports) != 1 || e.Ports[0].HostPort != 8080 {
 			t.Fatalf("wrong create policy/ports: %+v", e)
 		}
