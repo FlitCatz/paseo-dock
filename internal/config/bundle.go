@@ -24,10 +24,17 @@ type connection struct {
 // Paseo accepts only built-in provider bases (or acp) for extends, so native
 // exists only where Paseo has a built-in provider for the agent.
 var connections = map[string]connection{
-	"codex":           {modes: []string{ConnectionNative, ConnectionNone}},
-	"claude":          {modes: []string{ConnectionNative, ConnectionNone}},
+	// ACP adapters run the image's pinned CLI, which matches their SDK range,
+	// even after the guest updates the CLI used by native sessions.
+	"codex":           {modes: []string{ConnectionNative, ConnectionACP, ConnectionNone}, acp: []string{"env", "CODEX_PATH=/opt/paseo-sbx/runtime/bin/codex", "codex-acp"}},
+	"claude":          {modes: []string{ConnectionNative, ConnectionACP, ConnectionNone}, acp: []string{"env", "CLAUDE_CODE_EXECUTABLE=/opt/paseo-sbx/runtime/bin/claude", "claude-agent-acp"}},
+	"omp":             {modes: []string{ConnectionNative, ConnectionACP, ConnectionNone}, acp: []string{"omp", "acp"}},
+	"gjc":             {modes: []string{ConnectionACP, ConnectionNone}, acp: []string{"env", "GJC_ACP_PERMISSION_MODE=prompt", "gjc", "acp"}},
 	"antigravity-cli": {modes: []string{ConnectionNone}},
 }
+
+// ACPAdapterAgent reports whether ACP needs a separately pinned server package.
+func ACPAdapterAgent(agent string) bool { return agent == "codex" || agent == "claude" }
 
 // ConnectionModes lists the supported modes; the first one is the default.
 func ConnectionModes(agent string) []string { return slices.Clone(connections[agent].modes) }
@@ -160,4 +167,12 @@ func (s *Selection) UseBundle() {
 	if s.Category == CategoryContainer && s.Name == "" && len(s.Pairs) > 1 {
 		s.Name = DefaultBundleName(s.Pairs)
 	}
+}
+
+// ACPAdapter is an npm-distributed ACP server pinned by version and integrity.
+type ACPAdapter struct {
+	Package   string `json:"package"`
+	Version   string `json:"version"`
+	Integrity string `json:"integrity"`
+	Bin       string `json:"bin"`
 }

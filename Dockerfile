@@ -39,7 +39,21 @@ RUN set -e; \
         npm install --global --prefix /opt/paseo-sbx/runtime "@anthropic-ai/claude-code@$version"; \
       elif [ "$agent" = antigravity-cli ]; then \
         /opt/paseo-sbx/install/install-runtime --agent antigravity-cli --destination /opt/paseo-sbx/runtime/bin/agy; \
+      elif [ "$agent" = omp ] || [ "$agent" = gjc ]; then \
+        /opt/paseo-sbx/install/install-runtime --agent "$agent" --destination "/opt/paseo-sbx/runtime/bin/$agent" --notices "/opt/paseo-sbx/licenses/$agent"; \
       else echo "Unsupported agent adapter: $agent" >&2; exit 1; fi; \
+    done
+# ACP servers for agents connected over acp; each must match the locked integrity.
+ARG ACP_ADAPTERS=""
+RUN set -e; \
+    for agent in $(printf '%s' "$ACP_ADAPTERS" | tr ',' ' '); do \
+      adapter=$(jq -ce --arg agent "$agent" '.acp_adapters[$agent]' /opt/paseo-sbx/install/versions.lock.json); \
+      package=$(printf '%s' "$adapter" | jq -er .package); \
+      version=$(printf '%s' "$adapter" | jq -er .version); \
+      integrity=$(printf '%s' "$adapter" | jq -er .integrity); \
+      actual=$(npm view "$package@$version" dist.integrity); \
+      if [ "$actual" != "$integrity" ]; then echo "ACP adapter integrity mismatch: $package@$version" >&2; exit 1; fi; \
+      npm install --global --prefix /opt/paseo-sbx/runtime "$package@$version"; \
     done
 COPY versions.lock.json scripts/install-tools.sh scripts/install-utilities.sh scripts/agent-instructions.md /opt/paseo-sbx/install/
 USER agent
@@ -67,7 +81,7 @@ RUN set -e; \
         printf '%s' "$AGENT_MANIFESTS" | jq -ce --arg agent "$agent" '.[$agent]' > "/home/agent/.local/share/paseo-sbx/agents/$agent.json"; \
       done; \
       jq -n --arg pairs "$PAIRS" --slurpfile lock /opt/paseo-sbx/install/versions.lock.json \
-        '{pairs: ($pairs | split(",") | map(split(":") | {agent: .[0], tool: .[1]})), lock: $lock[0]}' \
+        '{pairs: ($pairs | split(",") | map(split(":") | {agent: .[0], methodology: .[1]})), lock: $lock[0]}' \
         > /home/agent/.local/share/paseo-sbx/installed.json; \
     fi
 LABEL org.opencontainers.image.title="Paseo development container" \

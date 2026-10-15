@@ -64,7 +64,8 @@ func TestBundleNameAndConnectionValidation(t *testing.T) {
 	}
 	for _, s := range []Selection{
 		{Schema: 2, Category: CategoryContainer, Name: "Bad_Name", Pairs: []Pair{{"codex", "superpowers"}}},
-		{Schema: 2, Category: CategoryContainer, Pairs: []Pair{{"codex", "superpowers"}}, Connections: map[string]string{"codex": ConnectionACP}},
+		{Schema: 2, Category: CategoryContainer, Pairs: []Pair{{"codex", "superpowers"}}, Connections: map[string]string{"codex": "bogus"}},
+		{Schema: 2, Category: CategoryContainer, Pairs: []Pair{{"gjc", "native"}}, Connections: map[string]string{"gjc": ConnectionNative}},
 		{Schema: 2, Category: CategoryContainer, Pairs: []Pair{{"antigravity-cli", "native"}}, Connections: map[string]string{"antigravity-cli": ConnectionACP}},
 		{Schema: 2, Category: CategoryContainer, Pairs: []Pair{{"codex", "superpowers"}}, Connections: map[string]string{"claude": ConnectionNone}},
 		{Schema: 2, Category: CategorySandbox, Agent: "codex", Name: "dev"},
@@ -95,7 +96,28 @@ func TestDefaultBundleNameStaysWithinLimit(t *testing.T) {
 
 func TestDefaultConnections(t *testing.T) {
 	legacy := Entry{Category: CategoryContainer, Agent: "antigravity-cli", Tool: "native"}
-	if legacy.Connection("antigravity-cli") != ConnectionNone || (Entry{}).Connection("codex") != ConnectionNative || ACPCommand("codex") != nil {
+	if legacy.Connection("antigravity-cli") != ConnectionNone || (Entry{}).Connection("codex") != ConnectionNative || (Entry{}).Connection("omp") != ConnectionNative || (Entry{}).Connection("gjc") != ConnectionACP || ACPCommand("antigravity-cli") != nil || strings.Join(ACPCommand("omp"), " ") != "omp acp" {
 		t.Fatal("unexpected default connection")
+	}
+}
+
+func TestOmpAndGjcAreContainerAgents(t *testing.T) {
+	c := DefaultCatalog()
+	for _, agent := range []string{"omp", "gjc"} {
+		s, err := c.Normalize(Selection{Schema: 2, Category: CategoryContainer, Pairs: []Pair{{agent, "native"}}})
+		if err != nil || s.Name != "" || s.Profiles()[0] != "container/"+agent+"-native" {
+			t.Fatal(agent, s, err)
+		}
+		if _, err := c.Normalize(Selection{Schema: 2, Category: CategoryContainer, Pairs: []Pair{{agent, "superpowers"}}}); err == nil {
+			t.Fatal("unverified methodology accepted for", agent)
+		}
+		if _, err := c.Normalize(Selection{Schema: 2, Category: CategorySandbox, Agent: agent}); err == nil {
+			t.Fatal("agent-only sandbox accepted for", agent)
+		}
+	}
+	for _, p := range c.AllProfiles() {
+		if strings.HasPrefix(p, "omp-") || strings.HasPrefix(p, "gjc-") {
+			t.Fatal("legacy SBX profile", p)
+		}
 	}
 }

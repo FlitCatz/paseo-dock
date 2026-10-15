@@ -12,6 +12,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -45,7 +46,7 @@ func Identity(entry config.Entry) string {
 }
 
 func UpdateContext(ctx context.Context, runtime string, entry config.Entry, force bool, log io.Writer, emit func(string)) error {
-	if entry.Sandbox == "" || !config.SupportedAdapter(entry.Agent) {
+	if entry.Sandbox == "" || !supported(entry) {
 		return errors.New("invalid sandbox entry")
 	}
 	if !force && os.Getenv("PASEO_SBX_AUTO_UPDATE") == "0" {
@@ -79,7 +80,7 @@ func UpdateTransportLockedContext(ctx context.Context, runtime string, entry con
 	if entry.EffectiveCategory() == config.CategoryContainer && transport == nil {
 		return errors.New("container update requires an explicit guest transport")
 	}
-	if Identity(entry) == "" || !config.SupportedAdapter(entry.Agent) {
+	if Identity(entry) == "" || !supported(entry) {
 		return errors.New("invalid sandbox entry")
 	}
 	if !force && os.Getenv("PASEO_SBX_AUTO_UPDATE") == "0" {
@@ -185,15 +186,28 @@ func refreshStages(ctx context.Context, entry config.Entry, run runner, now time
 			s.Versions[id] = v
 		}
 	}
-	switch entry.Agent {
-	case "codex":
-		step("agent", func() (string, error) { return u.npm("@openai/codex", "codex") })
-	case "claude":
-		step("agent", func() (string, error) { return u.npm("@anthropic-ai/claude-code", "claude") })
-	case "antigravity-cli":
-		step("agent", u.antigravity)
-	default:
-		s.Errors["agent"] = "unsupported agent adapter"
+	// A bundle refreshes every agent and methodology under its own stage key.
+	agents := []string{entry.Agent}
+	if entry.Bundle() {
+		agents = entry.AgentIDs()
+	}
+	for _, agent := range agents {
+		id := "agent"
+		if entry.Bundle() {
+			id = "agent:" + agent
+		}
+		switch agent {
+		case "codex":
+			step(id, func() (string, error) { return u.npm("@openai/codex", "codex") })
+		case "claude":
+			step(id, func() (string, error) { return u.npm("@anthropic-ai/claude-code", "claude") })
+		case "antigravity-cli":
+			step(id, u.antigravity)
+		case "omp", "gjc":
+			// Pinned by the image lock; their self-updaters are not used.
+		default:
+			s.Errors[id] = "unsupported agent adapter"
+		}
 	}
 	if entry.EffectiveCategory() == config.CategorySandbox {
 		if len(s.Errors) == 0 {
@@ -208,41 +222,25 @@ func refreshStages(ctx context.Context, entry config.Entry, run runner, now time
 	}
 	if err != nil || json.Unmarshal([]byte(raw), &installed) != nil {
 		s.Errors["methodology"] = "cannot read guest installation manifest"
+	} else if entry.Bundle() {
+		// Each methodology updates once for all agents paired with it.
+		var tools []string
+		agentsByTool := map[string][]string{}
+		for _, p := range entry.Pairs {
+			if p.Methodology == "native" {
+				continue
+			}
+			if _, ok := agentsByTool[p.Methodology]; !ok {
+				tools = append(tools, p.Methodology)
+			}
+			agentsByTool[p.Methodology] = append(agentsByTool[p.Methodology], p.Agent)
+		}
+		slices.Sort(tools)
+		for _, tool := range tools {
+			step("methodology:"+tool, u.methodology(agentsByTool[tool], tool, installed.Lock))
+		}
 	} else if entry.Tool != "native" {
-		var tool struct {
-			Package    string `json:"package"`
-			Repository string `json:"repository"`
-		}
-		if err := json.Unmarshal(installed.Lock.Tools[entry.Tool], &tool); err != nil {
-			s.Errors["methodology"] = err.Error()
-		} else {
-			step("methodology", func() (string, error) {
-				switch {
-				case tool.Repository != "":
-					return u.plugin(entry.Agent, entry.Tool)
-				case entry.Tool == "openspec":
-					return u.npm(tool.Package, "openspec")
-				case tool.Package != "":
-					version, err := u.output("npm", "view", tool.Package+"@latest", "version")
-					if err != nil {
-						return "", err
-					}
-					if version == "" || strings.ContainsAny(version, " \r\n/") {
-						return "", errors.New("invalid methodology version")
-					}
-					args := []string{"npx", "--yes", tool.Package + "@" + version, "--" + entry.Agent, "--global"}
-					if entry.Agent == "antigravity-cli" {
-						args = []string{"env", "ANTIGRAVITY_CONFIG_DIR=" + home + "/.gemini/antigravity-cli", "npx", "--yes", tool.Package + "@" + version, "--antigravity", "--global"}
-					}
-					if err := u.command(args...); err != nil {
-						return "", err
-					}
-					return version, nil
-				default:
-					return "", fmt.Errorf("unsupported methodology %s", entry.Tool)
-				}
-			})
-		}
+		step("methodology", u.methodology([]string{entry.Agent}, entry.Tool, installed.Lock))
 	}
 	// Absence of a utility manifest means this image has no selected utilities.
 	raw, err = u.output("cat", home+"/.local/share/paseo-sbx/utilities/installed.json")
@@ -353,7 +351,9 @@ func (u updater) npm(pkg, binary string) (string, error) {
 	return v, err
 }
 
-func (u updater) plugin(agent, tool string) (string, error) {
+// plugin fetches a shared plugin checkout once, then reinstalls it for each
+// agent; on failure it restores the old revision for every agent touched.
+func (u updater) plugin(agents []string, tool string) (string, error) {
 	dir := u.home + "/.local/share/paseo-sbx/marketplace/plugins/" + tool
 	old, err := u.output("git", "-C", dir, "rev-parse", "HEAD")
 	if err != nil {
@@ -379,34 +379,55 @@ func (u updater) plugin(agent, tool string) (string, error) {
 	if err = u.command("git", "-C", dir, "checkout", "--detach", "FETCH_HEAD"); err != nil {
 		return "", err
 	}
-	var args []string
-	switch agent {
-	case "codex":
-		// Codex has no plugin-update command. Remove its cached copy before
-		// reinstalling; renaming a cache directory from an image's lower layer
-		// fails with EXDEV on overlay filesystems.
-		if err = u.command("codex", "plugin", "remove", tool+"@paseo-sbx"); err != nil {
-			_ = u.command("git", "-C", dir, "checkout", "--detach", old)
-			return "", err
+	for i, agent := range agents {
+		args, err := u.pluginInstall(agent, tool, dir)
+		if err == nil && len(args) > 0 {
+			err = u.command(args...)
 		}
-		args = []string{"codex", "plugin", "add", tool + "@paseo-sbx"}
-	case "claude":
-		args = []string{"claude", "plugin", "update", tool + "@paseo-sbx"}
-	case "antigravity-cli":
-		if tool == "ponytail" {
-			args = []string{"agy", "plugin", "install", dir}
-		}
-	}
-	if len(args) > 0 {
-		if err = u.command(args...); err != nil {
+		if err != nil {
 			_ = u.command("git", "-C", dir, "checkout", "--detach", old)
-			if agent == "codex" {
-				_ = u.command(args...)
+			for _, done := range agents[:i+1] {
+				// Codex was removed before reinstalling; restore it from the old
+				// revision. Other agents re-read the restored checkout.
+				if done == "codex" || done != agent {
+					if args := u.pluginReinstall(done, tool, dir); len(args) > 0 {
+						_ = u.command(args...)
+					}
+				}
 			}
 			return "", err
 		}
 	}
 	return u.output("git", "-C", dir, "rev-parse", "HEAD")
+}
+
+// pluginInstall prepares an agent for a new plugin revision and returns the
+// command that installs it.
+func (u updater) pluginInstall(agent, tool, dir string) ([]string, error) {
+	if agent == "codex" {
+		// Codex has no plugin-update command. Remove its cached copy before
+		// reinstalling; renaming a cache directory from an image's lower layer
+		// fails with EXDEV on overlay filesystems.
+		if err := u.command("codex", "plugin", "remove", tool+"@paseo-sbx"); err != nil {
+			return nil, err
+		}
+	}
+	return u.pluginReinstall(agent, tool, dir), nil
+}
+
+// pluginReinstall returns the command that installs the checked-out revision.
+func (u updater) pluginReinstall(agent, tool, dir string) []string {
+	switch agent {
+	case "codex":
+		return []string{"codex", "plugin", "add", tool + "@paseo-sbx"}
+	case "claude":
+		return []string{"claude", "plugin", "update", tool + "@paseo-sbx"}
+	case "antigravity-cli":
+		if tool == "ponytail" {
+			return []string{"agy", "plugin", "install", dir}
+		}
+	}
+	return nil
 }
 
 func (u updater) antigravity() (string, error) {
@@ -630,4 +651,53 @@ func (u updater) rtk() (string, error) {
 		return v, err
 	}
 	return "", errors.New("RTK release has no compatible asset")
+}
+
+// methodology updates one methodology for the given agents of a runtime.
+func (u updater) methodology(agents []string, toolID string, lock config.Lock) func() (string, error) {
+	return func() (string, error) {
+		var tool struct {
+			Package    string `json:"package"`
+			Repository string `json:"repository"`
+		}
+		if err := json.Unmarshal(lock.Tools[toolID], &tool); err != nil {
+			return "", err
+		}
+		switch {
+		case tool.Repository != "":
+			return u.plugin(agents, toolID)
+		case toolID == "openspec":
+			return u.npm(tool.Package, "openspec")
+		case tool.Package != "":
+			version, err := u.output("npm", "view", tool.Package+"@latest", "version")
+			if err != nil {
+				return "", err
+			}
+			if version == "" || strings.ContainsAny(version, " \r\n/") {
+				return "", errors.New("invalid methodology version")
+			}
+			for _, agent := range agents {
+				args := []string{"npx", "--yes", tool.Package + "@" + version, "--" + agent, "--global"}
+				if agent == "antigravity-cli" {
+					args = []string{"env", "ANTIGRAVITY_CONFIG_DIR=" + u.home + "/.gemini/antigravity-cli", "npx", "--yes", tool.Package + "@" + version, "--antigravity", "--global"}
+				}
+				if err := u.command(args...); err != nil {
+					return "", err
+				}
+			}
+			return version, nil
+		default:
+			return "", fmt.Errorf("unsupported methodology %s", toolID)
+		}
+	}
+}
+
+// supported requires every agent of the entry, including each bundle agent.
+func supported(entry config.Entry) bool {
+	for _, agent := range entry.AgentIDs() {
+		if !config.SupportedAdapter(agent) {
+			return false
+		}
+	}
+	return true
 }

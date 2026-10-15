@@ -211,34 +211,54 @@ image tag, provider ID를 그대로 사용하므로 기존 container와 등록�
 `--name`(설정 파일 `name`)으로 지정합니다. 이름은 영문 소문자로 시작하는 1–48자의 소문자·숫자·`-`입니다.
 같은 이름에 다른 조합·연결 방식을 요청하면 기존 container를 보존하고 거부합니다.
 이 변경 이전에 저장된 이름 없는 여러 조합 선택은 다시 사용해도 기존처럼 조합별 container로 유지합니다.
-같은 workspace에서 새로 `create`하면 이전 container 기록은 유지하되 활성 선택은 새 선택으로 바뀝니다.
+같은 workspace에서 `create`를 여러 번 실행하면 이전 container도 활성 상태로 남아 함께 사용합니다.
+저장된 선택(`a`, 복원)은 마지막 `create`의 선택이며, 해제 뒤 복원하면 그 선택만 다시 활성화합니다.
+다른 container는 같은 선택으로 `create`를 다시 실행하면 기존 container를 재사용하여 활성화합니다.
 
 ```bash
 ./bin/paseo-sbx create --workspace /absolute/path/to/project --category container \
-  --profiles codex-superpowers,claude-ponytail,antigravity-cli-native --name dev \
-  --connections claude=none --build
+  --profiles codex-superpowers,claude-ponytail,omp-native,gjc-native --name dev \
+  --connections claude=acp --build
 ```
 
 Paseo 연결 방식은 agent마다 고릅니다(`--connections agent=mode,...`, 설정 파일
-`"connections": {"claude": "none"}`, TUI 최종 확인의 숫자 키).
+`"connections": {"claude": "acp"}`, TUI 최종 확인의 숫자 키).
 
-| agent | 연결 방식 | 기본값 | Paseo provider |
-| --- | --- | --- | --- |
-| Codex | `native`, `none` | `native` | `extends: "codex"` |
-| Claude Code | `native`, `none` | `native` | `extends: "claude"` |
-| Antigravity CLI | `none` | `none` | 없음 (`paseo-sbx run`과 shell로 사용) |
+| agent | 연결 방식 | 기본값 | Paseo provider (`native`) | ACP 서버 (`acp`) |
+| --- | --- | --- | --- | --- |
+| Codex | `native`, `acp`, `none` | `native` | `extends: "codex"` | `@agentclientprotocol/codex-acp` 2.1.1 |
+| Claude Code | `native`, `acp`, `none` | `native` | `extends: "claude"` | `@agentclientprotocol/claude-agent-acp` 0.84.0 |
+| Oh My Pi (`omp`) | `native`, `acp`, `none` | `native` | `extends: "omp"` | `omp acp` |
+| Gajae Code (`gjc`) | `acp`, `none` | `acp` | 없음 | `gjc acp` (`GJC_ACP_PERMISSION_MODE=prompt`) |
+| Antigravity CLI | `none` | `none` | 없음 (`paseo-sbx run`과 shell로 사용) | 없음 |
 
 Paseo는 config 로드 시점에 plugin provider를 알 수 없어 `extends`에 기본 provider와 `acp`만
-허용합니다. 그래서 Antigravity plugin provider를 상속하는 등록은 만들지 않습니다.
-`acp` 연결은 각 agent의 ACP 서버를 고정한 뒤 추가하며, 등록 전에 container 안에서 ACP
-`initialize` 응답을 확인합니다.
+허용합니다. 그래서 Antigravity plugin provider를 상속하는 등록은 만들지 않으며, 고정한 `agy`에는
+ACP 모드가 없습니다. `acp` provider는 `extends: "acp"`와 `agent-wrapper <id> --acp`로 등록합니다.
+Codex·Claude ACP adapter는 `acp`를 선택한 container에만 lock의 npm integrity를 확인해 설치하고,
+image에 고정한 `codex`·`claude` CLI를 사용합니다(`CODEX_PATH`, `CLAUDE_CODE_EXECUTABLE`).
+`register`(`create --apply` 포함)는 등록 전에 container 안에서 각 ACP 서버의 `initialize` 응답을
+확인합니다. 응답하지 않는 agent의 provider만 비활성화하고 같은 container의 다른 agent는 등록하며,
+실패한 agent를 오류로 알립니다. 다음 `register`에서 확인이 통과하면 다시 등록합니다.
 provider ID는 agent마다 `container-<이름>-<agent>`이며 label은 `SBX <이름> · <agent>`입니다.
 
+omp·gjc는 lock에 고정한 공식 Linux binary를 SHA-256으로 확인해 설치하며 Bun이 필요하지 않습니다.
+두 agent는 이미지에 고정한 버전을 유지하고 자체 업데이트를 사용하지 않습니다. 라이선스와 고지
+(`LICENSE`, omp `THIRD-PARTY-NOTICES.txt`, gjc `NOTICE.md`)는 `/opt/paseo-sbx/licenses/<agent>/`에
+함께 설치합니다. 현재 methodology는 `native`만 지원합니다. omp `native` 연결에서 Paseo는 MCP 도구를
+호스트에서 중계하며, 호스트의 omp 세션 기록 화면은 container 안 세션을 읽지 못합니다.
+
 agent 인증·설정은 container 안의 서로 다른 경로(`~/.codex`, `~/.claude`·`~/.claude.json`,
-`~/.gemini`)에 저장되므로 함께 쓸 수 있으며 agent마다 한 번씩 로그인합니다.
+`~/.gemini`, `~/.omp`, `~/.gjc`)에 저장되므로 함께 쓸 수 있으며 agent마다 한 번씩 로그인합니다.
+gjc는 같은 container의 Claude·Codex 로그인을 가져올 수 있으며, 호스트 인증은 사용하지 않습니다.
+로그인과 업데이트는 container의 쓰기 가능한 계층에 저장되므로 업데이트, stop/start, Paseo 재시작
+뒤에도 유지됩니다. container를 제거하고 다시 만들면(`remove` 뒤 `create`, 다른 image로 재생성)
+모든 agent에서 다시 로그인해야 합니다.
+
 여러 agent를 같은 container에서 동시에 실행할 수 있습니다. launcher의 짧은 시작 lock이
-겹치면 최대 30초 기다립니다. 여러 agent container는 아직 내부 자동 업데이트·버전 확인을
-하지 않으며 image에 고정한 버전을 사용합니다. 갱신하려면 새 image로 다시 만듭니다.
+겹치면 최대 30초 기다립니다. 여러 agent container의 `update`, `versions`, TUI `u`, 하루 한 번의
+자동 업데이트는 단일 container와 같으며 agent·methodology마다 수행합니다(`agent:codex`,
+`methodology:superpowers` 등). 여러 agent가 쓰는 plugin은 한 번 받아 각 agent에 다시 설치합니다.
 `--codex-userns`는 Codex를 포함한 container 전체(모든 guest 프로세스)에 적용됩니다.
 
 ### 설정 파일로 생성

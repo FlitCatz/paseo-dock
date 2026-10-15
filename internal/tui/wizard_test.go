@@ -168,9 +168,10 @@ func TestWizardAntigravityNative(t *testing.T) {
 
 func TestContinuousFormNavigation(t *testing.T) {
 	m := newContainerModel(config.DefaultCatalog(), config.Selection{}, "/한글 project", "2g")
-	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	// Five agents need two more rows than the classic 24-line terminal.
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 26})
 	if !strings.Contains(m.View().Content, "Headroom") {
-		t.Fatal("24-line terminal does not show all initial choices")
+		t.Fatal("26-line terminal does not show all initial choices")
 	}
 	m.Update(tea.WindowSizeMsg{Width: 100, Height: 50})
 	for _, label := range []string{"1  Agent", "2  Methodology", "3  Utility", "Superpowers", "GSD Core", "Ponytail", "OpenSpec"} {
@@ -269,9 +270,10 @@ func TestWizardCyclesAgentConnections(t *testing.T) {
 	key(m, tea.KeyEnter) // Claude Superpowers
 	key(m, tea.KeyEnter) // no utilities
 	view := m.View().Content
-	if !strings.Contains(view, "Container: claude-codex-superpowers") || !strings.Contains(view, "Paseo codex: native · 1: native/none") || !strings.Contains(view, "Paseo claude: native · 2: native/none") {
+	if !strings.Contains(view, "Container: claude-codex-superpowers") || !strings.Contains(view, "Paseo codex: native · 1: native/acp/none") || !strings.Contains(view, "Paseo claude: native · 2: native/acp/none") {
 		t.Fatal(view)
 	}
+	key(m, '2')
 	key(m, '2')
 	if !strings.Contains(m.View().Content, "Paseo claude: none") {
 		t.Fatal(m.View().Content)

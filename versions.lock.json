@@ -13,12 +13,16 @@
   "base_images": {
     "codex": "docker.io/docker/sandbox-templates:codex@sha256:a68b972a59148c6359ade441387159033f6d196d48aef9dda06d2d4bb26eb41e",
     "claude": "docker.io/docker/sandbox-templates:claude-code@sha256:868e3f5ef10579e06903d42e86448851ed59319ab8b9fba6dea2772c449bb2a6",
-    "antigravity-cli": "docker.io/docker/sandbox-templates:codex@sha256:a68b972a59148c6359ade441387159033f6d196d48aef9dda06d2d4bb26eb41e"
+    "antigravity-cli": "docker.io/docker/sandbox-templates:codex@sha256:a68b972a59148c6359ade441387159033f6d196d48aef9dda06d2d4bb26eb41e",
+    "omp": "docker.io/docker/sandbox-templates:codex@sha256:a68b972a59148c6359ade441387159033f6d196d48aef9dda06d2d4bb26eb41e",
+    "gjc": "docker.io/docker/sandbox-templates:codex@sha256:a68b972a59148c6359ade441387159033f6d196d48aef9dda06d2d4bb26eb41e"
   },
   "agents": {
     "codex": "0.159.2",
     "claude": "2.1.285",
-    "antigravity-cli": "1.2.14"
+    "antigravity-cli": "1.2.14",
+    "omp": "18.10.3",
+    "gjc": "0.18.11"
   },
   "tools": {
     "superpowers": {
@@ -89,6 +93,70 @@
         }
       },
       "integration": "native-plugin-v1"
+    },
+    "omp": {
+      "integration": "binary-v1",
+      "assets": {
+        "aarch64": {
+          "url": "https://github.com/can1357/oh-my-pi/releases/download/v18.10.3/omp-linux-arm64",
+          "sha256": "7f580e1fe06ebffe16ae46cc6881051aca4980db7f654702feefed5651555862"
+        },
+        "x86_64": {
+          "url": "https://github.com/can1357/oh-my-pi/releases/download/v18.10.3/omp-linux-x64",
+          "sha256": "366ffcda80db57b825921b6ff4b0e5e623bc62cf18478f2828cd8a322fc72ff9"
+        }
+      },
+      "notices": [
+        {
+          "name": "LICENSE",
+          "url": "https://github.com/can1357/oh-my-pi/releases/download/v18.10.3/LICENSE",
+          "sha256": "16c45f9d667442781f03fa198914cc39abcaa48ec5ed8f644643e554ca2fbf63"
+        },
+        {
+          "name": "THIRD-PARTY-NOTICES.txt",
+          "url": "https://github.com/can1357/oh-my-pi/releases/download/v18.10.3/THIRD-PARTY-NOTICES.txt",
+          "sha256": "768612d40a4d1788813b997b011290d0f08c426add452de6560bf227cd1fc29d"
+        }
+      ]
+    },
+    "gjc": {
+      "integration": "binary-v1",
+      "assets": {
+        "aarch64": {
+          "url": "https://github.com/Yeachan-Heo/gajae-code/releases/download/v0.18.11/gjc-linux-arm64",
+          "sha256": "2f404c9648fde9ba766df06918ed618e119ad6c2757f6b00f0be47e4f4180ec8"
+        },
+        "x86_64": {
+          "url": "https://github.com/Yeachan-Heo/gajae-code/releases/download/v0.18.11/gjc-linux-x64",
+          "sha256": "9e2ac3e801776664df7c987db4dc83f2c98a419b657eff94439099e8eb0cf966"
+        }
+      },
+      "notices": [
+        {
+          "name": "LICENSE",
+          "url": "https://raw.githubusercontent.com/Yeachan-Heo/gajae-code/v0.18.11/LICENSE",
+          "sha256": "a6625a82edf7b97e90ccd713c16fc6a3cee8cd8978752b638b34a488154cb0f1"
+        },
+        {
+          "name": "NOTICE.md",
+          "url": "https://raw.githubusercontent.com/Yeachan-Heo/gajae-code/v0.18.11/NOTICE.md",
+          "sha256": "6cafdd23a28e415958177fd7948a3c27ef59ce0ff062e18c88409bebea1ccddd"
+        }
+      ]
+    }
+  },
+  "acp_adapters": {
+    "codex": {
+      "package": "@agentclientprotocol/codex-acp",
+      "version": "2.1.1",
+      "integrity": "sha512-dppZxW3f8kNbTDbR25+lBLtNst5DIC/Sm7GtRF69PI1Ilqv12tDSsIb0hJQW0iNzkx+JdDvX76HOyv5Uibu1qQ==",
+      "bin": "codex-acp"
+    },
+    "claude": {
+      "package": "@agentclientprotocol/claude-agent-acp",
+      "version": "0.84.0",
+      "integrity": "sha512-Zhjyxvm7USDB/BAFx2L6U6rA3spJ6qwEDFbLgByzpmQMeZGuAlZPXhMcAc+Xsndj9kDh+OFJNjETRwGJCR1eTQ==",
+      "bin": "claude-agent-acp"
     }
   }
 }

@@ -183,7 +183,7 @@ func TestPluginRollbackOnInstallFailure(t *testing.T) {
 		return "", nil
 	}
 	u := updater{ctx: context.Background(), run: run, home: "/home/agent"}
-	if _, err := u.plugin("claude", "superpowers"); err == nil {
+	if _, err := u.plugin([]string{"claude"}, "superpowers"); err == nil {
 		t.Fatal("failure ignored")
 	}
 	if !strings.HasSuffix(calls[len(calls)-1], "checkout --detach old") {

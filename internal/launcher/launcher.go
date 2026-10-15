@@ -518,7 +518,8 @@ func Resolve(base, profile string, args []string) (string, error) {
 	if best != nil {
 		return best.runtime, nil
 	}
-	probe := len(args) > 0 && (args[0] == "app-server" || (len(args) == 1 && (args[0] == "--version" || args[0] == "-v")))
+	// Long-lived JSON-RPC servers (Codex app-server, ACP) validate each session cwd.
+	probe := len(args) > 0 && (args[0] == "app-server" || args[0] == "--acp" || (len(args) == 1 && (args[0] == "--version" || args[0] == "-v")))
 	if !explicit && probe && fallback != nil {
 		return fallback.runtime, nil
 	}
@@ -590,7 +591,7 @@ func LaunchIO(runtime, profile string, args []string, in io.Reader, out, stderr 
 		return 1, err
 	}
 	if !config.Within(cwd, workspace) {
-		if !explicit && len(args) > 0 && entry.Agent == "codex" && args[0] == "app-server" {
+		if !explicit && len(args) > 0 && ((entry.Agent == "codex" && args[0] == "app-server") || (args[0] == "--acp" && entry.Connection(entry.Agent) == config.ConnectionACP)) {
 			cwd = workspace
 		} else {
 			return 1, errors.New("Paseo cwd is outside the registered sandbox workspace")
@@ -743,6 +744,10 @@ func LaunchIO(runtime, profile string, args []string, in io.Reader, out, stderr 
 			}
 		}
 	}()
+	// JSON-RPC sessions carry Paseo MCP endpoints and cwd on stdin; ACP sessions
+	// pass them in session/new, so every ACP agent is translated like Codex.
+	acp := entry.EffectiveCategory() == config.CategoryContainer && entry.Connection(entry.Agent) == config.ConnectionACP
+	translate := entry.Agent == "codex" || entry.Agent == "antigravity-cli" || acp
 	failures := make(chan error, 1)
 	go func() {
 		defer stdin.Close()
@@ -750,7 +755,7 @@ func LaunchIO(runtime, profile string, args []string, in io.Reader, out, stderr 
 		for {
 			line, e := reader.ReadBytes(10)
 			if len(line) > 0 {
-				if (entry.Agent == "codex" || entry.Agent == "antigravity-cli") && len(strings.TrimSpace(string(line))) > 0 {
+				if translate && len(strings.TrimSpace(string(line))) > 0 {
 					var message map[string]any
 					if json.Unmarshal(line, &message) != nil || message == nil {
 						failures <- errors.New("failed to translate Paseo protocol: invalid JSON message")
@@ -805,11 +810,17 @@ func LaunchIO(runtime, profile string, args []string, in io.Reader, out, stderr 
 	}
 	return exitStatus(err), nil
 }
-func validateEntry(runtime, key string, entry config.Entry) error {
+
+// storedEntry drops a bundle's per-agent view; bundle entries store no single agent.
+func storedEntry(entry config.Entry) config.Entry {
 	if entry.Bundle() {
-		// Bundle entries store no single agent; drop the per-agent view.
 		entry.Agent, entry.Tool = "", ""
 	}
+	return entry
+}
+
+func validateEntry(runtime, key string, entry config.Entry) error {
+	entry = storedEntry(entry)
 	var reg config.Registry
 	if err := config.ReadJSON(filepath.Join(runtime, "registry.json"), &reg); err != nil {
 		return err
@@ -863,11 +874,8 @@ func providerEntry(reg config.Registry, id string) (string, config.Entry, string
 }
 
 func updateTarget(ctx context.Context, runtime, key string, entry config.Entry, stderr io.Writer) error {
-	if entry.Bundle() {
-		// Multi-agent containers are not updated automatically yet; they keep
-		// the pinned image versions.
-		return nil
-	}
+	// A bundle refreshes every agent in its container, not only the launched one.
+	entry = storedEntry(entry)
 	release, err := operationlock.Acquire(ctx, runtime, []string{operationlock.EntryKey(entry)})
 	if err != nil {
 		if errors.Is(err, operationlock.ErrConflict) {

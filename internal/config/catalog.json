@@ -3,14 +3,16 @@
   "agents": [
     {"id":"codex","label":"Codex","adapter":"codex"},
     {"id":"claude","label":"Claude","adapter":"claude"},
-    {"id":"antigravity-cli","label":"Antigravity CLI","adapter":"antigravity-cli"}
+    {"id":"antigravity-cli","label":"Antigravity CLI","adapter":"antigravity-cli"},
+    {"id":"omp","label":"Oh My Pi","adapter":"omp"},
+    {"id":"gjc","label":"Gajae Code","adapter":"gjc"}
   ],
   "methodologies": [
     {"id":"superpowers","label":"Superpowers","installer":"git-plugin","agents":["codex","claude","antigravity-cli"]},
     {"id":"gsd-core","label":"GSD Core","installer":"gsd-core","agents":["codex","claude","antigravity-cli"]},
     {"id":"ponytail","label":"Ponytail","installer":"git-plugin","agents":["codex","claude","antigravity-cli"]},
     {"id":"openspec","label":"OpenSpec","installer":"openspec","agents":["codex","claude","antigravity-cli"],"note":"프로젝트별 spec·workflow 파일을 초기화합니다."},
-    {"id":"native","label":"Native (no methodology)","installer":"none","agents":["antigravity-cli"]}
+    {"id":"native","label":"Native (no methodology)","installer":"none","agents":["antigravity-cli","omp","gjc"]}
   ],
   "utilities": [
     {"id":"rtk","label":"RTK","installer":"rtk","agents":["codex","claude","antigravity-cli"],"note":"Command output compression · Codex/Claude hooks · Antigravity instructions"},

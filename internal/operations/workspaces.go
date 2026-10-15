@@ -163,6 +163,9 @@ func (a *execution) create(workspace, namespace, memory string, verifyRelay ...b
 		pair, _ := a.Catalog.Pair(p)
 		agent, tool := pair.Agent, pair.Methodology
 		adapter, _ := a.Catalog.Agent(agent)
+		if !config.LegacySandboxAdapter(adapter.Adapter) {
+			return fmt.Errorf("%s is available only as a container agent", agent)
+		}
 		name := "paseo-" + p + "-" + filepath.Base(runtime)
 		entry := config.Entry{Agent: adapter.Adapter, Tool: tool, Workspace: w, Sandbox: name, Image: a.image(p, namespace)}
 		planned[p] = entry
@@ -641,12 +644,14 @@ func (a *execution) createCategory(w, runtime, namespace, memory string, saved c
 			return err
 		}
 	}
-	if a.Selection.Category == config.CategoryContainer {
+	// Without --apply no register follows, so check ACP here; failures disable
+	// only that agent's provider and are reported when the create finishes.
+	if a.Selection.Category == config.CategoryContainer && (len(verifyRelay) == 0 || !verifyRelay[0]) {
+		var acpErrs []error
 		for _, key := range a.profiles() {
-			if err := a.checkACP(backend, key, registry.Profiles[key]); err != nil {
-				return err
-			}
+			acpErrs = append(acpErrs, a.recordACP(backend, &registry, key, registry.Profiles[key]))
 		}
+		a.acpErr = errors.Join(acpErrs...)
 	}
 	if len(verifyRelay) > 0 && verifyRelay[0] && a.Selection.Category == config.CategoryContainer {
 		proposed := registry
@@ -667,14 +672,22 @@ func (a *execution) createCategory(w, runtime, namespace, memory string, saved c
 	if err := a.writeJSON(filepath.Join(runtime, "selection.json"), a.Selection); err != nil {
 		return err
 	}
-	// Keep active targets belonging to the other runtime category.
+	// Keep active targets of the other runtime category. Containers from earlier
+	// creates stay active too, so several containers serve one workspace; a
+	// sandbox selection still replaces the previous sandbox.
 	active := []string{}
 	for _, profile := range registry.Active {
-		if registry.Profiles[profile].EffectiveCategory() != a.Selection.Category {
+		category := registry.Profiles[profile].EffectiveCategory()
+		if category != a.Selection.Category || category == config.CategoryContainer {
 			active = append(active, profile)
 		}
 	}
-	registry.Active = append(active, a.profiles()...)
+	for _, profile := range a.profiles() {
+		if !slices.Contains(active, profile) {
+			active = append(active, profile)
+		}
+	}
+	registry.Active = active
 	registry.Selection = a.Selection
 	registry.Catalog = &a.Catalog
 	if err := a.writeJSON(filepath.Join(runtime, "registry.json"), registry); err != nil {

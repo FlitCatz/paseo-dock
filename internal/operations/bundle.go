@@ -44,6 +44,11 @@ func bundleImageSpec(c config.Catalog, entry config.Entry, lock config.Lock) (st
 		versions = append(versions, agent+"@"+version)
 		sources = append(sources, source)
 	}
+	for _, agent := range acpAdapters(entry) {
+		if a := lock.ACPAdapters[agent]; a.Package == "" || !stableVersion.MatchString(a.Version) || !strings.HasPrefix(a.Integrity, "sha512-") || a.Bin == "" {
+			return "", nil, fmt.Errorf("missing pinned ACP adapter for %s", agent)
+		}
+	}
 	var tools []string
 	for _, p := range entry.Pairs {
 		if lock.Tools[p.Methodology] == nil {
@@ -93,8 +98,8 @@ func (a *execution) bundleBakeTarget(profile, namespace, platforms string, entry
 			return nil, err
 		}
 		manifest := map[string]any{"category": config.CategoryContainer, "agent": agent, "version": a.Lock.Agents[agent], "source": source}
-		if agent == "antigravity-cli" {
-			manifest["artifacts"] = a.Lock.AgentArtifacts[agent]
+		if artifacts := a.Lock.AgentArtifacts[agent]; artifacts != nil {
+			manifest["artifacts"] = artifacts
 		}
 		manifests[agent] = manifest
 	}
@@ -112,7 +117,7 @@ func (a *execution) bundleBakeTarget(profile, namespace, platforms string, entry
 		}
 		pairs = append(pairs, p.Agent+":"+p.Methodology+":"+installer)
 	}
-	args := map[string]string{"BASE_IMAGE": a.Lock.BaseImages[agents[0]], "AGENTS": strings.Join(agents, ","), "PAIRS": strings.Join(pairs, ","), "AGENT_MANIFESTS": string(encoded), "CATEGORY": string(config.CategoryContainer), "UTILITIES": strings.Join(entry.Utilities, ",")}
+	args := map[string]string{"BASE_IMAGE": a.Lock.BaseImages[agents[0]], "AGENTS": strings.Join(agents, ","), "PAIRS": strings.Join(pairs, ","), "AGENT_MANIFESTS": string(encoded), "CATEGORY": string(config.CategoryContainer), "UTILITIES": strings.Join(entry.Utilities, ","), "ACP_ADAPTERS": strings.Join(acpAdapters(entry), ",")}
 	t := map[string]any{"context": a.Root, "dockerfile": "Dockerfile", "tags": []string{namespace + "/" + profile + ":" + tag}, "args": args, "labels": labels}
 	if platforms != "" {
 		t["platforms"] = strings.Split(platforms, ",")
@@ -152,4 +157,15 @@ func entryRegistration(providers map[string]any, err error, base, profile string
 		return "unmanaged"
 	}
 	return "registered"
+}
+
+// acpAdapters lists bundle agents whose acp connection needs a pinned adapter package.
+func acpAdapters(entry config.Entry) []string {
+	var out []string
+	for _, agent := range entry.AgentIDs() {
+		if entry.Connection(agent) == config.ConnectionACP && config.ACPAdapterAgent(agent) {
+			out = append(out, agent)
+		}
+	}
+	return out
 }

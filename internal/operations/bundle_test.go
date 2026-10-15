@@ -110,17 +110,21 @@ func TestBundleRegistrationNeedsEveryConnectedAgent(t *testing.T) {
 
 type acpBackend struct {
 	categoryBackend
-	reply string
-	argv  []string
+	replies map[string]string
+	probed  []string
 }
 
-func (b *acpBackend) Exec(_ context.Context, _ config.Entry, args []string, in io.Reader, out, _ io.Writer) error {
-	b.argv = args
+func (b *acpBackend) Exec(ctx context.Context, e config.Entry, args []string, in io.Reader, out, stderr io.Writer) error {
+	if in == nil {
+		return b.categoryBackend.Exec(ctx, e, args, in, out, stderr)
+	}
+	b.probed = append(b.probed, e.Agent+": "+strings.Join(args, " "))
+	reply := b.replies[e.Agent]
 	request, _ := io.ReadAll(in)
 	if !strings.Contains(string(request), `"method":"initialize"`) {
 		return io.ErrUnexpectedEOF
 	}
-	_, err := io.WriteString(out, b.reply)
+	_, err := io.WriteString(out, reply)
 	return err
 }
 
@@ -140,15 +144,124 @@ func TestACPCheck(t *testing.T) {
 	}
 	s := &Service{}
 	a := s.execution(context.Background(), nil, nil)
-	b := &acpBackend{}
-	native := config.Entry{Category: config.CategoryContainer, Name: "dev", Pairs: []config.Pair{{Agent: "codex", Methodology: "superpowers"}}}
-	if err := a.checkACP(b, native.Key(), native); err != nil || b.argv != nil {
-		t.Fatalf("native agent probed: %v %v", err, b.argv)
-	}
-	// No ACP server is pinned yet, so an ACP connection cannot pass the check.
-	acp := native
-	acp.Connections = map[string]string{"codex": config.ConnectionACP}
-	if err := a.checkACP(b, acp.Key(), acp); err == nil || !strings.Contains(err.Error(), "no ACP server is pinned for codex") {
+	valid := `{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":1}}` + "\n"
+	b := &acpBackend{replies: map[string]string{"codex": valid}}
+	bundle := config.Entry{Category: config.CategoryContainer, Name: "dev", Pairs: []config.Pair{{Agent: "claude", Methodology: "superpowers"}, {Agent: "codex", Methodology: "superpowers"}, {Agent: "gjc", Methodology: "native"}}, Connections: map[string]string{"codex": config.ConnectionACP}}
+	reg := config.Registry{Profiles: map[string]config.Entry{bundle.Key(): bundle}, Active: []string{bundle.Key()}}
+	// gjc (acp by default) fails; codex passes; claude is native and never probed.
+	err := a.recordACP(b, &reg, bundle.Key(), bundle)
+	if err == nil || !strings.Contains(err.Error(), "ACP check failed for gjc in container/dev; its Paseo provider container-dev-gjc stays disabled") || strings.Contains(err.Error(), "codex") {
 		t.Fatal(err)
+	}
+	if strings.Join(b.probed, "\n") != "codex: env CODEX_PATH=/opt/paseo-sbx/runtime/bin/codex codex-acp\ngjc: env GJC_ACP_PERMISSION_MODE=prompt gjc acp" {
+		t.Fatal(b.probed)
+	}
+	if strings.Join(reg.DisabledProviders, ",") != "container-dev-gjc" {
+		t.Fatal(reg.DisabledProviders)
+	}
+	targets := ActiveProviders([]config.Installed{{Registry: reg}})
+	if len(targets) != 2 || targets["container-dev-codex"].Mode != config.ConnectionACP || targets["container-dev-claude"].Mode != config.ConnectionNative {
+		t.Fatal(targets)
+	}
+	// A later passing check re-enables the provider.
+	b.replies["gjc"] = valid
+	if err := a.recordACP(b, &reg, bundle.Key(), bundle); err != nil || reg.DisabledProviders != nil {
+		t.Fatal(err, reg.DisabledProviders)
+	}
+}
+
+func TestCreateApplyDisablesOnlyFailedACPProvider(t *testing.T) {
+	s, r, path := restoreFixture(t)
+	b := &acpBackend{replies: map[string]string{}}
+	s.Backends = map[config.Category]Backend{config.CategoryContainer: b}
+	selection := config.Selection{Schema: 2, Category: config.CategoryContainer, Pairs: []config.Pair{{Agent: "codex", Methodology: "superpowers"}, {Agent: "gjc", Methodology: "native"}}}
+	selection.UseBundle()
+	_, err := s.Execute(context.Background(), Request{Kind: KindCreate, Target: Target{Workspace: r.Target.Workspace}, Selection: selection, Apply: true, PaseoHome: r.PaseoHome}, nil)
+	if err == nil || !strings.Contains(err.Error(), "ACP check failed for gjc") {
+		t.Fatal(err)
+	}
+	var reg config.Registry
+	if err := config.ReadJSON(path, &reg); err != nil {
+		t.Fatal(err)
+	}
+	key := "container/codex-gjc-native-superpowers"
+	if !reg.IsActive(key) || strings.Join(reg.DisabledProviders, ",") != "container-codex-gjc-native-superpowers-gjc" {
+		t.Fatal(reg.Active, reg.DisabledProviders)
+	}
+	providers, err := readProviders(r.PaseoHome)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if providers["container-codex-gjc-native-superpowers-codex"] == nil || providers["container-codex-gjc-native-superpowers-gjc"] != nil {
+		t.Fatalf("providers=%v", providers)
+	}
+}
+
+func TestRepeatedCreateKeepsEarlierContainersActive(t *testing.T) {
+	s, r, path := restoreFixture(t)
+	b := &categoryBackend{}
+	s.Backends = map[config.Category]Backend{config.CategoryContainer: b}
+	first := config.Selection{Schema: 2, Category: config.CategoryContainer, Pairs: []config.Pair{{Agent: "codex", Methodology: "superpowers"}}}
+	second := config.Selection{Schema: 2, Category: config.CategoryContainer, Name: "review", Pairs: []config.Pair{{Agent: "claude", Methodology: "ponytail"}, {Agent: "codex", Methodology: "ponytail"}}}
+	for _, selection := range []config.Selection{first, second} {
+		if _, err := s.Execute(context.Background(), Request{Kind: KindCreate, Target: Target{Workspace: r.Target.Workspace}, Selection: selection, Apply: true, PaseoHome: r.PaseoHome}, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var reg config.Registry
+	if err := config.ReadJSON(path, &reg); err != nil {
+		t.Fatal(err)
+	}
+	if !reg.IsActive("container/codex-superpowers") || !reg.IsActive("container/review") || reg.Selection.Name != "review" {
+		t.Fatal(reg.Active)
+	}
+	providers, err := readProviders(r.PaseoHome)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"container-codex-superpowers", "container-review-claude", "container-review-codex"} {
+		if providers[id] == nil {
+			t.Fatalf("missing %s: %v", id, providers)
+		}
+	}
+}
+
+type versionsBackend struct{ categoryBackend }
+
+func (b *versionsBackend) Exec(ctx context.Context, e config.Entry, args []string, in io.Reader, out, stderr io.Writer) error {
+	switch command := strings.Join(args, " "); command {
+	case "cat /home/agent/.local/share/paseo-sbx/installed.json":
+		b.calls = append(b.calls, command)
+		_, err := io.WriteString(out, `{"pairs":[{"agent":"omp","methodology":"native"},{"agent":"claude","methodology":"openspec"},{"agent":"codex","methodology":"openspec"}],"lock":{"tools":{"openspec":{"package":"@fission-ai/openspec"}}}}`)
+		return err
+	case "claude --version", "omp --version", "openspec --version":
+		b.calls = append(b.calls, command)
+		_, err := io.WriteString(out, args[0]+" 1.0.0")
+		return err
+	}
+	return b.categoryBackend.Exec(ctx, e, args, in, out, stderr)
+}
+
+func TestBundleVersionsProbeEveryAgentAndMethodology(t *testing.T) {
+	s, target, _ := categoryFixture(t, config.CategoryContainer)
+	b := &versionsBackend{}
+	s.Backends = map[config.Category]Backend{config.CategoryContainer: b}
+	target.Entry.Agent, target.Entry.Tool = "", ""
+	target.Entry.Name = "dev"
+	target.Entry.Pairs = []config.Pair{{Agent: "claude", Methodology: "openspec"}, {Agent: "codex", Methodology: "openspec"}, {Agent: "omp", Methodology: "native"}}
+	target.Profile = target.Entry.Key()
+	writeTarget(t, target)
+	result, err := s.Execute(context.Background(), Request{Kind: KindVersions, Target: target}, nil)
+	if err != nil {
+		t.Fatalf("err=%v calls=%v", err, b.calls)
+	}
+	want := map[string]string{"agent:claude": "claude 1.0.0", "agent:codex": "codex 1.2.3", "agent:omp": "omp 1.0.0", "methodology:openspec": "openspec 1.0.0"}
+	for id, version := range want {
+		if result.Versions[id] != version {
+			t.Fatalf("%s: %v", id, result.Versions)
+		}
+	}
+	if strings.Count(strings.Join(b.calls, "\n"), "openspec --version") != 1 {
+		t.Fatal(b.calls)
 	}
 }

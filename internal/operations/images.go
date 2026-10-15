@@ -85,9 +85,9 @@ func imageAgentSource(agent, version string, lock config.Lock) (string, error) {
 	if name, err := agentPackage(agent); err == nil {
 		return packageSource(name, version), nil
 	}
-	if agent == "antigravity-cli" && lock.AgentArtifacts[agent] != nil {
+	if lock.AgentArtifacts[agent] != nil {
 		// The manifest retains the architecture-specific verified artifact sources.
-		return "versions.lock.json#agent_artifacts/antigravity-cli", nil
+		return "versions.lock.json#agent_artifacts/" + agent, nil
 	}
 	return "", fmt.Errorf("no recorded package source for agent %s", agent)
 }
@@ -233,8 +233,8 @@ func (a *execution) bakeConfig(namespace, platforms string, resolve stableResolv
 		}
 		labels["io.paseo-sbx.agent.source"] = source
 		manifest := map[string]any{"category": category, "agent": agent, "version": lock.Agents[agent], "source": source}
-		if agent == "antigravity-cli" {
-			manifest["artifacts"] = lock.AgentArtifacts[agent]
+		if artifacts := lock.AgentArtifacts[agent]; artifacts != nil {
+			manifest["artifacts"] = artifacts
 		}
 		encoded, err := json.Marshal(manifest)
 		if err != nil {
