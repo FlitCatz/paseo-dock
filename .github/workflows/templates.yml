@@ -86,6 +86,6 @@ jobs:
         run: |
           go run ./cmd/paseo-sbx build --profile "$PROFILE" --namespace "ghcr.io/${REPOSITORY,,}" \
             --platforms linux/amd64,linux/arm64 --print-bake > ci-bake.json
-          args=(docker buildx bake -f ci-bake.json "$PROFILE")
+          args=(docker buildx bake -f ci-bake.json "container-$PROFILE")
           if [ "$PUBLISH" = true ]; then args+=(--push); fi
           "${args[@]}"
