@@ -296,6 +296,15 @@ func (s *Service) Execute(ctx context.Context, r Request, emit func(Event)) (res
 	if len(a.ports) > 0 && (a.Selection == nil || a.Selection.Category != config.CategoryContainer || r.Kind != KindCreate) {
 		return result, errors.New("port mappings require container creation")
 	}
+	if r.Kind == KindCreate && a.Selection != nil {
+		memoryCategory := a.Selection.Category
+		if a.Selection.Schema == 1 {
+			memoryCategory = config.CategorySandbox
+		}
+		if err := config.ValidateMemory(memoryCategory, r.Memory); err != nil {
+			return result, err
+		}
+	}
 	if r.Namespace == "" {
 		r.Namespace = "paseo-sbx"
 	}
@@ -456,7 +465,8 @@ func (s *Service) Execute(ctx context.Context, r Request, emit func(Event)) (res
 	case KindLoad:
 		err = a.load(r.Namespace, r.KeepArchive)
 	case KindCreate:
-		if r.BuildFirst {
+		err = a.prepareRepository(r.Target.Workspace, r.Repository)
+		if err == nil && r.BuildFirst {
 			err = a.build(r.Namespace, r.Platforms, false)
 			if err == nil && (a.Selection == nil || a.Selection.Category != config.CategoryContainer) {
 				err = a.load(r.Namespace, r.KeepArchive)

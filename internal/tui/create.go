@@ -5,7 +5,6 @@ import (
 	"os"
 	"paseo-sbx/internal/config"
 	"paseo-sbx/internal/operations"
-	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -18,11 +17,11 @@ import (
 
 // Creation owns only input and selection. Execution always uses the dashboard queue.
 type creation struct {
-	path, memory, ports textinput.Model
-	picker              filepicker.Model
-	focus               int
-	wizard              *Model
-	request             operations.Request
+	path, configPath, ports textinput.Model
+	picker                  filepicker.Model
+	focus                   int
+	wizard                  *Model
+	request                 operations.Request
 }
 type savedSelectionMsg struct {
 	request   operations.Request
@@ -42,15 +41,12 @@ func (m *Dashboard) ownsFlow(flow uint64) bool {
 	return flow == m.flowGeneration && m.confirm == nil && m.creating == nil && !m.actionMenu && !m.advancedMenu && !m.exitPrompt
 }
 
-var memoryPattern = regexp.MustCompile(`^[1-9][0-9]*[kKmMgG]?[bB]?$`)
-
 func (m *Dashboard) startCreation() tea.Cmd {
 	m.newFlow()
-	path, memory, ports := textinput.New(), textinput.New(), textinput.New()
+	path, configPath, ports := textinput.New(), textinput.New(), textinput.New()
 	ports.Prompt = "Container ports (host:container, optional): "
 	path.Prompt = "Workspace 경로: "
-	memory.Prompt = "Memory / sandbox: "
-	memory.SetValue("2g")
+	configPath.Prompt = "Create config JSON (optional): "
 	picker := filepicker.New()
 	picker.DirAllowed = true
 	picker.FileAllowed = false
@@ -59,7 +55,7 @@ func (m *Dashboard) startCreation() tea.Cmd {
 		path.SetValue(w.Path)
 		picker.CurrentDirectory = w.Path
 	}
-	m.creating = &creation{path: path, memory: memory, ports: ports, picker: picker}
+	m.creating = &creation{path: path, configPath: configPath, ports: ports, picker: picker}
 	m.advancedMenu = false
 	m.actionMenu = false
 	m.actionError = ""
@@ -84,6 +80,7 @@ func (m *Dashboard) creationMessage(msg tea.Msg) (bool, tea.Cmd) {
 		r.Target.Category = v.Result.Category
 		r.Ports = v.Result.Ports
 		r.Apply = v.Result.Apply
+		r.Memory = v.Result.Memory
 		return true, m.enqueue(r)
 	}
 	if v, ok := msg.(savedSelectionMsg); ok {
@@ -122,7 +119,7 @@ func (m *Dashboard) creationMessage(msg tea.Msg) (bool, tea.Cmd) {
 		}
 		c.path.SetWidth(max(1, size.Width-20))
 		c.ports.SetWidth(max(1, size.Width-20))
-		c.memory.SetWidth(max(1, size.Width-20))
+		c.configPath.SetWidth(max(1, size.Width-20))
 		c.picker.SetHeight(max(1, size.Height-8))
 		return false, nil
 	}
@@ -145,13 +142,13 @@ func (m *Dashboard) creationMessage(msg tea.Msg) (bool, tea.Cmd) {
 				c.focus = (c.focus + 3) % 4
 			}
 			c.path.Blur()
-			c.memory.Blur()
+			c.configPath.Blur()
 			c.ports.Blur()
 			if c.focus == 0 {
 				return true, c.path.Focus()
 			}
 			if c.focus == 1 {
-				return true, c.memory.Focus()
+				return true, c.configPath.Focus()
 			}
 			if c.focus == 2 {
 				return true, c.ports.Focus()
@@ -159,25 +156,60 @@ func (m *Dashboard) creationMessage(msg tea.Msg) (bool, tea.Cmd) {
 			return true, nil
 		case "enter":
 			if c.focus != 3 {
-				w, err := config.Canonical(strings.TrimSpace(c.path.Value()))
-				if strings.TrimSpace(c.path.Value()) == "" {
-					err = fmt.Errorf("Workspace 경로를 입력하세요")
+				cfg := config.CreateConfig{}
+				var err error
+				if strings.TrimSpace(c.configPath.Value()) != "" {
+					cfg, err = config.LoadCreateConfig(strings.TrimSpace(c.configPath.Value()))
+					if err == nil {
+						var s config.Selection
+						s, err = m.Catalog.Normalize(cfg.Selection())
+						cfg.CreateSelection = config.CreateSelection(s)
+					}
+					if err == nil {
+						err = config.ValidateMemory(cfg.Category, cfg.Memory)
+					}
+					if err != nil {
+						m.actionError = safeText(err.Error())
+						return true, nil
+					}
 				}
-				if err == nil && !memoryPattern.MatchString(c.memory.Value()) {
-					err = fmt.Errorf("Memory 예: 2g, 4096m")
+				workspace := cfg.Workspace
+				if strings.TrimSpace(c.path.Value()) != "" {
+					workspace = strings.TrimSpace(c.path.Value())
+				}
+				w, err := config.Canonical(workspace)
+				if workspace == "" {
+					err = fmt.Errorf("Workspace 경로를 입력하세요")
 				}
 				if err != nil {
 					m.actionError = safeText(err.Error())
 					return true, nil
 				}
-				ports, portErr := parsePorts(c.ports.Value())
+				portsText := strings.Join(cfg.Ports, ",")
+				if strings.TrimSpace(c.ports.Value()) != "" {
+					portsText = c.ports.Value()
+				}
+				ports, portErr := parsePorts(portsText)
 				if portErr != nil {
 					m.actionError = portErr.Error()
 					return true, nil
 				}
-				c.wizard = NewEmbeddedModel(m.Catalog, config.Selection{}, w, c.memory.Value())
+				c.wizard = NewEmbeddedModel(m.Catalog, cfg.Selection(), w, cfg.Memory)
+				if cfg.Category == config.CategoryContainer {
+					c.wizard.Cursor = 1
+				}
 				c.wizard.Ports = ports
-				c.request = operations.Request{Kind: operations.KindCreate, Target: operations.Target{Workspace: w}, Memory: c.memory.Value(), BuildFirst: true, PaseoHome: "~/.paseo"}
+				c.wizard.Repository = cfg.Repository
+				c.wizard.Result.Apply = cfg.Apply
+				build := true
+				if cfg.Build != nil {
+					build = *cfg.Build
+				}
+				c.wizard.BuildFirst = build
+				if cfg.PaseoHome != "" {
+					c.wizard.PaseoHome = cfg.PaseoHome
+				}
+				c.request = operations.Request{Kind: operations.KindCreate, Target: operations.Target{Workspace: w}, Repository: cfg.Repository, Namespace: cfg.Namespace, BuildFirst: build, PaseoHome: cfg.PaseoHome}
 				c.wizard.Width, c.wizard.Height = m.Width, m.Height
 				m.actionError = ""
 				return true, nil
@@ -188,7 +220,7 @@ func (m *Dashboard) creationMessage(msg tea.Msg) (bool, tea.Cmd) {
 	if c.focus == 0 {
 		c.path, cmd = c.path.Update(msg)
 	} else if c.focus == 1 {
-		c.memory, cmd = c.memory.Update(msg)
+		c.configPath, cmd = c.configPath.Update(msg)
 	} else if c.focus == 2 {
 		c.ports, cmd = c.ports.Update(msg)
 	} else {
@@ -212,7 +244,7 @@ func (m *Dashboard) creationView() tea.View {
 	if c.wizard != nil {
 		return c.wizard.View()
 	}
-	content := "새 환경 생성 · CPU: 2\n" + c.path.View() + "\n" + c.memory.View() + "\n" + c.ports.View() + "\nTab: 경로 / Memory / ports / directory picker · Enter: 선택 wizard · Esc: 취소\n" + c.picker.View()
+	content := "새 환경 생성\n" + c.path.View() + "\n" + c.configPath.View() + "\n" + c.ports.View() + "\nTab: 경로 / config / ports / directory picker · Enter: 선택 wizard · Esc: 취소\n" + c.picker.View()
 	if m.actionError != "" {
 		content = m.actionError + "\n" + content
 	}

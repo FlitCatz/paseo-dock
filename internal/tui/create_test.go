@@ -86,15 +86,14 @@ func TestCreationRequestFrozen(t *testing.T) {
 	m := NewDashboard(b, config.DefaultCatalog(), "")
 	defer m.cancel()
 	keyCmd(m, "n")
-	if !strings.Contains(m.View().Content, "Workspace 경로") || !strings.Contains(m.View().Content, "Memory") {
-		t.Fatal("n did not open directory picker/path and memory entry")
+	if !strings.Contains(m.View().Content, "Workspace 경로") || !strings.Contains(m.View().Content, "config") {
+		t.Fatal("n did not open directory picker/path and config entry")
 	}
 	path, err := config.Canonical(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
 	m.creating.path.SetValue(path)
-	m.creating.memory.SetValue("4g")
 	keyCmd(m, "enter")
 	if m.creating.wizard == nil {
 		t.Fatal("valid path/memory did not lead to wizard")
@@ -108,7 +107,7 @@ func TestCreationRequestFrozen(t *testing.T) {
 	if child.Step != 3 {
 		t.Fatal("wizard did not reach final confirmation", child.Step)
 	}
-	for _, want := range []string{"codex-superpowers", "CPU: 2", "4g", "Utilities: rtk", "Build", "Paseo", "~/.paseo/config.json"} {
+	for _, want := range []string{"codex-superpowers", "호스트 자원 공유", "Utilities: rtk", "Build", "Paseo", "~/.paseo/config.json"} {
 		if !strings.Contains(m.View().Content, want) {
 			t.Fatalf("confirmation omits %s: %s", want, m.View().Content)
 		}
@@ -129,7 +128,7 @@ func TestCreationRequestFrozen(t *testing.T) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	r := b.requests[0]
-	if r.Kind != operations.KindCreate || r.Target.Workspace != path || r.Memory != "4g" || !r.BuildFirst || r.Selection.Pairs[0].Agent != "codex" || len(r.Selection.Utilities) != 1 || r.Selection.Utilities[0] != "rtk" {
+	if r.Kind != operations.KindCreate || r.Target.Workspace != path || r.Memory != "" || !r.BuildFirst || r.Selection.Pairs[0].Agent != "codex" || len(r.Selection.Utilities) != 1 || r.Selection.Utilities[0] != "rtk" {
 		t.Fatalf("creation request was mutable/incomplete: %+v", r)
 	}
 }

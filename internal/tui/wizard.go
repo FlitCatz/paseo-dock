@@ -2,6 +2,7 @@
 package tui
 
 import (
+	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"errors"
 	"fmt"
@@ -20,6 +21,7 @@ type Result struct {
 	Category  config.Category
 	Ports     []config.PortMapping
 	Apply     bool
+	Memory    string
 }
 type WizardFinishedMsg struct {
 	Result Result
@@ -32,6 +34,11 @@ type Model struct {
 	CodexUserNS              bool
 	Ports                    []config.PortMapping
 	Workspace, Memory        string
+	Repository               config.Repository
+	BuildFirst               bool
+	PaseoHome                string
+	memoryInput              textinput.Model
+	editingMemory            bool
 	Step, Cursor, agentIndex int
 	agents, pairs, utilities map[string]bool
 	selectedAgents           []string
@@ -63,6 +70,7 @@ func (m *Model) finish() tea.Cmd {
 func NewModel(c config.Catalog, s config.Selection, workspace, memory string) *Model {
 	_, noColor := os.LookupEnv("NO_COLOR")
 	m := &Model{Category: config.CategorySandbox, Step: -1, Catalog: c, Workspace: workspace, Memory: memory, Color: !noColor, agents: map[string]bool{}, pairs: map[string]bool{}, utilities: map[string]bool{}}
+	m.BuildFirst, m.PaseoHome = true, "~/.paseo"
 	if s.Schema != 0 {
 		m.Category = s.Category
 		if m.Category == "" {
@@ -80,6 +88,11 @@ func NewModel(c config.Catalog, s config.Selection, workspace, memory string) *M
 		m.utilities[u] = true
 	}
 	m.CodexUserNS = s.CodexUserNS
+	if m.Memory == "" {
+		m.Memory = "2g"
+	}
+	m.memoryInput = textinput.New()
+	m.memoryInput.Prompt = "Memory / sandbox: "
 	return m
 }
 func (m *Model) Init() tea.Cmd { return nil }
@@ -180,6 +193,28 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.Err = ErrCancelled
 		return m, m.finish()
 	}
+	if m.editingMemory {
+		switch k.Code {
+		case tea.KeyEscape:
+			m.editingMemory = false
+			m.Error = ""
+		case tea.KeyEnter:
+			value := strings.TrimSpace(m.memoryInput.Value())
+			if value == "" {
+				value = "2g"
+			}
+			if err := config.ValidateMemory(config.CategorySandbox, value); err != nil {
+				m.Error = err.Error()
+				return m, nil
+			}
+			m.Memory, m.editingMemory, m.Error = value, false, ""
+		default:
+			var cmd tea.Cmd
+			m.memoryInput, cmd = m.memoryInput.Update(msg)
+			return m, cmd
+		}
+		return m, nil
+	}
 	if k.Code == 'x' && k.Mod == 0 {
 		k.Code = tea.KeySpace
 	}
@@ -215,6 +250,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	switch k.Code {
+	case 'm':
+		if k.Mod == 0 && m.Category == config.CategorySandbox && m.Step == 3 {
+			m.editingMemory = true
+			m.memoryInput.SetValue(m.Memory)
+			return m, m.memoryInput.Focus()
+		}
 	case 'u':
 		if k.Mod == 0 && m.Step == 3 && m.userNSEligible() {
 			m.CodexUserNS = !m.CodexUserNS
@@ -355,6 +396,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.Result.Selection = s
 			m.Result.Category = m.Category
+			m.Result.Memory = ""
+			if m.Category == config.CategorySandbox {
+				if err := config.ValidateMemory(m.Category, m.Memory); err != nil {
+					m.Error = err.Error()
+					break
+				}
+				m.Result.Memory = m.Memory
+			}
 			if m.Category == config.CategoryContainer {
 				m.Result.Ports = slices.Clone(m.Ports)
 			}
@@ -365,6 +414,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 func (m *Model) View() tea.View {
+	if m.editingMemory {
+		return m.boundedView([]string{"Sandbox 메모리 설정", m.memoryInput.View(), m.Error, "Enter 적용 · Esc 취소"})
+	}
 	if m.Step == -1 {
 		lines := []string{"Category · 실행 환경 선택", "Workspace: " + m.Workspace}
 		for index, i := range m.items() {
@@ -391,12 +443,19 @@ func (m *Model) View() tea.View {
 				lines = append(lines, mark+i.Label)
 			}
 		} else {
-			lines = append(lines, "최종 확인 · Agent: "+m.Result.Selection.Agent, "Image source: official stable package · Confirmed version: unresolved; official stable release will be resolved and recorded during build", "Mount: "+m.Workspace+" (read/write)", "Network: SBX policy · Ports: none", "Build → template load → sandbox · CPU: 2 · Memory: "+m.Memory)
+			flow := "Existing template → sandbox"
+			if m.BuildFirst {
+				flow = "Build → template load → sandbox"
+			}
+			lines = append(lines, "최종 확인 · Agent: "+m.Result.Selection.Agent, "Image source: official stable package · Confirmed version: unresolved; recorded during build", "Mount: "+m.Workspace+" (read/write)", "Network: SBX policy · Ports: none", flow+" · CPU: 2 · Memory: "+m.Memory)
+			if m.Repository.URL != "" {
+				lines = append(lines, "Repository: "+m.Repository.URL, "Ref: "+m.Repository.Ref)
+			}
 			mark := "○ "
 			if m.Result.Apply {
 				mark = "✓ "
 			}
-			lines = append(lines, mark+"Paseo provider 등록 및 reload", "Enter 생성 · Space 등록 변경")
+			lines = append(lines, mark+"Paseo provider 등록 및 reload", "Enter 생성 · Space 등록 변경 · m 메모리 변경")
 		}
 		if m.Error != "" {
 			lines = append(lines, m.Error)
@@ -485,7 +544,14 @@ func (m *Model) View() tea.View {
 			body = append(body, "┃    "+paint(green, "✓ "+profile))
 		}
 		body = append(body, "┃    Utilities: "+strings.Join(m.Result.Selection.Utilities, ", "))
-		body = append(body, "┃    Build → Docker store · CPU: 2 · Memory: "+m.Memory)
+		flow := "Existing image → Docker container"
+		if m.BuildFirst {
+			flow = "Build → Docker store"
+		}
+		body = append(body, "┃    "+flow+" · 호스트 자원 공유")
+		if m.Repository.URL != "" {
+			body = append(body, "┃    Repository: "+m.Repository.URL, "┃    Ref: "+m.Repository.Ref)
+		}
 		body = append(body, "┃    Category: container", "┃    Image source: versions.lock.json · Confirmed versions: unresolved in preview; pinned values recorded during build", "┃    Mount: "+m.Workspace+" (read/write)", "┃    Network: bridge", "┃    Ports: "+portText(m.Ports))
 		if m.userNSEligible() {
 			state := "off (default Docker policy)"
@@ -510,16 +576,16 @@ func (m *Model) View() tea.View {
 			mark = "✓"
 		}
 		focus = len(body)
-		body = append(body, "┃  "+paint(pink, "›")+" "+paint(green, mark+" Paseo provider 등록 및 reload"), "┃    "+paint(muted, "Enter: 이미지 빌드 → Docker container 생성"))
+		body = append(body, "┃  "+paint(pink, "›")+" "+paint(green, mark+" Paseo provider 등록 및 reload"), "┃    "+paint(muted, "Enter: "+flow+" → 생성 확정"))
 		if m.embedded {
-			body = append(body, "┃    Paseo: ~/.paseo/config.json · backup / merge", "┃    다른 workspace provider 유지")
+			body = append(body, "┃    Paseo: "+m.PaseoHome+"/config.json · backup / merge", "┃    다른 workspace provider 유지")
 		}
 	}
 	agents := strings.Join(chosen, ", ")
 	if agents == "" {
 		agents = "선택 전"
 	}
-	header := []string{paint("38;5;81;1", "PASEO SBX") + "  " + paint(muted, fmt.Sprintf("STEP %d / 4", m.Step+1)), paint(muted, "Workspace: "+m.Workspace), paint(muted, fmt.Sprintf("Memory: %s / target · CPU: 2 · Agent: %s", m.Memory, agents))}
+	header := []string{paint("38;5;81;1", "PASEO SBX") + "  " + paint(muted, fmt.Sprintf("STEP %d / 4", m.Step+1)), paint(muted, "Workspace: "+m.Workspace), paint(muted, "Agent: "+agents)}
 	footer := []string{"", paint(muted, "↑/↓ 이동 · Space/x 선택 · Enter/Tab 다음 · Esc/Shift+Tab 이전"), paint(muted, "Ctrl+C 취소 · 최종 확인 화면에서 Enter로 생성")}
 	if m.Error != "" {
 		footer = append([]string{paint("38;5;203", m.Error)}, footer...)
@@ -552,10 +618,29 @@ func Run(c config.Catalog, s config.Selection, workspace, memory string, in io.R
 
 // RunWithPorts preserves explicit publications through standalone confirmation.
 func RunWithPorts(c config.Catalog, s config.Selection, workspace, memory string, ports []config.PortMapping, in io.Reader, out io.Writer, apply ...bool) (Result, error) {
-	m := NewModel(c, s, workspace, memory)
-	m.Ports = slices.Clone(ports)
+	o := CreationOptions{Workspace: workspace, Memory: memory, Ports: ports, BuildFirst: true}
 	if len(apply) > 0 {
-		m.Result.Apply = apply[0]
+		o.Apply = apply[0]
+	}
+	return RunCreation(c, s, o, in, out)
+}
+
+type CreationOptions struct {
+	Workspace, Memory, PaseoHome      string
+	Ports                             []config.PortMapping
+	Repository                        config.Repository
+	Apply, BuildFirst, SelectCategory bool
+}
+
+func RunCreation(c config.Catalog, s config.Selection, o CreationOptions, in io.Reader, out io.Writer) (Result, error) {
+	m := NewModel(c, s, o.Workspace, o.Memory)
+	m.Ports = slices.Clone(o.Ports)
+	m.Repository, m.BuildFirst, m.Result.Apply = o.Repository, o.BuildFirst, o.Apply
+	if o.PaseoHome != "" {
+		m.PaseoHome = o.PaseoHome
+	}
+	if o.SelectCategory && m.Category == config.CategoryContainer {
+		m.Cursor = 1
 	}
 	_, err := tea.NewProgram(m, tea.WithInput(in), tea.WithOutput(out)).Run()
 	if err != nil {
