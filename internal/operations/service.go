@@ -21,12 +21,15 @@ import (
 )
 
 type Service struct {
-	Backends map[config.Category]Backend
-	Root     string
-	Lock     config.Lock
-	Catalog  config.Catalog
-	In       io.Reader
-	Out, Err io.Writer
+	// ValidatePaseoConfig overrides the local Paseo validator for tests or embedders.
+	// It must validate home/config.json without starting or contacting a daemon.
+	ValidatePaseoConfig func(context.Context, string) error
+	Backends            map[config.Category]Backend
+	Root                string
+	Lock                config.Lock
+	Catalog             config.Catalog
+	In                  io.Reader
+	Out, Err            io.Writer
 }
 
 // execution holds only request-local mutable state. Service is never modified.

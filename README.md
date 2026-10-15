@@ -653,6 +653,12 @@ go vet ./...
 네트워크 정책을 확인하세요. 네트워크 문제를 해결할 때 전역 allow-all을 자동 적용하지 않습니다.
 Paseo 설정을 되돌리려면 `~/.paseo/config.json.backup-*`에서 해당 백업을 복원하고 reload합니다.
 
+Provider 동기화는 `antigravity-cli` 기반 이름을 `antigravity`로 변환한 뒤, 설치된 Paseo의
+`daemon config get version --json` 검증기로 각 기반 provider의 지원 여부를 확인합니다.
+지원하지 않는 항목은 경고와 함께 제외합니다. 검사는 임시 home에서 실행하므로 실행 중인
+daemon이 필요하지 않습니다. 실제 설정도 원자적으로 교체한 뒤 같은 검증기로 검사하며,
+실패하면 원래 설정을 복원하고 중단합니다. 검증 명령을 사용할 수 없는 경우에도 중단합니다.
+
 GSD Core 1.15.0 공식 Codex installer는 일부 project-level `.claude/` 경로 참조에
 경고를 출력합니다. Codex 전역 skills와 agent TOML은 공식 installer로 설치합니다.
 이 경고가 특정 GSD workflow에 영향을 주면 upstream 수정 버전을 검토해 lock을 갱신합니다.
