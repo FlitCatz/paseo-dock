@@ -105,6 +105,11 @@ func TestMain(m *testing.M) {
 		observationFake()
 	}
 	if filepath.Base(os.Args[0]) == "paseo" {
+		if slices.Contains(os.Args, "config") && os.Getenv("SBX_TEST_VALIDATOR_ERROR") != "" {
+			fmt.Fprintln(os.Stderr, "desktop launcher diagnostic")
+			_ = json.NewEncoder(os.Stderr).Encode(map[string]any{"error": map[string]string{"message": os.Getenv("SBX_TEST_VALIDATOR_ERROR")}})
+			os.Exit(1)
+		}
 		if slices.Contains(os.Args, "status") {
 			fmt.Println(`{"localDaemon":"running"}`)
 		}

@@ -394,6 +394,9 @@ func (a *execution) syncProviders(home string, apply bool, verifyRelays ...bool)
 		return err
 	}
 	generated := ProviderConfig(config.LauncherPath(base), ActiveAdapters(live))
+	if err = a.filterProviderBases(generated); err != nil {
+		return err
+	}
 	path := filepath.Join(a.Root, ".generated", "paseo.providers.json")
 	if err := a.writeJSON(path, generated); err != nil {
 		return err
@@ -410,6 +413,7 @@ func (a *execution) syncProviders(home string, apply bool, verifyRelays ...bool)
 	}
 	path = filepath.Join(home, "config.json")
 	current := map[string]any{"version": 1}
+	backup := ""
 	original, err := os.ReadFile(path)
 	if err != nil && !os.IsNotExist(err) {
 		return err
@@ -421,8 +425,15 @@ func (a *execution) syncProviders(home string, apply bool, verifyRelays ...bool)
 		if current == nil {
 			return errors.New("Paseo config must be an object")
 		}
-		backup := path + ".backup-" + time.Now().UTC().Format("20060102T150405.000000000Z")
+		backup = path + ".backup-" + time.Now().UTC().Format("20060102T150405.000000000Z")
 		if err = os.WriteFile(backup, original, 0600); err != nil {
+			return err
+		}
+		info, err := os.Stat(path)
+		if err != nil {
+			return err
+		}
+		if err := os.Chmod(backup, info.Mode().Perm()); err != nil {
 			return err
 		}
 		fmt.Fprintln(a.Out, "Existing configuration backed up:", backup)
@@ -430,6 +441,18 @@ func (a *execution) syncProviders(home string, apply bool, verifyRelays ...bool)
 	MergeManagedConfig(current, generated, base)
 	if err = a.writeJSON(path, current); err != nil {
 		return err
+	}
+	if err = a.validatePaseoConfig(home); err != nil {
+		var restoreErr error
+		if backup != "" {
+			restoreErr = os.Rename(backup, path)
+		} else {
+			restoreErr = os.Remove(path)
+		}
+		if restoreErr != nil {
+			return errors.Join(fmt.Errorf("Paseo config validation failed: %w", err), fmt.Errorf("restore original config (backup %q): %w", backup, restoreErr))
+		}
+		return fmt.Errorf("Paseo config validation failed; original config restored: %w", err)
 	}
 	// Paseo now points at the shared launcher; retire per-workspace copies.
 	for _, i := range installed {

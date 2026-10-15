@@ -13,6 +13,9 @@ func SandboxAgent(adapter string) string {
 }
 
 func ProviderAdapter(adapter string) string {
+	if adapter == "antigravity-cli" {
+		return "antigravity"
+	}
 	return adapter
 }
 
