@@ -48,12 +48,54 @@ func nativeReviewBlockHelper() bool {
 	return true
 }
 
+func nativeReviewForceStop(ready string) {
+	for _, role := range []string{"parent", "worker"} {
+		b, _ := os.ReadFile(ready + "." + role)
+		pid, _ := strconv.Atoi(string(b))
+		if pid > 0 {
+			syscall.Kill(pid, syscall.SIGKILL)
+		}
+	}
+}
+
+func nativeReviewWaitForExit(t *testing.T, ready string, deadline time.Time) {
+	t.Helper()
+	timer := time.NewTimer(time.Until(deadline))
+	defer timer.Stop()
+	for _, role := range []string{"parent", "worker"} {
+		f, err := os.OpenFile(ready+"."+role, os.O_RDWR, 0600)
+		if err != nil {
+			t.Fatalf("native %s did not become ready: %v", role, err)
+		}
+		// Cmd.Wait reaps the direct child, but a descendant killed by the same
+		// group signal can still be releasing its files. Wait for the actual
+		// lock release, within the caller's original cancellation deadline.
+		done := make(chan error, 1)
+		go func() {
+			err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX)
+			f.Close()
+			done <- err
+		}()
+		select {
+		case err := <-done:
+			if err != nil {
+				t.Fatalf("wait for native %s readiness lock: %v", role, err)
+			}
+		case <-timer.C:
+			// The caller's deferred force-stop releases the lock if a regression
+			// leaves the helper alive; the waiter owns and closes its file.
+			t.Fatalf("native %s still holds readiness lock at cancellation deadline", role)
+		}
+	}
+}
+
 func TestNativePreparationSignalKillsSubprocessGroup(t *testing.T) {
 	for _, stage := range []string{"mktemp", "tar"} {
 		for _, sig := range []syscall.Signal{syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP} {
 			t.Run(stage+"/"+sig.String(), func(t *testing.T) {
 				runtime, id, entry, log, asset := nativeReviewFixture(t)
 				ready := filepath.Join(t.TempDir(), "ready")
+				defer nativeReviewForceStop(ready)
 				t.Setenv("NATIVE_REVIEW_BLOCK", stage)
 				t.Setenv("NATIVE_REVIEW_READY", ready)
 				done := make(chan error, 1)
@@ -68,8 +110,8 @@ func TestNativePreparationSignalKillsSubprocessGroup(t *testing.T) {
 							break
 						}
 						select {
-						case <-done:
-							t.Fatal("launcher ended before blocked native command readiness")
+						case err := <-done:
+							t.Fatalf("launcher ended before blocked native command readiness: %v", err)
 						default:
 						}
 						if time.Now().After(deadline) {
@@ -78,42 +120,23 @@ func TestNativePreparationSignalKillsSubprocessGroup(t *testing.T) {
 						time.Sleep(10 * time.Millisecond)
 					}
 				}
-				forceStop := func() {
-					for _, role := range []string{"parent", "worker"} {
-						b, _ := os.ReadFile(ready + "." + role)
-						pid, _ := strconv.Atoi(string(b))
-						if pid > 0 {
-							syscall.Kill(pid, syscall.SIGKILL)
-						}
-					}
-				}
-				defer forceStop()
 				if release, err := operationlock.Acquire(context.Background(), runtime, []string{operationlock.EntryKey(entry)}); err == nil {
 					release()
 					t.Fatal("preparation subprocess has no shared target lock")
 				}
+				deadline = time.Now().Add(1500 * time.Millisecond)
 				syscall.Kill(os.Getpid(), sig)
 				select {
 				case err := <-done:
 					if err == nil {
 						t.Fatal("canceled native launch reported success")
 					}
-				case <-time.After(1500 * time.Millisecond):
-					forceStop()
+				case <-time.After(time.Until(deadline)):
+					nativeReviewForceStop(ready)
 					<-done
 					t.Fatal("native preparation ignored launcher cancellation")
 				}
-				for _, role := range []string{"parent", "worker"} {
-					f, err := os.OpenFile(ready+"."+role, os.O_RDWR, 0600)
-					if err != nil {
-						t.Fatal(err)
-					}
-					err = syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
-					f.Close()
-					if err != nil {
-						t.Fatal("native subprocess group still holds readiness lock")
-					}
-				}
+				nativeReviewWaitForExit(t, ready, deadline)
 				calls, _ := os.ReadFile(log)
 				if strings.Contains(string(calls), `"agy"`) {
 					t.Fatal("native model started after canceled preparation")
@@ -267,6 +290,7 @@ func TestNativeCleanupHasBoundedFreshContext(t *testing.T) {
 	}
 	cancel()
 	ready := filepath.Join(t.TempDir(), "ready")
+	defer nativeReviewForceStop(ready)
 	t.Setenv("NATIVE_REVIEW_BLOCK", "rm")
 	t.Setenv("NATIVE_REVIEW_READY", ready)
 	started := time.Now()
@@ -274,15 +298,5 @@ func TestNativeCleanupHasBoundedFreshContext(t *testing.T) {
 	if elapsed := time.Since(started); elapsed > 3500*time.Millisecond {
 		t.Fatal("cleanup exceeded its fresh bounded context")
 	}
-	for _, role := range []string{"parent", "worker"} {
-		f, err := os.OpenFile(ready+"."+role, os.O_RDWR, 0600)
-		if err != nil {
-			t.Fatal("cleanup did not attempt with a fresh context")
-		}
-		err = syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
-		f.Close()
-		if err != nil {
-			t.Fatal("cleanup left its subprocess group alive")
-		}
-	}
+	nativeReviewWaitForExit(t, ready, started.Add(3500*time.Millisecond))
 }
