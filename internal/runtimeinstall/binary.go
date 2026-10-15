@@ -65,6 +65,9 @@ func installBinaryAgent(client *http.Client, lockPath, destination, notices, mac
 		}
 	}
 	asset := artifact.Assets[key]
+	if err = os.MkdirAll(filepath.Dir(destination), 0755); err != nil {
+		return err
+	}
 	stage, err := os.MkdirTemp(filepath.Dir(destination), ".cli-install-*")
 	if err != nil {
 		return err

@@ -37,8 +37,9 @@ func TestBinaryAgentChecksumAndNotices(t *testing.T) {
 			lock := filepath.Join(dir, "lock.json")
 			os.WriteFile(lock, b, 0600)
 			dest, notices := filepath.Join(dir, "bin", "omp"), filepath.Join(dir, "licenses", "omp")
-			os.MkdirAll(filepath.Dir(dest), 0755)
+			// A fresh image has no destination directory yet.
 			if kind == "existing" {
+				os.MkdirAll(filepath.Dir(dest), 0755)
 				os.WriteFile(dest, []byte("old"), 0755)
 			}
 			err := installBinaryAgent(server.Client(), lock, dest, notices, "arm64", "omp")
