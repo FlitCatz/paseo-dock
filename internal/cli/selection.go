@@ -2,8 +2,8 @@ package cli
 
 import (
 	"fmt"
-	"paseo-sbx/internal/config"
-	"paseo-sbx/internal/operations"
+	"paseo-dock/internal/config"
+	"paseo-dock/internal/operations"
 	"path/filepath"
 	"slices"
 	"strings"

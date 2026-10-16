@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"paseo-sbx/internal/config"
+	"paseo-dock/internal/config"
 )
 
 func TestResolveSelectionCodexUserNSOverrides(t *testing.T) {

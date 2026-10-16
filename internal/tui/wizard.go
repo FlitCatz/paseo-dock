@@ -9,7 +9,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"io"
 	"os"
-	"paseo-sbx/internal/config"
+	"paseo-dock/internal/config"
 	"slices"
 	"strings"
 )

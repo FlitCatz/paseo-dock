@@ -16,9 +16,9 @@ import (
 	"testing"
 	"time"
 
-	"paseo-sbx/internal/config"
-	"paseo-sbx/internal/operationlock"
-	"paseo-sbx/internal/operations"
+	"paseo-dock/internal/config"
+	"paseo-dock/internal/operationlock"
+	"paseo-dock/internal/operations"
 )
 
 // This opt-in probe creates its own isolated disposable acceptance container.
@@ -50,7 +50,7 @@ func TestLiveCodexProviderMCPDiscovery(t *testing.T) {
 	}
 	t.Setenv("HOME", filepath.Join(root, "home"))
 	t.Setenv("PASEO_HOME", filepath.Join(root, "paseo"))
-	t.Setenv("PASEO_SBX_AUTO_UPDATE", "0")
+	t.Setenv("PASEO_DOCK_AUTO_UPDATE", "0")
 	service, err := operations.New(trusted)
 	if err != nil {
 		t.Fatal(err)

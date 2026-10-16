@@ -12,7 +12,7 @@ import (
 	"syscall"
 
 	"github.com/charmbracelet/x/term"
-	"paseo-sbx/internal/operations"
+	"paseo-dock/internal/operations"
 )
 
 func printRemovalEffects(out io.Writer) {

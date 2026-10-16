@@ -3,7 +3,7 @@ package tui
 import (
 	tea "charm.land/bubbletea/v2"
 	"os"
-	"paseo-sbx/internal/config"
+	"paseo-dock/internal/config"
 	"path/filepath"
 	"strings"
 	"testing"

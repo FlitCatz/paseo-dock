@@ -13,7 +13,7 @@ import (
 	"strings"
 	"testing"
 
-	"paseo-sbx/internal/config"
+	"paseo-dock/internal/config"
 )
 
 func TestSandboxBuildFailurePreservesRecordedImage(t *testing.T) {

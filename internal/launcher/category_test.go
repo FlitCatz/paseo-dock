@@ -9,9 +9,9 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
-	"paseo-sbx/internal/config"
-	"paseo-sbx/internal/operationlock"
-	"paseo-sbx/internal/operations"
+	"paseo-dock/internal/config"
+	"paseo-dock/internal/operationlock"
+	"paseo-dock/internal/operations"
 	"path/filepath"
 	"strings"
 	"syscall"
@@ -157,7 +157,7 @@ func launcherCategoryFixture(t *testing.T, category config.Category) (string, st
 	}
 	t.Setenv("PATH", bin+":"+os.Getenv("PATH"))
 	t.Setenv("LAUNCH_CATEGORY_HELPER", "1")
-	t.Setenv("PASEO_SBX_AUTO_UPDATE", "0")
+	t.Setenv("PASEO_DOCK_AUTO_UPDATE", "0")
 	t.Setenv("PASEO_AGENT_CWD", workspace)
 	log := filepath.Join(bin, "log")
 	t.Setenv("LAUNCH_LOG", log)

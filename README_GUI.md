@@ -13,42 +13,42 @@ Paseo 앱의 메뉴 위치는 버전에 따라 다를 수 있습니다.
 | 새 Docker container | agent + methodology + 선택 utility | `container-codex-superpowers` |
 | 기존 legacy SBX | 기존 조합과 저장된 설정 유지 | `codex-superpowers` |
 
-등록 코드의 목록 label은 `SBX ` 뒤에 provider ID를 붙입니다. 따라서 새 Docker
-조합은 `SBX container-codex-superpowers`, 새 agent-only sandbox는 `SBX sbx-codex`로
-표시됩니다. 기존 `SBX codex-superpowers`는 legacy 기록에 해당합니다.
+등록 코드의 목록 label은 Docker container이면 `Dock `, SBX sandbox이면 `SBX ` 뒤에
+provider ID를 붙입니다. 따라서 새 Docker 조합은 `Dock container-codex-superpowers`,
+새 agent-only sandbox는 `SBX sbx-codex`로 표시됩니다. 기존 `SBX codex-superpowers`는 legacy 기록에 해당합니다.
 어느 workspace로 연결할지는 **세션의 프로젝트 폴더**로 결정됩니다. 같은 provider를
 여러 프로젝트에 등록해도 목록 항목은 공유하며, 해당 프로젝트에 없는 조합은 거부됩니다.
 
 ## 프로젝트 준비
 
-`--workspace`에는 프로젝트의 절대 경로를 지정합니다. 프로젝트가 paseo-sbx 소스나
+`--workspace`에는 프로젝트의 절대 경로를 지정합니다. 프로젝트가 paseo-dock 소스나
 신뢰된 runtime 파일을 포함해서는 안 됩니다.
 
 ```bash
-cd /path/to/paseo-sbx
+cd /path/to/paseo-dock
 make build
 
 # Agent-only sandbox
-./bin/paseo-sbx create --workspace /path/to/A \
+./bin/paseo-dock create --workspace /path/to/A \
   --category sandbox --agent codex --build --apply
 
 # Methodology를 포함하는 Docker 개발 환경
-./bin/paseo-sbx create --workspace /path/to/B \
+./bin/paseo-dock create --workspace /path/to/B \
   --category container --profiles codex-superpowers,claude-superpowers \
   --utilities rtk --build --apply
 
 # 새 Codex container에 검토된 user namespace 정책을 명시적으로 선택
-./bin/paseo-sbx create --workspace /path/to/C \
+./bin/paseo-dock create --workspace /path/to/C \
   --category container --profile codex-superpowers --codex-userns --build --apply
 
-./bin/paseo-sbx list --all
+./bin/paseo-dock list --all
 ```
 
 `--codex-userns` 기본값은 off입니다. 기존 container는 변환하지 않으며, 혼합 선택에서는
 Codex container에만 적용합니다. 정책 범위와 플랫폼 제한은 [README](README.md)에 있습니다.
 `--apply`는 기존 Paseo 설정을 백업한 뒤 provider 등록과 reload를 수행합니다.
 
-터미널에서 `./bin/paseo-sbx`를 인수 없이 실행하면 관리 dashboard가 열립니다.
+터미널에서 `./bin/paseo-dock`을 인수 없이 실행하면 관리 dashboard가 열립니다.
 생성 wizard에서 category, agent와 해당 category의 설치 구성을 선택하고 최종 확인합니다.
 Codex container의 최종 확인에서는 `u`로 user namespace opt-in을 바꿉니다.
 
@@ -57,8 +57,8 @@ Codex container의 최종 확인에서는 `u`로 user namespace opt-in을 바꿉
 로그인은 실행할 runtime 안에서 진행합니다. 예를 들어:
 
 ```bash
-./bin/paseo-sbx shell codex --category sandbox --workspace /path/to/A
-./bin/paseo-sbx shell claude-superpowers --category container --workspace /path/to/B
+./bin/paseo-dock shell codex --category sandbox --workspace /path/to/A
+./bin/paseo-dock shell claude-superpowers --category container --workspace /path/to/B
 ```
 
 각 agent의 공식 로그인 안내를 따르세요. SBX secret proxy의 credential은 Docker
@@ -77,10 +77,10 @@ Antigravity native는 기존 plugin과 category별 provider 경로가 다릅니�
 ## 등록 변경과 진단
 
 ```bash
-./bin/paseo-sbx register --category container --workspace /path/to/B --apply
-./bin/paseo-sbx unregister --category container --workspace /path/to/B
-./bin/paseo-sbx list --all
-./bin/paseo-sbx prune --dry-run
+./bin/paseo-dock register --category container --workspace /path/to/B --apply
+./bin/paseo-dock unregister --category container --workspace /path/to/B
+./bin/paseo-dock list --all
+./bin/paseo-dock prune --dry-run
 paseo provider diagnostic container-codex-superpowers
 ```
 

@@ -1,8 +1,8 @@
 package tui
 
 import (
-	"paseo-sbx/internal/config"
-	"paseo-sbx/internal/operations"
+	"paseo-dock/internal/config"
+	"paseo-dock/internal/operations"
 	"strings"
 	"testing"
 	"time"

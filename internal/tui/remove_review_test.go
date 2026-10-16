@@ -5,8 +5,8 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
-	"paseo-sbx/internal/config"
-	"paseo-sbx/internal/operations"
+	"paseo-dock/internal/config"
+	"paseo-dock/internal/operations"
 )
 
 func TestQuitFromConfirmation(t *testing.T) {

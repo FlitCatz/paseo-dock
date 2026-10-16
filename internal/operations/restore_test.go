@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"context"
 	"os"
-	"paseo-sbx/internal/config"
+	"paseo-dock/internal/config"
 	"path/filepath"
 	"slices"
 	"testing"

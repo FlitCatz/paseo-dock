@@ -21,10 +21,10 @@ import (
 	"time"
 
 	"github.com/creack/pty"
-	"paseo-sbx/internal/config"
-	"paseo-sbx/internal/launcher"
-	"paseo-sbx/internal/operations"
-	"paseo-sbx/internal/process"
+	"paseo-dock/internal/config"
+	"paseo-dock/internal/launcher"
+	"paseo-dock/internal/operations"
+	"paseo-dock/internal/process"
 )
 
 const namespace = "paseo-sbx-category-live-20261007"

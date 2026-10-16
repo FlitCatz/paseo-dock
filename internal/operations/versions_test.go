@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"paseo-sbx/internal/config"
+	"paseo-dock/internal/config"
 )
 
 // Any installer/network query or activation mutation fails the strict external boundary.

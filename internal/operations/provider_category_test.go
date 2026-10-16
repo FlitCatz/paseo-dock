@@ -5,8 +5,8 @@ import (
 	"errors"
 	"io"
 	"os"
-	"paseo-sbx/internal/config"
-	"paseo-sbx/internal/operationlock"
+	"paseo-dock/internal/config"
+	"paseo-dock/internal/operationlock"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -135,5 +135,22 @@ func TestUnregisterRepairsWithoutProbingRemainingDockerRelay(t *testing.T) {
 	var after config.Registry
 	if err := config.ReadJSON(filepath.Join(runtime, "registry.json"), &after); err != nil || !after.IsActive(e.Key()) {
 		t.Fatal("remaining activation changed", after, err)
+	}
+}
+
+// D1: Docker SBX sandboxes keep the "SBX" label; containers are labelled "Dock".
+func TestProviderLabelsFollowCategory(t *testing.T) {
+	sandbox := ProviderTargets("sandbox/codex", config.Entry{Category: config.CategorySandbox, Agent: "codex"})
+	legacy := ProviderTargets("codex-superpowers", config.Entry{Agent: "codex", Tool: "superpowers"})
+	container := ProviderTargets("container/codex/superpowers", config.Entry{Category: config.CategoryContainer, Agent: "codex", Tool: "superpowers"})
+	bundle := ProviderTargets("container/bundle/dev", config.Entry{Category: config.CategoryContainer, Name: "dev", Pairs: []config.Pair{{Agent: "codex", Methodology: "superpowers"}}})
+	for got, want := range map[string]string{sandbox[0].Label: "SBX sbx-codex", legacy[0].Label: "SBX codex-superpowers", container[0].Label: "Dock container-codex-superpowers", bundle[0].Label: "Dock dev · codex"} {
+		if got != want {
+			t.Fatalf("label %q, want %q", got, want)
+		}
+	}
+	generated := object(object(ProviderConfig("/trusted/launcher", map[string]string{"sbx-codex": "codex", "container-codex-superpowers": "codex"}), "agents"), "providers")
+	if generated["sbx-codex"].(map[string]any)["label"] != "SBX sbx-codex" || generated["container-codex-superpowers"].(map[string]any)["label"] != "Dock container-codex-superpowers" {
+		t.Fatalf("generated labels %v", generated)
 	}
 }

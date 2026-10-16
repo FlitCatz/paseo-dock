@@ -10,9 +10,9 @@ import (
 	"io"
 	"os"
 	"os/signal"
-	"paseo-sbx/internal/config"
-	"paseo-sbx/internal/operations"
-	"paseo-sbx/internal/tui"
+	"paseo-dock/internal/config"
+	"paseo-dock/internal/operations"
+	"paseo-dock/internal/tui"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -46,10 +46,10 @@ func (a *App) submit(r operations.Request) error {
 	result, err := a.Service.Execute(ctx, r, nil)
 	if err != nil && r.Kind != operations.KindVersions {
 		for _, t := range result.Remaining {
-			fmt.Fprintf(a.Err, "paseo-sbx: retained target %s / %s; registry: %s\n", t.Profile, t.ResourceIdentity(), filepath.Join(t.Runtime, "registry.json"))
+			fmt.Fprintf(a.Err, "paseo-dock: retained target %s / %s; registry: %s\n", t.Profile, t.ResourceIdentity(), filepath.Join(t.Runtime, "registry.json"))
 		}
 		if result.NeedsVerification {
-			fmt.Fprintln(a.Err, "paseo-sbx: partial guest state needs verification before retry.")
+			fmt.Fprintln(a.Err, "paseo-dock: partial guest state needs verification before retry.")
 		}
 	}
 	if r.Kind == operations.KindVersions {
@@ -71,12 +71,12 @@ func Run(root string, args []string, in io.Reader, out, stderr io.Writer) int {
 		if terminalStreams(in, out) {
 			args = []string{"tui"}
 		} else {
-			fmt.Fprintln(stderr, "usage: paseo-sbx {build|load|create|register|run|unregister|prune|list|shell|stop|remove|update|versions} [options]")
+			fmt.Fprintln(stderr, "usage: paseo-dock {build|load|create|register|run|unregister|prune|list|shell|stop|remove|update|versions} [options]")
 			return 2
 		}
 	}
 	if args[0] == "--help" || args[0] == "-h" || args[0] == "help" {
-		fmt.Fprintln(out, "usage: paseo-sbx {tui|build|load|create|register|run|unregister|prune|list|shell|stop|remove|update|versions} [options]\nRun paseo-sbx COMMAND --help for command options.")
+		fmt.Fprintln(out, "usage: paseo-dock {tui|build|load|create|register|run|unregister|prune|list|shell|stop|remove|update|versions} [options]\nRun paseo-dock COMMAND --help for command options.")
 		return 0
 	}
 	if args[0] == "tui" {
@@ -87,15 +87,15 @@ func Run(root string, args []string, in io.Reader, out, stderr io.Writer) int {
 			if errors.Is(err, flag.ErrHelp) {
 				return 0
 			}
-			fmt.Fprintln(stderr, "paseo-sbx:", err)
+			fmt.Fprintln(stderr, "paseo-dock:", err)
 			return 1
 		}
 		if f.NArg() != 0 {
-			fmt.Fprintln(stderr, "paseo-sbx: unexpected arguments")
+			fmt.Fprintln(stderr, "paseo-dock: unexpected arguments")
 			return 1
 		}
 		if !terminalStreams(in, out) {
-			fmt.Fprintln(stderr, "paseo-sbx: tui requires terminal input and output")
+			fmt.Fprintln(stderr, "paseo-dock: tui requires terminal input and output")
 			return 1
 		}
 		app, err := NewApp(root)
@@ -104,14 +104,14 @@ func Run(root string, args []string, in io.Reader, out, stderr io.Writer) int {
 			err = tui.RunDashboard(app.Service, app.Catalog, *workspace, in, out)
 		}
 		if err != nil {
-			fmt.Fprintln(stderr, "paseo-sbx:", err)
+			fmt.Fprintln(stderr, "paseo-dock:", err)
 			return 1
 		}
 		return 0
 	}
 	app, err := NewApp(root)
 	if err != nil {
-		fmt.Fprintln(stderr, "paseo-sbx:", err)
+		fmt.Fprintln(stderr, "paseo-dock:", err)
 		return 1
 	}
 	app.In, app.Out, app.Err = in, out, stderr
@@ -119,7 +119,7 @@ func Run(root string, args []string, in io.Reader, out, stderr io.Writer) int {
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
 		}
-		fmt.Fprintln(stderr, "paseo-sbx:", err)
+		fmt.Fprintln(stderr, "paseo-dock:", err)
 		return 1
 	}
 	return 0
@@ -143,7 +143,7 @@ func (a *App) execute(args []string) error {
 	var bundleName, connectionsText string
 	f.StringVar(&categoryText, "category", "", "sandbox or container runtime category")
 	f.StringVar(&agent, "agent", "", "agent-only creation or existing agent target")
-	namespace := "paseo-sbx"
+	namespace := ""
 	memory := ""
 	var createConfigPath string
 	var repository config.Repository
@@ -163,7 +163,7 @@ func (a *App) execute(args []string) error {
 	}
 	switch command {
 	case "build", "load":
-		f.StringVar(&namespace, "namespace", namespace, "image namespace")
+		f.StringVar(&namespace, "namespace", config.DefaultNamespace, "image namespace")
 		if command == "build" {
 			f.StringVar(&platforms, "platforms", "", "comma-separated platforms")
 			f.BoolVar(&push, "push", false, "publish images")
@@ -176,7 +176,7 @@ func (a *App) execute(args []string) error {
 		f.BoolVar(&codexUserNS, "codex-userns", false, "opt in new Codex containers to workspace-write isolation; expands kernel syscall access for all guest processes, no added capabilities")
 		f.StringVar(&portsText, "ports", "", "comma-separated host:container ports, bound to 127.0.0.1 (container only)")
 		f.StringVar(&memory, "memory", memory, "sandbox-only memory (default 2g); invalid for container")
-		f.StringVar(&namespace, "namespace", namespace, "image namespace")
+		f.StringVar(&namespace, "namespace", "", "image namespace (default: the workspace's recorded namespace, else "+config.DefaultNamespace+")")
 		f.BoolVar(&buildFirst, "build", false, "build and load selected images before creating")
 		f.BoolVar(&apply, "apply", false, "register selected providers and reload Paseo after creating")
 		f.StringVar(&home, "paseo-home", home, "Paseo configuration home")
@@ -430,7 +430,7 @@ func (a *App) execute(args []string) error {
 		if command == "shell" || command == "update" || command == "versions" {
 			for _, t := range targets {
 				if t.Entry.EffectiveCategory() != config.CategoryContainer {
-					fmt.Fprintln(a.Err, "paseo-sbx:", command, "uses sbx exec and may start a stopped sandbox (including legacy SBX targets).")
+					fmt.Fprintln(a.Err, "paseo-dock:", command, "uses sbx exec and may start a stopped sandbox (including legacy SBX targets).")
 					break
 				}
 			}
@@ -445,7 +445,7 @@ func (a *App) execute(args []string) error {
 				return cancelErr
 			}
 			if updateErr != nil {
-				fmt.Fprintln(a.Err, "paseo-sbx: update failed; opening shell:", updateErr)
+				fmt.Fprintln(a.Err, "paseo-dock: update failed; opening shell:", updateErr)
 			}
 			cmd, err := a.Service.ShellCommand(ctx, target)
 			if err != nil {

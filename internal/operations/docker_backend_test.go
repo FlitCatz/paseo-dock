@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"paseo-sbx/internal/config"
+	"paseo-dock/internal/config"
 )
 
 // The fake CLI is the Go test binary, keeping the real process boundary.

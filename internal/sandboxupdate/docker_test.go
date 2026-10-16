@@ -9,14 +9,14 @@ import (
 	"testing"
 	"time"
 
-	"paseo-sbx/internal/config"
+	"paseo-dock/internal/config"
 )
 
 // Opt-in integration test: use a disposable container, never a user's sandbox.
 func TestDockerUpdate(t *testing.T) {
-	image := os.Getenv("PASEO_SBX_UPDATE_TEST_IMAGE")
+	image := os.Getenv("PASEO_DOCK_UPDATE_TEST_IMAGE")
 	if image == "" {
-		t.Skip("set PASEO_SBX_UPDATE_TEST_IMAGE for a disposable-container smoke test")
+		t.Skip("set PASEO_DOCK_UPDATE_TEST_IMAGE for a disposable-container smoke test")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
 	defer cancel()
@@ -29,7 +29,7 @@ func TestDockerUpdate(t *testing.T) {
 	run := func(ctx context.Context, args []string, capture bool) (string, error) {
 		// Simulate an older installed version while exercising real downloads,
 		// checksum checks, installation and executable activation.
-		if os.Getenv("PASEO_SBX_UPDATE_TEST_FORCE_DOWNLOAD") == "1" && capture {
+		if os.Getenv("PASEO_DOCK_UPDATE_TEST_FORCE_DOWNLOAD") == "1" && capture {
 			if len(args) == 2 && args[1] == "--version" && (args[0] == "agy" || args[0] == "rtk") {
 				return "0.0.0", nil
 			}
@@ -48,7 +48,7 @@ func TestDockerUpdate(t *testing.T) {
 		}
 		return "", err
 	}
-	if utilities := os.Getenv("PASEO_SBX_UPDATE_TEST_UTILITIES"); utilities != "" {
+	if utilities := os.Getenv("PASEO_DOCK_UPDATE_TEST_UTILITIES"); utilities != "" {
 		if _, err := run(ctx, []string{"bash", "/opt/paseo-sbx/install/install-utilities.sh", "codex", utilities}, false); err != nil {
 			t.Fatal(err)
 		}
@@ -64,7 +64,7 @@ func TestDockerUpdate(t *testing.T) {
 	if err = json.Unmarshal([]byte(raw), &manifest); err != nil {
 		t.Fatal(err)
 	}
-	if os.Getenv("PASEO_SBX_UPDATE_TEST_OLDER_PLUGIN") == "1" {
+	if os.Getenv("PASEO_DOCK_UPDATE_TEST_OLDER_PLUGIN") == "1" {
 		dir := "/home/agent/.local/share/paseo-sbx/marketplace/plugins/" + manifest.Tool
 		for _, args := range [][]string{{"git", "-C", dir, "fetch", "--depth", "2", "origin", "HEAD"}, {"git", "-C", dir, "checkout", "--detach", "FETCH_HEAD~1"}} {
 			if _, err := run(ctx, args, false); err != nil {

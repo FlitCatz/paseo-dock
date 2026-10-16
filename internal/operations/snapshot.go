@@ -13,9 +13,9 @@ import (
 	"strings"
 	"time"
 
-	"paseo-sbx/internal/config"
-	"paseo-sbx/internal/process"
-	"paseo-sbx/internal/sandboxupdate"
+	"paseo-dock/internal/config"
+	"paseo-dock/internal/process"
+	"paseo-dock/internal/sandboxupdate"
 )
 
 type Query struct {

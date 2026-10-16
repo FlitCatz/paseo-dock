@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"paseo-sbx/internal/config"
+	"paseo-dock/internal/config"
 )
 
 func TestBundleCreateMakesOneContainer(t *testing.T) {
@@ -61,12 +61,12 @@ func TestBundleProvidersFollowConnections(t *testing.T) {
 	if strings.Join(ids, ",") != "container-dev-antigravity-cli,container-dev-claude,container-dev-codex" {
 		t.Fatal(ids)
 	}
-	targets["container-dev-acp"] = ProviderTarget{ID: "container-dev-acp", Agent: "codex", Mode: config.ConnectionACP, Label: "SBX dev · codex"}
+	targets["container-dev-acp"] = ProviderTarget{ID: "container-dev-acp", Agent: "codex", Mode: config.ConnectionACP, Label: "Dock dev · codex"}
 	generated := ProviderConfigTargets("/trusted/launcher", targets)
 	providers := object(object(generated, "agents"), "providers")
 	native := providers["container-dev-codex"].(map[string]any)
 	acp := providers["container-dev-acp"].(map[string]any)
-	if native["extends"] != "codex" || len(native["command"].([]string)) != 2 || native["label"] != "SBX dev · codex" {
+	if native["extends"] != "codex" || len(native["command"].([]string)) != 2 || native["label"] != "Dock dev · codex" {
 		t.Fatal(native)
 	}
 	if command := acp["command"].([]string); acp["extends"] != "acp" || len(command) != 3 || command[2] != "--acp" {

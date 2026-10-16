@@ -8,9 +8,9 @@ import (
 	"fmt"
 	"maps"
 	"os"
-	"paseo-sbx/internal/config"
-	"paseo-sbx/internal/gateway"
-	"paseo-sbx/internal/operationlock"
+	"paseo-dock/internal/config"
+	"paseo-dock/internal/gateway"
+	"paseo-dock/internal/operationlock"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -28,6 +28,22 @@ func providerID(profile string, e config.Entry) string {
 	default:
 		return profile
 	}
+}
+
+// providerLabel keeps "SBX" for Docker SBX sandboxes and names containers "Dock".
+func providerLabel(category config.Category, name string) string {
+	if category == config.CategoryContainer {
+		return "Dock " + name
+	}
+	return "SBX " + name
+}
+
+// providerIDLabel labels a bare provider ID; only container IDs carry the container- prefix.
+func providerIDLabel(id string) string {
+	if strings.HasPrefix(id, "container-") {
+		return providerLabel(config.CategoryContainer, id)
+	}
+	return providerLabel(config.CategorySandbox, id)
 }
 
 // ProviderID derives routing solely from the trusted stored entry category.
@@ -112,7 +128,7 @@ type ProviderTarget struct {
 }
 
 // ProviderTargets lists one provider ID per agent of an entry, including agents
-// connected as none (the launcher still serves them for paseo-sbx run).
+// connected as none (the launcher still serves them for paseo-dock run).
 // Single-agent entries keep their historical provider ID.
 func ProviderTargets(profile string, e config.Entry) []ProviderTarget {
 	if !e.Bundle() {
@@ -121,12 +137,12 @@ func ProviderTargets(profile string, e config.Entry) []ProviderTarget {
 			mode = e.Connection(e.Agent)
 		}
 		id := providerID(profile, e)
-		return []ProviderTarget{{ID: id, Agent: e.Agent, Mode: mode, Label: "SBX " + id}}
+		return []ProviderTarget{{ID: id, Agent: e.Agent, Mode: mode, Label: providerLabel(e.EffectiveCategory(), id)}}
 	}
 	var out []ProviderTarget
 	for _, agent := range e.AgentIDs() {
 		mode := e.Connection(agent)
-		out = append(out, ProviderTarget{ID: "container-" + e.Name + "-" + agent, Agent: agent, Mode: mode, Label: "SBX " + e.Name + " · " + agent})
+		out = append(out, ProviderTarget{ID: "container-" + e.Name + "-" + agent, Agent: agent, Mode: mode, Label: providerLabel(config.CategoryContainer, e.Name+" · "+agent)})
 	}
 	return out
 }
@@ -160,7 +176,7 @@ func ActiveAdapters(installed []config.Installed) map[string]string {
 func ProviderConfig(launcher string, adapters map[string]string) map[string]any {
 	targets := map[string]ProviderTarget{}
 	for id, agent := range adapters {
-		targets[id] = ProviderTarget{ID: id, Agent: agent, Mode: config.ConnectionNative, Label: "SBX " + id}
+		targets[id] = ProviderTarget{ID: id, Agent: agent, Mode: config.ConnectionNative, Label: providerIDLabel(id)}
 	}
 	return ProviderConfigTargets(launcher, targets)
 }

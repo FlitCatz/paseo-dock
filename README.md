@@ -1,4 +1,4 @@
-# Paseo + Sandbox / Container
+# paseo-dock: Paseo + Sandbox / Container
 
 Go 관리 TUI에서 workspace의 SBX sandbox와 Docker container를 구분하여 생성·업데이트·shell·Paseo 연결을 관리합니다.
 
@@ -16,19 +16,19 @@ Go 관리 TUI에서 workspace의 SBX sandbox와 Docker container를 구분하여
 
 ```bash
 # Agent-only SBX: build → template load → create
-./bin/paseo-sbx create --workspace /absolute/path/to/project --category sandbox --agent codex --build
+./bin/paseo-dock create --workspace /absolute/path/to/project --category sandbox --agent codex --build
 
 # Full-stack Docker: build → create; SBX template load 없음
-./bin/paseo-sbx create --workspace /absolute/path/to/project --category container \
+./bin/paseo-dock create --workspace /absolute/path/to/project --category container \
   --profiles codex-superpowers --utilities rtk --ports 3000:3000 --build
 
 # 새 Codex container에서 workspace-write user namespace 정책을 명시적으로 선택
-./bin/paseo-sbx create --workspace /absolute/path/to/project --category container \
+./bin/paseo-dock create --workspace /absolute/path/to/project --category container \
   --profile codex-superpowers --codex-userns --build
 
-./bin/paseo-sbx shell codex --category sandbox --workspace /absolute/path/to/project
-./bin/paseo-sbx versions codex-superpowers --category container --workspace /absolute/path/to/project
-./bin/paseo-sbx stop codex-superpowers --category container --workspace /absolute/path/to/project
+./bin/paseo-dock shell codex --category sandbox --workspace /absolute/path/to/project
+./bin/paseo-dock versions codex-superpowers --category container --workspace /absolute/path/to/project
+./bin/paseo-dock stop codex-superpowers --category container --workspace /absolute/path/to/project
 ```
 
 `--profiles`로 새 build/create를 요청하면 container로 해석합니다. 기존 대상의 명령은 저장된
@@ -74,10 +74,10 @@ Docker의 기본 AppArmor 적용과 진단 방법은 [공식 문서](https://doc
 
 ## 관리 TUI
 
-`make build` 후 터미널에서 `./bin/paseo-sbx`를 인수 없이 실행하거나
-`./bin/paseo-sbx tui --workspace /absolute/path/to/project`로 초기 workspace를 선택합니다.
+`make build` 후 터미널에서 `./bin/paseo-dock`을 인수 없이 실행하거나
+`./bin/paseo-dock tui --workspace /absolute/path/to/project`로 초기 workspace를 선택합니다.
 인수 없는 실행의 stdin/stdout이 터미널이 아니면 usage와 종료 코드 2를 반환합니다.
-`./bin/paseo-sbx --help`는 비대화형 환경에서도 종료 코드 0입니다.
+`./bin/paseo-dock --help`는 비대화형 환경에서도 종료 코드 0입니다.
 기존 CLI 명령과 `create`의 독립 생성 wizard도 계속 사용할 수 있습니다.
 
 | 키 | 동작 |
@@ -170,7 +170,7 @@ make build
 sbx login
 sbx policy init balanced   # 새 sbx 설치에서 한 번만 실행
 
-./paseo-sbx create --workspace /absolute/path/to/project
+./paseo-dock create --workspace /absolute/path/to/project
 ```
 
 이미 소스와 바이너리가 있는 머신에서는 `make build`로 갱신한 뒤 마지막 명령을 실행합니다.
@@ -178,7 +178,7 @@ TUI의 최종 확인 화면에서 **Paseo에 선택한 provider 등록 및 reloa
 생성과 등록을 한 번에 진행합니다. 선택하지 않았다면 생성 후 다음 명령으로 등록합니다.
 
 ```bash
-./paseo-sbx register --workspace /absolute/path/to/project --apply
+./paseo-dock register --workspace /absolute/path/to/project --apply
 ```
 
 터미널에서 선택 옵션 없이 `create`를 실행하면 Charmbracelet Bubble Tea TUI가 열립니다.
@@ -216,7 +216,7 @@ image tag, provider ID를 그대로 사용하므로 기존 container와 등록�
 다른 container는 같은 선택으로 `create`를 다시 실행하면 기존 container를 재사용하여 활성화합니다.
 
 ```bash
-./bin/paseo-sbx create --workspace /absolute/path/to/project --category container \
+./bin/paseo-dock create --workspace /absolute/path/to/project --category container \
   --profiles codex-superpowers,claude-ponytail,omp-native,gjc-native --name dev \
   --connections claude=acp --build
 ```
@@ -230,7 +230,7 @@ Paseo 연결 방식은 agent마다 고릅니다(`--connections agent=mode,...`, 
 | Claude Code | `native`, `acp`, `none` | `native` | `extends: "claude"` | `@agentclientprotocol/claude-agent-acp` 0.84.0 |
 | Oh My Pi (`omp`) | `native`, `acp`, `none` | `native` | `extends: "omp"` | `omp acp` |
 | Gajae Code (`gjc`) | `acp`, `none` | `acp` | 없음 | `gjc acp` (`GJC_ACP_PERMISSION_MODE=prompt`) |
-| Antigravity CLI | `none` | `none` | 없음 (`paseo-sbx run`과 shell로 사용) | 없음 |
+| Antigravity CLI | `none` | `none` | 없음 (`paseo-dock run`과 shell로 사용) | 없음 |
 
 Paseo는 config 로드 시점에 plugin provider를 알 수 없어 `extends`에 기본 provider와 `acp`만
 허용합니다. 그래서 Antigravity plugin provider를 상속하는 등록은 만들지 않으며, 고정한 `agy`에는
@@ -240,7 +240,7 @@ image에 고정한 `codex`·`claude` CLI를 사용합니다(`CODEX_PATH`, `CLAUD
 `register`(`create --apply` 포함)는 등록 전에 container 안에서 각 ACP 서버의 `initialize` 응답을
 확인합니다. 응답하지 않는 agent의 provider만 비활성화하고 같은 container의 다른 agent는 등록하며,
 실패한 agent를 오류로 알립니다. 다음 `register`에서 확인이 통과하면 다시 등록합니다.
-provider ID는 agent마다 `container-<이름>-<agent>`이며 label은 `SBX <이름> · <agent>`입니다.
+provider ID는 agent마다 `container-<이름>-<agent>`이며 label은 `Dock <이름> · <agent>`입니다.
 
 omp·gjc는 lock에 고정한 공식 Linux binary를 SHA-256으로 확인해 설치하며 Bun이 필요하지 않습니다.
 두 agent는 이미지에 고정한 버전을 유지하고 자체 업데이트를 사용하지 않습니다. 라이선스와 고지
@@ -266,11 +266,11 @@ gjc는 같은 container의 Claude·Codex 로그인을 가져올 수 있으며, �
 [examples/create-container.json](examples/create-container.json)의 저장소 URL과 workspace를 수정한 뒤 실행합니다.
 
 ```bash
-./paseo-sbx create --config ./examples/create-container.json
+./paseo-dock create --config ./examples/create-container.json
 # 화면에서 선택과 생성 내용을 검토하려면:
-./paseo-sbx create --config ./examples/create-container.json --interactive
+./paseo-dock create --config ./examples/create-container.json --interactive
 # 파일의 값을 이번 실행에서만 덮어쓰기:
-./paseo-sbx create --config ./examples/create-container.json --build=false --apply=false --ports 8080:3000
+./paseo-dock create --config ./examples/create-container.json --build=false --apply=false --ports 8080:3000
 ```
 
 ```json
@@ -320,7 +320,7 @@ OpenSpec은 세 에이전트 모두 지원합니다. 선택한 이미지에 `@fi
 활성 선택을 유지하고, 생성한 sandbox 기록을 남겨 재시도할 수 있습니다.
 
 ```bash
-./paseo-sbx create --workspace /path/to/project \
+./paseo-dock create --workspace /path/to/project \
   --profiles codex-openspec,claude-openspec,antigravity-cli-openspec --build
 ```
 
@@ -331,17 +331,17 @@ OpenSpec은 세 에이전트 모두 지원합니다. 선택한 이미지에 `@fi
 선택 없이 전체 조합을 자동 생성하지 않습니다.
 
 ```bash
-./paseo-sbx create --workspace /absolute/path/to/project \
+./paseo-dock create --workspace /absolute/path/to/project \
   --profiles codex-superpowers,codex-ponytail --utilities rtk,headroom --build --apply
 
 # 같은 methodology를 선택한 모든 agent에 적용
-./paseo-sbx create --workspace /another/project \
+./paseo-dock create --workspace /another/project \
   --agents codex,claude --methodologies superpowers --utilities rtk --build
 
 # 분리해서 실행할 때는 같은 선택을 전달
-./paseo-sbx build --profiles codex-superpowers --utilities rtk
-./paseo-sbx load --profiles codex-superpowers --utilities rtk
-./paseo-sbx create --workspace /project --profiles codex-superpowers --utilities rtk
+./paseo-dock build --profiles codex-superpowers --utilities rtk
+./paseo-dock load --profiles codex-superpowers --utilities rtk
+./paseo-dock create --workspace /project --profiles codex-superpowers --utilities rtk
 ```
 
 활성 선택은 신뢰한 호스트 runtime의 `registry.json`에 원자적으로 저장하고,
@@ -366,17 +366,37 @@ utilities도 함께 지정하세요. 이 경우 `--utilities`를 생략하면 �
 `register`는 적용할 설정을 출력합니다. `--apply`는 기존 `~/.paseo/config.json`을
 백업하고 등록된 모든 workspace의 활성 조합으로 provider와 MCP injection 설정을 병합한 뒤
 Paseo를 시작하거나 reload합니다. 어느 workspace에서도 활성이 아닌 조합의 provider는 제거합니다.
-paseo-sbx가 등록하지 않은 provider는 보존합니다.
+paseo-dock이 등록하지 않은 provider는 보존합니다.
 다른 Paseo home에는 `--paseo-home /path/to/home`을 전달합니다.
 launcher 오류를 수정한 뒤에도 모델 조회 오류가 남으면 `paseo daemon restart`로
 Paseo의 기존 provider 오류 캐시를 초기화합니다.
 
+## 이전 이름(paseo-sbx)과 호환
+
+이 프로젝트의 이전 이름은 `paseo-sbx`입니다. 이름을 바꾼 뒤에도 기존 설치와 workspace는 그대로 동작합니다.
+
+- 저장소의 `./paseo-sbx`는 호환 shim으로 남습니다. stderr에 안내 한 줄을 출력한 뒤 `./paseo-dock`을 실행합니다.
+- `PASEO_DOCK_ROOT`, `PASEO_DOCK_AUTO_UPDATE`가 비어 있으면 이전 `PASEO_SBX_ROOT`,
+  `PASEO_SBX_AUTO_UPDATE`를 계속 읽습니다. 둘 다 설정하면 새 이름이 우선합니다.
+- 새 workspace의 기본 image namespace는 `paseo-dock`입니다. 이미 만든 workspace는 registry에
+  기록된 namespace(예: `paseo-sbx`)를 계속 사용하므로 다시 `create`해도 기존 sandbox/container를
+  재사용합니다. `--namespace`를 지정하면 그 값을 사용합니다.
+  TUI의 build/load도 선택한 workspace의 namespace를 따릅니다. CLI `build`/`load`는 workspace와
+  무관하게 `paseo-dock`을 쓰므로, 기존 workspace용 이미지는 `create --build`로 만들거나
+  `--namespace paseo-sbx`를 지정합니다.
+- Paseo provider label은 Docker container이면 `Dock …`, SBX sandbox이면 `SBX …`입니다.
+  provider ID는 바뀌지 않으며 label은 다음 `register` 때 갱신됩니다.
+- 다음 이름은 기존 container·이미지·설정에 저장되어 있어 바꾸지 않습니다: 호스트 데이터 폴더
+  `~/.local/share/paseo-sbx`, Docker label `io.paseo-sbx.*`, container 이름 `paseo-sbx-<hash>`,
+  image 안의 `/opt/paseo-sbx`와 `~/.local/share/paseo-sbx`, plugin marketplace 이름 `paseo-sbx`,
+  Antigravity 인수 `--paseo-sbx-profile`.
+
 ## Go 빌드와 기존 설치 갱신
 
-`make build`는 `bin/paseo-sbx`, `bin/agent-wrapper`, `bin/install-runtime`을 만듭니다.
-저장소의 `./paseo-sbx`는 빌드된 CLI를 실행하는 shell 진입점입니다. 다른 디렉터리에서도
+`make build`는 `bin/paseo-dock`, `bin/agent-wrapper`, `bin/install-runtime`을 만듭니다.
+저장소의 `./paseo-dock`은 빌드된 CLI를 실행하는 shell 진입점입니다. 다른 디렉터리에서도
 절대 경로로 실행할 수 있습니다. 바이너리를 소스 트리 밖으로 옮긴 경우에는
-`PASEO_SBX_ROOT=/path/to/paseo-sbx`로 Dockerfile과 lock 파일의 위치를 지정합니다.
+`PASEO_DOCK_ROOT=/path/to/paseo-dock`으로 Dockerfile과 lock 파일의 위치를 지정합니다.
 CLI와 함께 `agent-wrapper` 바이너리도 같은 디렉터리에 두세요.
 
 기존 launcher로 등록한 workspace는 다시 빌드한 뒤 다음 명령으로 갱신합니다.
@@ -387,7 +407,7 @@ CLI와 함께 `agent-wrapper` 바이너리도 같은 디렉터리에 두세요.
 
 ```bash
 make build
-./paseo-sbx register --workspace /absolute/path/to/project --apply
+./paseo-dock register --workspace /absolute/path/to/project --apply
 ```
 
 Go Node 설치 도구를 포함한 새 이미지가 필요하면 `build`와 `load`를 실행합니다.
@@ -395,7 +415,7 @@ Go Node 설치 도구를 포함한 새 이미지가 필요하면 `build`와 `loa
 
 ## 기존 sandbox 내부 자동 업데이트
 
-Paseo launcher가 agent 세션을 시작하거나 `paseo-sbx shell`로 들어갈 때,
+Paseo launcher가 agent 세션을 시작하거나 `paseo-dock shell`로 들어갈 때,
 sandbox별로 하루 한 번 agent·설치된 methodology·선택한 utility를 업데이트합니다.
 이미지를 다시 만들거나 sandbox를 삭제하지 않으므로 기존 로그인과 세션을 유지합니다.
 버전 조회(`--version`)는 업데이트를 실행하지 않습니다. 변경된 launcher를 기존 설치에
@@ -405,8 +425,8 @@ sandbox별로 하루 한 번 agent·설치된 methodology·선택한 utility를 
 활성 조합을 갱신합니다. 일부 조합이 실패해도 나머지는 처리하고 실패 종료 코드를 반환합니다.
 
 ```bash
-./paseo-sbx update --workspace /path/to/project
-./paseo-sbx update --workspace /path/to/project --profile codex-superpowers
+./paseo-dock update --workspace /path/to/project
+./paseo-dock update --workspace /path/to/project --profile codex-superpowers
 ```
 
 Codex·Claude·OpenSpec은 npm의 `latest` 버전을 조회합니다. 새 버전은 사용자 소유의
@@ -434,7 +454,7 @@ GSD·plugin 설치기는 자체 설정을 변경하므로 전체 구성의 trans
 guest의 기존 `installed.json`과 `versions.lock.json`은 이미지 최초 설치 기록입니다.
 업데이트 로그는 stderr로만 출력하며 Paseo 통신 stdout에 섞지 않습니다.
 이전의 별도 설치 디렉터리는 실행 중 세션을 위해 보존합니다.
-호스트 launcher 또는 CLI 환경에 `PASEO_SBX_AUTO_UPDATE=0`을 설정하면 자동 갱신을 끕니다.
+호스트 launcher 또는 CLI 환경에 `PASEO_DOCK_AUTO_UPDATE=0`을 설정하면 자동 갱신을 끕니다.
 CLI `shell`도 자동 갱신의 opt-out과 확인 간격을 따릅니다. TUI shell은 자동 갱신하지 않습니다.
 수동 `update`는 이 설정과 확인 간격에 관계없이 실행합니다.
 
@@ -448,7 +468,7 @@ RTK·Headroom이 추가되지는 않습니다.
 Docker 실행 없이 생성할 Bake 설정을 확인하려면 다음 명령을 사용합니다.
 
 ```bash
-./paseo-sbx build --profiles codex-superpowers --utilities rtk \
+./paseo-dock build --profiles codex-superpowers --utilities rtk \
   --platforms linux/amd64,linux/arm64 --print-bake
 ```
 
@@ -512,7 +532,7 @@ sbx secret set anthropic
 ```
 
 Claude 구독 로그인은 선택해서 생성한 각 runtime에서 Claude Code의 `/login`으로 진행합니다.
-새 container의 예는 `./paseo-sbx shell claude-superpowers --category container --workspace /project`로
+새 container의 예는 `./paseo-dock shell claude-superpowers --category container --workspace /project`로
 들어가 `claude`를 실행하는 것입니다. 새 agent-only sandbox는 `shell claude --category sandbox`,
 기존 legacy SBX는 저장된 profile을 사용합니다. 다른 runtime도 생성했다면 각각 로그인합니다.
 API key를 사용하면 `sbx secret set anthropic`으로 생성한 Claude sandbox들에 공통 적용할 수 있습니다.
@@ -532,9 +552,9 @@ API key를 사용하면 `sbx secret set anthropic`으로 생성한 Claude sandbo
 
 ```bash
 make build
-./paseo-sbx create --workspace /absolute/path/to/project \
+./paseo-dock create --workspace /absolute/path/to/project \
   --category container --profile antigravity-cli-native --build --apply
-./paseo-sbx shell antigravity-cli-native --category container --workspace /absolute/path/to/project
+./paseo-dock shell antigravity-cli-native --category container --workspace /absolute/path/to/project
 
 # container 안에서 공식 CLI를 실행하여 로그인
 agy
@@ -546,7 +566,7 @@ Paseo 플러그인의 계정 화면은 호스트 계정을 관리하므로 sandb
 다음 명령으로 container profile을 지정한 Paseo 에이전트를 만듭니다.
 
 ```bash
-./paseo-sbx run --workspace /absolute/path/to/project \
+./paseo-dock run --workspace /absolute/path/to/project \
   --category container --profile antigravity-cli-native '프로젝트를 확인해줘'
 ```
 
@@ -581,7 +601,7 @@ CLI 인증·API 설정은 [Google 공식 문서](https://antigravity.google/docs
 
 ## Paseo에서 실행과 자동 위임
 
-Paseo 앱의 provider 선택에서 새 container는 `SBX container-codex-superpowers`, 새 sandbox는
+Paseo 앱의 provider 선택에서 새 container는 `Dock container-codex-superpowers`, 새 sandbox는
 `SBX sbx-codex`, 기존 legacy SBX는 `SBX codex-superpowers` 같은 등록 항목을 선택합니다.
 작업 위치는 선택한 조합을 `create`로 등록한 workspace와 그 하위 디렉터리여야 합니다.
 여러 프로젝트에서 사용하는 방법은 아래 "여러 프로젝트" 절과 [README_GUI.md](README_GUI.md)를
@@ -614,7 +634,7 @@ Docker 경로는 별도 relay를 사용하며 해당 guest의 reachability 검�
 호스트 launcher는 `~/.local/share/paseo-sbx/launcher/`에, workspace별 registry는
 `~/.local/share/paseo-sbx/<workspace-id>/`에 저장합니다. agent가 host launcher와 registry를
 수정하지 못하도록 `~/.local/share/paseo-sbx`를 포함하거나 그 안에 있는 workspace는 거부합니다.
-같은 이유로 paseo-sbx 소스 디렉터리(또는 이를 포함하는 상위 디렉터리)는 workspace로
+같은 이유로 paseo-dock 소스 디렉터리(또는 이를 포함하는 상위 디렉터리)는 workspace로
 지정할 수 없으며, `create`와 `register`가 거부합니다. 저장소 안에서 `--workspace` 없이
 TUI를 실행하면 현재 디렉터리가 workspace가 되므로 대상 프로젝트 경로를 지정하세요.
 소스를 수정한 뒤에는 `register --apply`로 신뢰한 소스를 다시 설치합니다.
@@ -622,7 +642,7 @@ TUI를 실행하면 현재 디렉터리가 workspace가 되므로 대상 프로�
 workspace 파일은 sandbox에서 쓸 수 있으므로 agent가 `.git/hooks`, `Makefile`,
 `package.json` scripts 등을 변경할 수 있습니다. 호스트에서 `git`, `make`, `npm` 등을
 실행하기 전에 변경 사항을 검토하세요. 이 경로는 workspace 쓰기 권한에 내재된 한계이며
-paseo-sbx가 차단하지 않습니다.
+paseo-dock이 차단하지 않습니다.
 
 ## 동시 작업과 세션
 
@@ -644,22 +664,22 @@ Ponytail과 GSD의 hook 설치 여부와 실제 실행 여부는 구분해야 �
 아래 예제의 profile은 실제 생성한 조합으로 바꾸세요.
 
 ```bash
-./paseo-sbx list --workspace /absolute/path/to/project
-./paseo-sbx shell codex-superpowers --workspace /absolute/path/to/project
-./paseo-sbx stop codex-superpowers --workspace /absolute/path/to/project
-./paseo-sbx remove --workspace /absolute/path/to/project --profile container/codex-superpowers
+./paseo-dock list --workspace /absolute/path/to/project
+./paseo-dock shell codex-superpowers --workspace /absolute/path/to/project
+./paseo-dock stop codex-superpowers --workspace /absolute/path/to/project
+./paseo-dock remove --workspace /absolute/path/to/project --profile container/codex-superpowers
 
 # 다른 프로젝트용 환경 선택·생성·등록
-./paseo-sbx create --workspace /path/to/another-project
-./paseo-sbx register --workspace /path/to/another-project --apply
+./paseo-dock create --workspace /path/to/another-project
+./paseo-dock register --workspace /path/to/another-project --apply
 
 # workspace에 저장된 조합과 utilities로 template 다시 빌드·로드
-./paseo-sbx build --workspace /absolute/path/to/project
-./paseo-sbx load --workspace /absolute/path/to/project
+./paseo-dock build --workspace /absolute/path/to/project
+./paseo-dock load --workspace /absolute/path/to/project
 
 # 특정 조합만 빌드·로드할 때는 utilities도 동일하게 지정
-./paseo-sbx build --profile codex-ponytail --utilities rtk
-./paseo-sbx load --profile codex-ponytail --utilities rtk
+./paseo-dock build --profile codex-ponytail --utilities rtk
+./paseo-dock load --profile codex-ponytail --utilities rtk
 ```
 
 sandbox 이름에는 workspace 경로 hash가 붙습니다. 다른 workspace의 sandbox는
@@ -685,12 +705,12 @@ sandbox로 연결합니다. 중첩된 workspace는 가장 깊은 쪽을 사용�
 경로 순으로 첫 번째 sandbox를 사용합니다. 같은 조합의 sandbox는 모두 로그인해 두세요.
 
 ```bash
-./paseo-sbx list --all                                   # 등록된 workspace와 조합
-./paseo-sbx unregister --workspace /path/to/old-project  # 연결 대상에서 제외
-./paseo-sbx prune --dry-run                              # 삭제된 workspace 확인
-./paseo-sbx prune                                        # 삭제된 workspace의 기록 정리
-./paseo-sbx prune --remove-runtimes --dry-run             # 남은 sandbox/container와 삭제 차단 대상 확인
-./paseo-sbx prune --remove-runtimes                       # 중지된 환경까지 삭제 (prune 입력 확인)
+./paseo-dock list --all                                   # 등록된 workspace와 조합
+./paseo-dock unregister --workspace /path/to/old-project  # 연결 대상에서 제외
+./paseo-dock prune --dry-run                              # 삭제된 workspace 확인
+./paseo-dock prune                                        # 삭제된 workspace의 기록 정리
+./paseo-dock prune --remove-runtimes --dry-run             # 남은 sandbox/container와 삭제 차단 대상 확인
+./paseo-dock prune --remove-runtimes                       # 중지된 환경까지 삭제 (prune 입력 확인)
 ```
 
 `unregister`는 해당 workspace의 활성 조합을 비우고 Paseo provider 목록을 다시 만듭니다.
@@ -725,11 +745,11 @@ CI는 카탈로그에서 지원하는 조합을 읽어 유틸리티 없는 이�
 게시하려면 다음 명령을 사용합니다. `OWNER/REPOSITORY`는 실제 GHCR 경로로 바꾸세요.
 
 ```bash
-./paseo-sbx build --profiles codex-superpowers --utilities rtk \
+./paseo-dock build --profiles codex-superpowers --utilities rtk \
   --namespace ghcr.io/OWNER/REPOSITORY --platforms linux/amd64,linux/arm64 --push
 
 # 같은 구성으로 실제 이미지 태그 확인
-./paseo-sbx build --profiles codex-superpowers --utilities rtk \
+./paseo-dock build --profiles codex-superpowers --utilities rtk \
   --namespace ghcr.io/OWNER/REPOSITORY --print-bake
 ```
 
@@ -745,12 +765,12 @@ Paseo 자동 연결을 함께 구성하려면 출력된 태그의 이미지를 D
 
 ```bash
 docker pull "$IMAGE"
-./paseo-sbx load --profiles codex-superpowers --utilities rtk --namespace ghcr.io/OWNER/REPOSITORY
-./paseo-sbx create --workspace /path/to/project --profiles codex-superpowers \
+./paseo-dock load --profiles codex-superpowers --utilities rtk --namespace ghcr.io/OWNER/REPOSITORY
+./paseo-dock create --workspace /path/to/project --profiles codex-superpowers \
   --utilities rtk --namespace ghcr.io/OWNER/REPOSITORY --apply
 ```
 
-위 두 생성 예제는 대안입니다. Paseo 연결을 사용할 경우 `paseo-sbx create` 예제를 사용합니다.
+위 두 생성 예제는 대안입니다. Paseo 연결을 사용할 경우 `paseo-dock create` 예제를 사용합니다.
 private registry 인증은 `sbx secret set --registry ghcr.io`로 설정합니다.
 
 ## 문제 확인

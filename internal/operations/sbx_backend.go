@@ -5,8 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"paseo-sbx/internal/config"
-	"paseo-sbx/internal/process"
+	"paseo-dock/internal/config"
+	"paseo-dock/internal/process"
 )
 
 type SBXBackend struct {

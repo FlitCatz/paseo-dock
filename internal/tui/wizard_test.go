@@ -4,7 +4,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"errors"
 	"github.com/charmbracelet/x/ansi"
-	"paseo-sbx/internal/config"
+	"paseo-dock/internal/config"
 	"strings"
 	"testing"
 )

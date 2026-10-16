@@ -2,7 +2,7 @@ package main
 
 import (
 	"os"
-	"paseo-sbx/internal/launcher"
+	"paseo-dock/internal/launcher"
 )
 
 func main() { os.Exit(launcher.Main()) }

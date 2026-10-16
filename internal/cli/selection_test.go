@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"os"
-	"paseo-sbx/internal/config"
+	"paseo-dock/internal/config"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -87,7 +87,7 @@ func TestBuildUsesOnlySelectedPairs(t *testing.T) {
 	if len(cfg.Target) != 1 || cfg.Target["container-claude-superpowers"].Args != nil || cfg.Target["container-codex-ponytail"].Args["UTILITIES"] != "rtk" {
 		t.Fatal(out.String())
 	}
-	if cfg.Target["container-codex-ponytail"].Tags[0] == "paseo-sbx/codex-ponytail:2026.09.30" {
+	if cfg.Target["container-codex-ponytail"].Tags[0] == "paseo-dock/codex-ponytail:2026.09.30" {
 		t.Fatal("unversioned utility image")
 	}
 }
@@ -257,7 +257,7 @@ func TestBuildBundlesSelectedPairsIntoOneImage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if args["BASE_IMAGE"] != lock.BaseImages["codex"] || !strings.HasPrefix(target.Tags[0], "paseo-sbx/container/ci-all:"+lock.Tag+"-") || target.Labels["io.paseo-sbx.agent"] != "codex,claude" {
+	if args["BASE_IMAGE"] != lock.BaseImages["codex"] || !strings.HasPrefix(target.Tags[0], "paseo-dock/container/ci-all:"+lock.Tag+"-") || target.Labels["io.paseo-sbx.agent"] != "codex,claude" {
 		t.Fatal(target)
 	}
 	var manifests map[string]map[string]any

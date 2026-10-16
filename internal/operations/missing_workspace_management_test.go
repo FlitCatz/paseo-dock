@@ -5,7 +5,7 @@ import (
 	"os"
 	"testing"
 
-	"paseo-sbx/internal/config"
+	"paseo-dock/internal/config"
 )
 
 func TestStopAndRemoveMissingWorkspaceKeepRegistryReachable(t *testing.T) {

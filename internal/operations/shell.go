@@ -5,8 +5,8 @@ import (
 	"errors"
 	"io"
 	"os/exec"
-	"paseo-sbx/internal/config"
-	"paseo-sbx/internal/operationlock"
+	"paseo-dock/internal/config"
+	"paseo-dock/internal/operationlock"
 )
 
 // ShellProcess transfers terminal streams to an interactive child. Run owns the

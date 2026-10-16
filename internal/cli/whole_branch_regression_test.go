@@ -15,9 +15,9 @@ import (
 	"testing"
 	"time"
 
-	"paseo-sbx/internal/config"
-	"paseo-sbx/internal/operations"
-	"paseo-sbx/internal/sandboxupdate"
+	"paseo-dock/internal/config"
+	"paseo-dock/internal/operations"
+	"paseo-dock/internal/sandboxupdate"
 )
 
 func TestCLIShellRespectsAutomaticUpdatePolicy(t *testing.T) {
@@ -53,7 +53,7 @@ func TestCLIShellRespectsAutomaticUpdatePolicy(t *testing.T) {
 					t.Fatal(err)
 				}
 				if policy == "disabled" || policy == "explicit" {
-					t.Setenv("PASEO_SBX_AUTO_UPDATE", "0")
+					t.Setenv("PASEO_DOCK_AUTO_UPDATE", "0")
 				}
 				if strings.HasPrefix(policy, "recent-") || policy == "expired" {
 					state := sandboxupdate.State{Sandbox: sandboxupdate.Identity(e), Image: e.Image, Attempt: time.Now(), Success: time.Now()}
@@ -140,7 +140,7 @@ func TestActiveCLIShellSignalCancelsChild(t *testing.T) {
 	for _, sig := range []syscall.Signal{syscall.SIGINT, syscall.SIGTERM} {
 		t.Run(sig.String(), func(t *testing.T) {
 			signalFixture(t)
-			t.Setenv("PASEO_SBX_AUTO_UPDATE", "0")
+			t.Setenv("PASEO_DOCK_AUTO_UPDATE", "0")
 			t.Setenv("CLI_SIGNAL_ENTRY", "shell")
 			t.Setenv("CLI_SIGNAL_SHELL_BLOCK", "1")
 			t.Setenv("GORACE", os.Getenv("GORACE")+" atexit_sleep_ms=0")

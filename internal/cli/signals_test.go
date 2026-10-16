@@ -13,9 +13,9 @@ import (
 	"testing"
 	"time"
 
-	"paseo-sbx/internal/config"
-	"paseo-sbx/internal/launcher"
-	"paseo-sbx/internal/operationlock"
+	"paseo-dock/internal/config"
+	"paseo-dock/internal/launcher"
+	"paseo-dock/internal/operationlock"
 )
 
 // The external host command and its descendant are Go subprocesses. Only the
@@ -70,7 +70,7 @@ func TestSignalEntrypointHelper(t *testing.T) {
 func signalFixture(t *testing.T) (string, string) {
 	t.Helper()
 	t.Setenv("HOME", t.TempDir())
-	t.Setenv("PASEO_SBX_AUTO_UPDATE", "1")
+	t.Setenv("PASEO_DOCK_AUTO_UPDATE", "1")
 	workspace, err := config.Canonical(t.TempDir())
 	if err != nil {
 		t.Fatal(err)

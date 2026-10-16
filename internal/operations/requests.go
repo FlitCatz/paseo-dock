@@ -1,7 +1,7 @@
 package operations
 
 import (
-	"paseo-sbx/internal/config"
+	"paseo-dock/internal/config"
 	"time"
 )
 

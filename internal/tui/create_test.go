@@ -4,8 +4,8 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"context"
 	"fmt"
-	"paseo-sbx/internal/config"
-	"paseo-sbx/internal/operations"
+	"paseo-dock/internal/config"
+	"paseo-dock/internal/operations"
 	"strings"
 	"testing"
 )

@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"paseo-sbx/internal/config"
+	"paseo-dock/internal/config"
 	"path/filepath"
 	"slices"
 	"strings"

@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
-	"paseo-sbx/internal/config"
+	"paseo-dock/internal/config"
 )
 
 func userNSConfirmation(t *testing.T, s config.Selection) *Model {
