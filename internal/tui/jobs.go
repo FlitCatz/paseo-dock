@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"paseo-dock/internal/config"
 	"paseo-dock/internal/operations"
 	"path/filepath"
@@ -35,6 +36,7 @@ type jobDoneMsg struct {
 	result operations.Result
 	err    error
 }
+type noticeExpiredMsg uint64
 type jobPulseMsg struct {
 	id       uint64
 	finished bool
@@ -132,8 +134,12 @@ func (m *Dashboard) dispatchJob() tea.Cmd {
 		j.started = time.Now()
 		m.runningJob = j.id
 		b, r, id, log := m.Backend, freezeRequest(j.request), j.id, j.log
+		dir := m.logDir
 		execute := func() tea.Msg {
+			log.openFile(dir)
+			log.record(fmt.Sprintf("%s %s workspace=%s target=%s started\n", time.Now().Format(time.RFC3339), r.Kind, r.Target.Workspace, r.Target.ResourceIdentity()))
 			result, err := b.Execute(ctx, r, log.emit)
+			log.record("\n" + completionText(r, result, err) + "\n")
 			log.finish()
 			return jobDoneMsg{id, result, err}
 		}
@@ -178,6 +184,11 @@ func (m *Dashboard) cancelJobs() {
 }
 func (m *Dashboard) jobMessage(msg tea.Msg) (bool, tea.Cmd) {
 	switch v := msg.(type) {
+	case noticeExpiredMsg:
+		if uint64(v) == m.noticeID {
+			m.notice = ""
+		}
+		return true, nil
 	case jobPulseMsg:
 		if v.finished {
 			return true, nil
@@ -207,6 +218,10 @@ func (m *Dashboard) jobMessage(msg tea.Msg) (bool, tea.Cmd) {
 			j.state = "cancelled"
 		}
 		m.runningJob = 0
+		m.notice = completionText(j.request, v.result, v.err)
+		m.noticeID++
+		id := m.noticeID
+		expire := tea.Tick(8*time.Second, func(time.Time) tea.Msg { return noticeExpiredMsg(id) })
 		if v.err == nil && j.request.Kind == operations.KindPrune && j.request.DryRun {
 			m.prunePreview(v.result, j.previewFlow, j.request.RemoveRuntimes)
 		}
@@ -214,7 +229,7 @@ func (m *Dashboard) jobMessage(msg tea.Msg) (bool, tea.Cmd) {
 			m.cancel()
 			return true, tea.Quit
 		}
-		return true, tea.Batch(m.dispatchJob(), m.refreshAfterWork())
+		return true, tea.Batch(m.dispatchJob(), m.refreshAfterWork(), expire)
 	case shellReadyMsg:
 		m.shellPending = false
 		if v.err != nil {
@@ -231,6 +246,23 @@ func (m *Dashboard) jobMessage(msg tea.Msg) (bool, tea.Cmd) {
 		return true, m.refreshAfterWork()
 	}
 	return false, nil
+}
+
+func completionText(r operations.Request, result operations.Result, err error) string {
+	status := "완료"
+	if err != nil {
+		status = "실패: " + err.Error()
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		status = "취소됨"
+	}
+	if result.NeedsVerification {
+		status = "확인 필요"
+		if err != nil {
+			status += ": " + err.Error()
+		}
+	}
+	return strings.Join(strings.Fields(safeText(fmt.Sprintf("%s · %s %s", status, r.Kind, r.Target.ResourceIdentity()))), " ")
 }
 func (m *Dashboard) refreshAfterWork() tea.Cmd {
 	if m.pending {
@@ -632,6 +664,9 @@ func (m *Dashboard) logContent() string {
 			}
 		}
 		lines = append(lines, j.log.text())
+		if info := j.log.fileInfo(); info != "" {
+			lines = append(lines, info)
+		}
 	}
 	// Version probes and resource identities also cross an external boundary.
 	// Sanitize the complete rendered log, including structured result metadata.
@@ -647,6 +682,10 @@ type jobLog struct {
 	stage      string
 	streams    map[string]*logSanitizer
 	wake, done chan struct{}
+	file       *os.File
+	filePath   string
+	fileErr    error
+	fileSize   int
 }
 
 func newJobLog() *jobLog {
@@ -664,6 +703,22 @@ func (l *jobLog) emit(e operations.Event) {
 		l.streams[stream] = s
 	}
 	clean := s.clean([]byte(e.Text))
+	if e.Stage != "stdout" && e.Stage != "stderr" {
+		l.stage = safeText(e.Stage)
+	}
+	l.appendLocked(clean)
+	l.mu.Unlock()
+}
+
+// TUI records cannot inherit unfinished subprocess escape sequences or change
+// the backend's current stage.
+func (l *jobLog) record(text string) {
+	l.mu.Lock()
+	l.appendLocked([]byte(safeText(text)))
+	l.mu.Unlock()
+}
+
+func (l *jobLog) appendLocked(clean []byte) {
 	l.data = append(l.data, clean...)
 	if len(l.data) > jobLogLimit {
 		l.data = l.data[len(l.data)-jobLogLimit:]
@@ -672,16 +727,23 @@ func (l *jobLog) emit(e operations.Event) {
 		}
 		l.data = slices.Clone(l.data)
 	}
-	if e.Stage != "stdout" && e.Stage != "stderr" {
-		l.stage = safeText(e.Stage)
-	}
-	l.mu.Unlock()
+	l.writeFile(clean)
 	select {
 	case l.wake <- struct{}{}:
 	default:
 	}
 }
-func (l *jobLog) finish()              { close(l.done) }
+func (l *jobLog) finish() {
+	l.mu.Lock()
+	if l.file != nil {
+		if err := l.file.Close(); err != nil && l.fileErr == nil {
+			l.fileErr = err
+		}
+		l.file = nil
+	}
+	l.mu.Unlock()
+	close(l.done)
+}
 func (l *jobLog) text() string         { l.mu.Lock(); defer l.mu.Unlock(); return string(l.data) }
 func (l *jobLog) currentStage() string { l.mu.Lock(); defer l.mu.Unlock(); return l.stage }
 func safeText(s string) string         { p := logSanitizer{}; return string(p.clean([]byte(s))) }
