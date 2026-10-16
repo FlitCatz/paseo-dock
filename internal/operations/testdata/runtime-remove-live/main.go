@@ -13,8 +13,8 @@ import (
 	"io/fs"
 	"os"
 	"os/exec"
-	"paseo-sbx/internal/config"
-	"paseo-sbx/internal/containerpolicy"
+	"paseo-dock/internal/config"
+	"paseo-dock/internal/containerpolicy"
 	"path/filepath"
 	"reflect"
 	"slices"
@@ -168,7 +168,7 @@ func run(args ...string) ([]byte, int) {
 	defer cancel()
 	c := exec.CommandContext(ctx, "rtk", append([]string{"proxy"}, args...)...)
 	c.Dir = source
-	c.Env = environment(map[string]string{"PATH": trial + "/guard:" + os.Getenv("PATH"), "PASEO_SBX_ROOT": source, "DOCKER_HOST": "unix:///Users/dev-r/.orbstack/run/docker.sock"})
+	c.Env = environment(map[string]string{"PATH": trial + "/guard:" + os.Getenv("PATH"), "PASEO_DOCK_ROOT": source, "DOCKER_HOST": "unix:///Users/dev-r/.orbstack/run/docker.sock"})
 	var out, stderr bytes.Buffer
 	c.Stdout = &out
 	c.Stderr = &stderr

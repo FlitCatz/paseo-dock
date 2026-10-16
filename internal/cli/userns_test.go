@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"paseo-sbx/internal/config"
-	"paseo-sbx/internal/operations"
+	"paseo-dock/internal/config"
+	"paseo-dock/internal/operations"
 )
 
 func userNSApp(t *testing.T) (*App, *cliCategoryBackend, *bytes.Buffer) {

@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"paseo-sbx/internal/config"
+	"paseo-dock/internal/config"
 )
 
 func installedTargets(i config.Installed) []Target {

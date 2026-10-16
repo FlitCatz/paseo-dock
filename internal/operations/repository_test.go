@@ -4,7 +4,7 @@ import (
 	"context"
 	"os"
 	"os/exec"
-	"paseo-sbx/internal/config"
+	"paseo-dock/internal/config"
 	"path/filepath"
 	"strings"
 	"testing"

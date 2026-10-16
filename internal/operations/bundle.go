@@ -4,7 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
-	"paseo-sbx/internal/config"
+	"paseo-dock/internal/config"
 	"slices"
 	"strings"
 )

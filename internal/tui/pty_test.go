@@ -20,8 +20,8 @@ import (
 
 	"github.com/charmbracelet/x/term"
 	"github.com/creack/pty"
-	"paseo-sbx/internal/config"
-	"paseo-sbx/internal/operations"
+	"paseo-dock/internal/config"
+	"paseo-dock/internal/operations"
 )
 
 // The actual dashboard and operations service run in a separate terminal session.

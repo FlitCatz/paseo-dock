@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"paseo-sbx/internal/config"
-	"paseo-sbx/internal/process"
+	"paseo-dock/internal/config"
+	"paseo-dock/internal/process"
 )
 
 func (a *execution) validatePaseoConfig(home string) error {

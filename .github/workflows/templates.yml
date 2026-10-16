@@ -50,7 +50,7 @@ jobs:
         run: |
           for target in darwin/arm64 darwin/amd64 linux/arm64 linux/amd64; do
             export GOOS=${target%/*} GOARCH=${target#*/} CGO_ENABLED=0
-            go build -o /tmp/paseo-sbx-${GOOS}-${GOARCH} ./cmd/paseo-sbx
+            go build -o /tmp/paseo-dock-${GOOS}-${GOARCH} ./cmd/paseo-dock
             go build -o /tmp/agent-wrapper-${GOOS}-${GOARCH} ./cmd/agent-wrapper
             go build -o /tmp/install-runtime-${GOOS}-${GOARCH} ./cmd/install-runtime
           done
@@ -84,7 +84,7 @@ jobs:
           REPOSITORY: ${{ github.repository }}
           PUBLISH: ${{ github.event_name == 'workflow_dispatch' && inputs.publish }}
         run: |
-          go run ./cmd/paseo-sbx build --profile "$PROFILE" --namespace "ghcr.io/${REPOSITORY,,}" \
+          go run ./cmd/paseo-dock build --profile "$PROFILE" --namespace "ghcr.io/${REPOSITORY,,}" \
             --platforms linux/amd64,linux/arm64 --print-bake > ci-bake.json
           args=(docker buildx bake -f ci-bake.json "container-$PROFILE")
           if [ "$PUBLISH" = true ]; then args+=(--push); fi
@@ -108,6 +108,6 @@ jobs:
           REPOSITORY: ${{ github.repository }}
         run: |
           profiles=$(node -e 'console.log(JSON.parse(process.env.PROFILES).join(","))')
-          go run ./cmd/paseo-sbx build --profiles "$profiles" --name ci-all --namespace "ghcr.io/${REPOSITORY,,}" \
+          go run ./cmd/paseo-dock build --profiles "$profiles" --name ci-all --namespace "ghcr.io/${REPOSITORY,,}" \
             --platforms linux/amd64,linux/arm64 --print-bake > ci-bake.json
           docker buildx bake -f ci-bake.json container-ci-all

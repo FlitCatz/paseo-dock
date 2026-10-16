@@ -3,7 +3,7 @@ package operations
 import (
 	"context"
 	"fmt"
-	"paseo-sbx/internal/config"
+	"paseo-dock/internal/config"
 	"path/filepath"
 	"strings"
 )

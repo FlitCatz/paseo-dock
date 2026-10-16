@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"paseo-sbx/internal/config"
-	"paseo-sbx/internal/operationlock"
+	"paseo-dock/internal/config"
+	"paseo-dock/internal/operationlock"
 )
 
 func pruneRemovalFixture(t *testing.T) (*Service, Request, string, *removalBackend, *removalBackend) {

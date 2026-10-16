@@ -16,9 +16,9 @@ import (
 	"strings"
 	"time"
 
-	"paseo-sbx/internal/config"
-	"paseo-sbx/internal/operationlock"
-	"paseo-sbx/internal/process"
+	"paseo-dock/internal/config"
+	"paseo-dock/internal/operationlock"
+	"paseo-dock/internal/process"
 )
 
 type State struct {
@@ -49,7 +49,7 @@ func UpdateContext(ctx context.Context, runtime string, entry config.Entry, forc
 	if entry.Sandbox == "" || !supported(entry) {
 		return errors.New("invalid sandbox entry")
 	}
-	if !force && os.Getenv("PASEO_SBX_AUTO_UPDATE") == "0" {
+	if !force && config.Getenv("AUTO_UPDATE") == "0" {
 		return nil
 	}
 	release, err := operationlock.Acquire(ctx, runtime, []string{operationlock.EntryKey(entry)})
@@ -83,7 +83,7 @@ func UpdateTransportLockedContext(ctx context.Context, runtime string, entry con
 	if Identity(entry) == "" || !supported(entry) {
 		return errors.New("invalid sandbox entry")
 	}
-	if !force && os.Getenv("PASEO_SBX_AUTO_UPDATE") == "0" {
+	if !force && config.Getenv("AUTO_UPDATE") == "0" {
 		return nil
 	}
 	sum := sha256.Sum256([]byte(Identity(entry)))
@@ -119,7 +119,7 @@ func UpdateTransportLockedContext(ctx context.Context, runtime string, entry con
 		cmd.Stdout = log
 		return "", cmd.Run()
 	}
-	fmt.Fprintln(log, "paseo-sbx: updating", Identity(entry))
+	fmt.Fprintln(log, "paseo-dock: updating", Identity(entry))
 	if transport != nil {
 		run = transport
 	}
@@ -138,7 +138,7 @@ func finishUpdate(ctx context.Context, base string, state State, log io.Writer) 
 		}
 		return fmt.Errorf("sandbox update incomplete: %v", state.Errors)
 	}
-	fmt.Fprintln(log, "paseo-sbx: updated", state.Sandbox, state.Versions)
+	fmt.Fprintln(log, "paseo-dock: updated", state.Sandbox, state.Versions)
 	return nil
 }
 

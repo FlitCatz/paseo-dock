@@ -170,7 +170,8 @@ func Within(path, root string) bool {
 	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && !filepath.IsAbs(rel)
 }
 
-// BaseDir holds every trusted workspace runtime and the shared launcher.
+// BaseDir holds every trusted workspace runtime and the shared launcher. It keeps
+// the paseo-sbx name after the rename (see legacy.go).
 func BaseDir() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {

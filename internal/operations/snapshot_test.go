@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"paseo-sbx/internal/config"
-	"paseo-sbx/internal/sandboxupdate"
+	"paseo-dock/internal/config"
+	"paseo-dock/internal/sandboxupdate"
 )
 
 type observedResponse struct {

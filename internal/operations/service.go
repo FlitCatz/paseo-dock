@@ -14,10 +14,10 @@ import (
 	"sync"
 	"time"
 
-	"paseo-sbx/internal/config"
-	"paseo-sbx/internal/operationlock"
-	"paseo-sbx/internal/process"
-	"paseo-sbx/internal/sandboxupdate"
+	"paseo-dock/internal/config"
+	"paseo-dock/internal/operationlock"
+	"paseo-dock/internal/process"
+	"paseo-dock/internal/sandboxupdate"
 )
 
 type Service struct {
@@ -308,9 +308,6 @@ func (s *Service) Execute(ctx context.Context, r Request, emit func(Event)) (res
 			return result, err
 		}
 	}
-	if r.Namespace == "" {
-		r.Namespace = "paseo-sbx"
-	}
 	if r.Memory == "" {
 		r.Memory = "2g"
 	}
@@ -329,7 +326,7 @@ func (s *Service) Execute(ctx context.Context, r Request, emit func(Event)) (res
 		return Result{Changed: a.changed, NeedsVerification: a.uncertain, Remaining: a.remaining}, err
 	}
 	if r.Kind == KindUpdate || r.Kind == KindStop {
-		if r.Kind == KindUpdate && r.AutomaticUpdate && os.Getenv("PASEO_SBX_AUTO_UPDATE") == "0" {
+		if r.Kind == KindUpdate && r.AutomaticUpdate && config.Getenv("AUTO_UPDATE") == "0" {
 			return result, nil
 		}
 		targets, e := s.updateTargets(r)
@@ -464,11 +461,18 @@ func (s *Service) Execute(ctx context.Context, r Request, emit func(Event)) (res
 	}
 	switch r.Kind {
 	case KindBuild:
-		err = a.build(r.Namespace, r.Platforms, r.Push)
+		if r.Namespace, err = a.workspaceNamespace(r.Namespace, r.Target.Workspace); err == nil {
+			err = a.build(r.Namespace, r.Platforms, r.Push)
+		}
 	case KindLoad:
-		err = a.load(r.Namespace, r.KeepArchive)
+		if r.Namespace, err = a.workspaceNamespace(r.Namespace, r.Target.Workspace); err == nil {
+			err = a.load(r.Namespace, r.KeepArchive)
+		}
 	case KindCreate:
 		err = a.prepareRepository(r.Target.Workspace, r.Repository)
+		if err == nil {
+			r.Namespace, err = a.workspaceNamespace(r.Namespace, r.Target.Workspace)
+		}
 		if err == nil && r.BuildFirst {
 			err = a.build(r.Namespace, r.Platforms, false)
 			if err == nil && (a.Selection == nil || a.Selection.Category != config.CategoryContainer) {

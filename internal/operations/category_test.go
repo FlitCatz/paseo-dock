@@ -3,7 +3,7 @@ package operations
 import (
 	"context"
 	"os"
-	"paseo-sbx/internal/config"
+	"paseo-dock/internal/config"
 	"strings"
 	"testing"
 )

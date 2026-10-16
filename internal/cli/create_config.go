@@ -2,7 +2,7 @@ package cli
 
 import (
 	"flag"
-	"paseo-sbx/internal/config"
+	"paseo-dock/internal/config"
 	"slices"
 	"strconv"
 	"strings"

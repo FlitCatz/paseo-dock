@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"paseo-sbx/internal/config"
+	"paseo-dock/internal/config"
 )
 
 func TestGeneratedProvidersMapRenamedBase(t *testing.T) {
@@ -213,8 +213,8 @@ func TestRemoveValidationFailurePreservesConfigAndResource(t *testing.T) {
 
 // Opt in to check the installed CLI contract without connecting to a daemon.
 func TestInstalledPaseoConfigValidator(t *testing.T) {
-	if os.Getenv("PASEO_SBX_TEST_INSTALLED_PASEO") != "1" {
-		t.Skip("set PASEO_SBX_TEST_INSTALLED_PASEO=1 to check the installed Paseo CLI")
+	if os.Getenv("PASEO_DOCK_TEST_INSTALLED_PASEO") != "1" {
+		t.Skip("set PASEO_DOCK_TEST_INSTALLED_PASEO=1 to check the installed Paseo CLI")
 	}
 	s := &Service{Root: t.TempDir()}
 	a := s.execution(context.Background(), nil, nil)

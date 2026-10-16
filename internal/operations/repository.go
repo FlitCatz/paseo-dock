@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"fmt"
 	"os"
-	"paseo-sbx/internal/config"
-	"paseo-sbx/internal/process"
+	"paseo-dock/internal/config"
+	"paseo-dock/internal/process"
 	"path/filepath"
 	"strings"
 )
@@ -46,7 +46,7 @@ func (a *execution) prepareRepository(workspace string, repo config.Repository) 
 		return err
 	}
 	if config.Within(root, workspace) {
-		return fmt.Errorf("workspace must not contain the paseo-sbx source root")
+		return fmt.Errorf("workspace must not contain the paseo-dock source root")
 	}
 	if strings.HasPrefix(repo.URL, "-") {
 		return fmt.Errorf("invalid repository URL")

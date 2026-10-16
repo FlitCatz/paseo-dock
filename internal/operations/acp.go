@@ -8,7 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"paseo-sbx/internal/config"
+	"paseo-dock/internal/config"
 	"slices"
 	"strings"
 	"time"

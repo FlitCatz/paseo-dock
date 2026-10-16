@@ -7,12 +7,12 @@ import (
 	"strings"
 	"testing"
 
-	"paseo-sbx/internal/config"
+	"paseo-dock/internal/config"
 )
 
 func TestUpdateCLISelectionAndFailure(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	t.Setenv("PASEO_SBX_AUTO_UPDATE", "0") // Explicit updates still execute.
+	t.Setenv("PASEO_DOCK_AUTO_UPDATE", "0") // Explicit updates still execute.
 	bin := t.TempDir()
 	t.Setenv("PATH", bin+":"+os.Getenv("PATH"))
 	stub := `#!/bin/sh

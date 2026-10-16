@@ -1,0 +1,8 @@
+#!/bin/sh
+set -eu
+source_root=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+if [ ! -x "$source_root/bin/paseo-dock" ]; then
+  echo "paseo-dock: run make build in $source_root first" >&2
+  exit 1
+fi
+exec "$source_root/bin/paseo-dock" "$@"

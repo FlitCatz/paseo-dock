@@ -2,7 +2,7 @@
 
 build:
 	mkdir -p bin
-	CGO_ENABLED=0 go build -trimpath -o bin/paseo-sbx ./cmd/paseo-sbx
+	CGO_ENABLED=0 go build -trimpath -o bin/paseo-dock ./cmd/paseo-dock
 	CGO_ENABLED=0 go build -trimpath -o bin/agent-wrapper ./cmd/agent-wrapper
 	CGO_ENABLED=0 go build -trimpath -o bin/install-runtime ./cmd/install-runtime
 

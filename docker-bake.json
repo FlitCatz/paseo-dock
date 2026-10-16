@@ -35,7 +35,7 @@
         "linux/arm64"
       ],
       "tags": [
-        "paseo-sbx/antigravity-cli-gsd-core:2026.09.30-e0d6401e0639"
+        "paseo-dock/antigravity-cli-gsd-core:2026.09.30-e0d6401e0639"
       ]
     },
     "antigravity-cli-native": {
@@ -54,7 +54,7 @@
         "linux/arm64"
       ],
       "tags": [
-        "paseo-sbx/antigravity-cli-native:2026.09.30-66b7c678f967"
+        "paseo-dock/antigravity-cli-native:2026.09.30-66b7c678f967"
       ]
     },
     "antigravity-cli-openspec": {
@@ -73,7 +73,7 @@
         "linux/arm64"
       ],
       "tags": [
-        "paseo-sbx/antigravity-cli-openspec:2026.09.30-98c7e8126768"
+        "paseo-dock/antigravity-cli-openspec:2026.09.30-98c7e8126768"
       ]
     },
     "antigravity-cli-ponytail": {
@@ -92,7 +92,7 @@
         "linux/arm64"
       ],
       "tags": [
-        "paseo-sbx/antigravity-cli-ponytail:2026.09.30-26c7b2a9c5eb"
+        "paseo-dock/antigravity-cli-ponytail:2026.09.30-26c7b2a9c5eb"
       ]
     },
     "antigravity-cli-superpowers": {
@@ -111,7 +111,7 @@
         "linux/arm64"
       ],
       "tags": [
-        "paseo-sbx/antigravity-cli-superpowers:2026.09.30-1ce70f410c73"
+        "paseo-dock/antigravity-cli-superpowers:2026.09.30-1ce70f410c73"
       ]
     },
     "claude-gsd-core": {
@@ -130,7 +130,7 @@
         "linux/arm64"
       ],
       "tags": [
-        "paseo-sbx/claude-gsd-core:2026.09.30-4dbfc2b22c13"
+        "paseo-dock/claude-gsd-core:2026.09.30-4dbfc2b22c13"
       ]
     },
     "claude-openspec": {
@@ -149,7 +149,7 @@
         "linux/arm64"
       ],
       "tags": [
-        "paseo-sbx/claude-openspec:2026.09.30-0c113aa4e755"
+        "paseo-dock/claude-openspec:2026.09.30-0c113aa4e755"
       ]
     },
     "claude-ponytail": {
@@ -168,7 +168,7 @@
         "linux/arm64"
       ],
       "tags": [
-        "paseo-sbx/claude-ponytail:2026.09.30-a46c7ba0a828"
+        "paseo-dock/claude-ponytail:2026.09.30-a46c7ba0a828"
       ]
     },
     "claude-superpowers": {
@@ -187,7 +187,7 @@
         "linux/arm64"
       ],
       "tags": [
-        "paseo-sbx/claude-superpowers:2026.09.30-8bf283c91b82"
+        "paseo-dock/claude-superpowers:2026.09.30-8bf283c91b82"
       ]
     },
     "codex-gsd-core": {
@@ -206,7 +206,7 @@
         "linux/arm64"
       ],
       "tags": [
-        "paseo-sbx/codex-gsd-core:2026.09.30-459845e93691"
+        "paseo-dock/codex-gsd-core:2026.09.30-459845e93691"
       ]
     },
     "codex-openspec": {
@@ -225,7 +225,7 @@
         "linux/arm64"
       ],
       "tags": [
-        "paseo-sbx/codex-openspec:2026.09.30-5714ba35cef4"
+        "paseo-dock/codex-openspec:2026.09.30-5714ba35cef4"
       ]
     },
     "codex-ponytail": {
@@ -244,7 +244,7 @@
         "linux/arm64"
       ],
       "tags": [
-        "paseo-sbx/codex-ponytail:2026.09.30-15925245109e"
+        "paseo-dock/codex-ponytail:2026.09.30-15925245109e"
       ]
     },
     "codex-superpowers": {
@@ -263,7 +263,7 @@
         "linux/arm64"
       ],
       "tags": [
-        "paseo-sbx/codex-superpowers:2026.09.30-2136aa539fe6"
+        "paseo-dock/codex-superpowers:2026.09.30-2136aa539fe6"
       ]
     }
   }

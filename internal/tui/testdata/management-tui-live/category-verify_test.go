@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"paseo-sbx/internal/config"
+	"paseo-dock/internal/config"
 )
 
 func TestMain(m *testing.M) {
@@ -83,7 +83,7 @@ func TestProviderSessionRequiresSuccessfulInitializeProcess(t *testing.T) {
 			defer cancel()
 			cmd := exec.CommandContext(ctx, exe, "--provider-session", runtime, "sbx-codex")
 			cmd.Dir = workspace
-			cmd.Env = environment(map[string]string{"CATEGORY_GUARD_TEST_CHILD": "1", "CATEGORY_LIVE_ROOT": root, "HOME": home, "PATH": bin, "CATEGORY_AUTH_HOME": home, "CATEGORY_AUTH_PATH": bin, "CATEGORY_REAL_SBX": filepath.Join(bin, "fixture-real"), "CATEGORY_TEST_CALLED": filepath.Join(root, "called"), "CATEGORY_TEST_RESPONSE": tc.response, "PASEO_SBX_AUTO_UPDATE": "0", "PASEO_AGENT_CWD": workspace})
+			cmd.Env = environment(map[string]string{"CATEGORY_GUARD_TEST_CHILD": "1", "CATEGORY_LIVE_ROOT": root, "HOME": home, "PATH": bin, "CATEGORY_AUTH_HOME": home, "CATEGORY_AUTH_PATH": bin, "CATEGORY_REAL_SBX": filepath.Join(bin, "fixture-real"), "CATEGORY_TEST_CALLED": filepath.Join(root, "called"), "CATEGORY_TEST_RESPONSE": tc.response, "PASEO_DOCK_AUTO_UPDATE": "0", "PASEO_AGENT_CWD": workspace})
 			output, err := cmd.CombinedOutput()
 			if ctx.Err() != nil {
 				t.Fatalf("initialize gate did not terminate: %s", output)

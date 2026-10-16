@@ -20,10 +20,10 @@ import (
 	"syscall"
 	"time"
 
-	"paseo-sbx/internal/config"
-	"paseo-sbx/internal/containerpolicy"
-	"paseo-sbx/internal/operationlock"
-	"paseo-sbx/internal/operations"
+	"paseo-dock/internal/config"
+	"paseo-dock/internal/containerpolicy"
+	"paseo-dock/internal/operationlock"
+	"paseo-dock/internal/operations"
 )
 
 const expectedImage = "sha256:7760a63ba6a62611c4434c1208c1c87236cd37d36b691da206ebd0d7e77d6521"
@@ -368,7 +368,7 @@ func run() (retErr error) {
 			return err
 		}
 	}
-	for key, value := range map[string]string{"HOME": filepath.Join(root, "home"), "PASEO_HOME": filepath.Join(root, "paseo"), "DOCKER_CONFIG": filepath.Join(root, "docker-config"), "DOCKER_HOST": endpoint, "PASEO_SBX_AUTO_UPDATE": "0"} {
+	for key, value := range map[string]string{"HOME": filepath.Join(root, "home"), "PASEO_HOME": filepath.Join(root, "paseo"), "DOCKER_CONFIG": filepath.Join(root, "docker-config"), "DOCKER_HOST": endpoint, "PASEO_DOCK_AUTO_UPDATE": "0"} {
 		if err := os.Setenv(key, value); err != nil {
 			return err
 		}
@@ -578,7 +578,7 @@ func run() (retErr error) {
 func main() {
 	// Tee stdout/stderr into an externally supplied durable log, if requested.
 	var writer io.Writer = os.Stdout
-	if path := os.Getenv("PASEO_SBX_ACCEPTANCE_LOG"); path != "" {
+	if path := os.Getenv("PASEO_DOCK_ACCEPTANCE_LOG"); path != "" {
 		f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)

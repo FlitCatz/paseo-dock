@@ -4,7 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"paseo-sbx/internal/runtimeinstall"
+	"paseo-dock/internal/runtimeinstall"
 	"runtime"
 )
 

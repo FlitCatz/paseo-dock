@@ -5,7 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"paseo-sbx/internal/operations"
+	"paseo-dock/internal/operations"
 )
 
 // Legacy lifecycle fixtures exercise the retained schema-1 service path explicitly.

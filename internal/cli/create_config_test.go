@@ -3,8 +3,8 @@ package cli
 import (
 	"bytes"
 	"os"
-	"paseo-sbx/internal/config"
-	"paseo-sbx/internal/operations"
+	"paseo-dock/internal/config"
+	"paseo-dock/internal/operations"
 	"path/filepath"
 	"strings"
 	"testing"

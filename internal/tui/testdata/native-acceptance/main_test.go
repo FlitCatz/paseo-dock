@@ -5,8 +5,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"os"
-	"paseo-sbx/internal/config"
-	"paseo-sbx/internal/launcher"
+	"paseo-dock/internal/config"
+	"paseo-dock/internal/launcher"
 	"strings"
 	"testing"
 )

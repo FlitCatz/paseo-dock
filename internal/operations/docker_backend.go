@@ -9,9 +9,9 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"paseo-sbx/internal/config"
-	"paseo-sbx/internal/containerpolicy"
-	"paseo-sbx/internal/process"
+	"paseo-dock/internal/config"
+	"paseo-dock/internal/containerpolicy"
+	"paseo-dock/internal/process"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -20,6 +20,7 @@ import (
 	"time"
 )
 
+// io.paseo-sbx.* labels are on existing containers and stay after the rename (see config/legacy.go).
 const DockerManagedLabel = "io.paseo-sbx.managed"
 const dockerPolicyLabel = "io.paseo-sbx.security-policy"
 const dockerPolicyDigestLabel = "io.paseo-sbx.security-policy-digest"

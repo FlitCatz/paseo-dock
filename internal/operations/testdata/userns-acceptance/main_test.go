@@ -12,9 +12,9 @@ import (
 	"testing"
 	"time"
 
-	"paseo-sbx/internal/config"
-	"paseo-sbx/internal/containerpolicy"
-	"paseo-sbx/internal/operations"
+	"paseo-dock/internal/config"
+	"paseo-dock/internal/containerpolicy"
+	"paseo-dock/internal/operations"
 )
 
 func TestCanceledCreationStillEnrollsVerifiedOwnedGuest(t *testing.T) {

@@ -13,9 +13,9 @@ import (
 // Opt-in runtime regression: nested kit mounts must not leave Claude's parent
 // config directory root-owned. Uses one disposable container and an empty mount.
 func TestClaudeSandboxConfigSurvivesKitMount(t *testing.T) {
-	image := os.Getenv("PASEO_SBX_LIVE_CLAUDE_IMAGE")
+	image := os.Getenv("PASEO_DOCK_LIVE_CLAUDE_IMAGE")
 	if image == "" {
-		t.Skip("set PASEO_SBX_LIVE_CLAUDE_IMAGE to an exact disposable image ID")
+		t.Skip("set PASEO_DOCK_LIVE_CLAUDE_IMAGE to an exact disposable image ID")
 	}
 	if !strings.HasPrefix(image, "sha256:") || !dockerExactID.MatchString(strings.TrimPrefix(image, "sha256:")) {
 		t.Fatal("exact image ID required")

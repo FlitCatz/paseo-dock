@@ -1,4 +1,4 @@
-module paseo-sbx
+module paseo-dock
 
 go 1.26.0
 

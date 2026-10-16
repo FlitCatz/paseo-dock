@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"paseo-sbx/internal/config"
+	"paseo-dock/internal/config"
 )
 
 type fixture struct {
@@ -151,7 +151,7 @@ func TestAutomaticIntervalAndConcurrentLock(t *testing.T) {
 }
 
 func TestDisableOnlySkipsAutomaticUpdate(t *testing.T) {
-	t.Setenv("PASEO_SBX_AUTO_UPDATE", "0")
+	t.Setenv("PASEO_DOCK_AUTO_UPDATE", "0")
 	t.Setenv("PATH", t.TempDir())
 	runtime := t.TempDir()
 	entry := config.Entry{Agent: "codex", Sandbox: "box"}

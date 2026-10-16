@@ -7,8 +7,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"paseo-sbx/internal/config"
-	"paseo-sbx/internal/operationlock"
+	"paseo-dock/internal/config"
+	"paseo-dock/internal/operationlock"
 )
 
 func (a *execution) removalState(t Target) (bool, error) {

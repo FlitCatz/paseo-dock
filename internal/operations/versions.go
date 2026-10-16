@@ -10,9 +10,9 @@ import (
 	"strings"
 	"time"
 
-	"paseo-sbx/internal/config"
-	"paseo-sbx/internal/operationlock"
-	"paseo-sbx/internal/sandboxupdate"
+	"paseo-dock/internal/config"
+	"paseo-dock/internal/operationlock"
+	"paseo-dock/internal/sandboxupdate"
 )
 
 // checkVersions probes installed software only. Image lock fields select probe

@@ -13,12 +13,12 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
-	"paseo-sbx/internal/config"
-	"paseo-sbx/internal/gateway"
-	"paseo-sbx/internal/operationlock"
-	"paseo-sbx/internal/operations"
-	"paseo-sbx/internal/process"
-	"paseo-sbx/internal/sandboxupdate"
+	"paseo-dock/internal/config"
+	"paseo-dock/internal/gateway"
+	"paseo-dock/internal/operationlock"
+	"paseo-dock/internal/operations"
+	"paseo-dock/internal/process"
+	"paseo-dock/internal/sandboxupdate"
 	"path/filepath"
 	"strings"
 	"syscall"
@@ -162,7 +162,7 @@ func prepareNativeContext(ctx context.Context, runtime, key string, args []strin
 			cleanupCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 			defer cancel()
 			if _, err := run(cleanupCtx, nativeExec, false, "rm", "-rf", "--", guest); err != nil {
-				fmt.Fprintln(stderr, "paseo-sbx: native assets cleanup incomplete:", err)
+				fmt.Fprintln(stderr, "paseo-dock: native assets cleanup incomplete:", err)
 			}
 		}
 	}
@@ -676,7 +676,7 @@ func LaunchIO(runtime, profile string, args []string, in io.Reader, out, stderr 
 		return 1, cancelErr
 	}
 	if updateErr != nil {
-		fmt.Fprintln(stderr, "paseo-sbx: update failed; launching installed agent:", updateErr)
+		fmt.Fprintln(stderr, "paseo-dock: update failed; launching installed agent:", updateErr)
 	}
 	command := []string{"exec", "-i"}
 	releaseStartup, err := acquireStartup(ctx, runtime, operationlock.EntryKey(entry))
@@ -926,7 +926,7 @@ func exitStatus(err error) int {
 }
 func Main() int {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "paseo-sbx launcher: profile is required")
+		fmt.Fprintln(os.Stderr, "paseo-dock launcher: profile is required")
 		return 1
 	}
 	exe, err := os.Executable()
@@ -939,13 +939,13 @@ func Main() int {
 	}
 	profile, args, err := LaunchArguments(os.Args[1:])
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "paseo-sbx launcher:", err)
+		fmt.Fprintln(os.Stderr, "paseo-dock launcher:", err)
 		return 1
 	}
 	// The shared launcher lives in <base>/launcher; legacy copies in <base>/<id>.
 	code, err := Launch(filepath.Dir(filepath.Dir(exe)), profile, args)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "paseo-sbx launcher:", err)
+		fmt.Fprintln(os.Stderr, "paseo-dock launcher:", err)
 		return 1
 	}
 	return code

@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
-	"paseo-sbx/internal/config"
+	"paseo-dock/internal/config"
 )
 
 // ErrRuntimeNotFound means a successful observation confirmed resource absence.

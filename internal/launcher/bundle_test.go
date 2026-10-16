@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"paseo-sbx/internal/config"
-	"paseo-sbx/internal/operationlock"
+	"paseo-dock/internal/config"
+	"paseo-dock/internal/operationlock"
 )
 
 func bundleRegistry(t *testing.T) (string, config.Registry, config.Entry) {
