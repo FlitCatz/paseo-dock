@@ -84,7 +84,7 @@ Docker의 기본 AppArmor 적용과 진단 방법은 [공식 문서](https://doc
 | r / ? | 상태·연결·template 수동 갱신 / 도움말 |
 | Enter | 선택 대상의 작업 메뉴; ↑↓/jk 선택, Enter 확인·실행, Esc 취소 |
 | u / s | 선택 sandbox 업데이트 확인 / shell·로그인 진입 |
-| n | 경로·설정 파일·포트 입력과 directory picker → 선택 wizard → 생성 확인 |
+| n | dashboard 위 팝업에서 경로·설정 파일·포트 입력과 directory picker → 실행 환경 선택 팝업 → 선택 wizard → 생성 확인 |
 | a | 저장된 선택으로 build/load, template 보기, 누락 workspace 정리 미리보기 |
 | t / v | template 탭 / 미등록 sandbox의 읽기 전용 보기 |
 | c / R | 실행 작업 취소 요청·대기 작업 취소 / 최근 실패 작업의 고정 대상 재시도 확인 |

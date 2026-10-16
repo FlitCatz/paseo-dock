@@ -48,6 +48,13 @@ Codex container에만 적용합니다. 정책 범위와 플랫폼 제한은 [REA
 `--apply`는 기존 Paseo 설정을 백업한 뒤 provider 등록과 reload를 수행합니다.
 
 터미널에서 `./bin/paseo-dock`을 인수 없이 실행하면 관리 dashboard가 열립니다.
+관리 화면에서 `n`을 누르면 dashboard 위에 **새 환경 생성** 팝업이 열립니다. Workspace 경로,
+Create config JSON, Container ports, directory picker를 agent 선택 화면과 같은 목록 형식
+(`┃` 강조 막대, `›` 커서, `○`/`✓` 표시)으로 보여 줍니다. Tab/Shift+Tab으로 항목을 옮기고
+Enter로 다음 단계, Esc로 취소합니다. 이어서 같은 형식의 **실행 환경 선택** 팝업에서
+↑/↓로 sandbox 또는 container를 고르고 Enter로 진행합니다. 팝업 뒤의 dashboard는 그대로
+보이며, 작은 터미널에서는 팝업이 화면 전체를 쓰고 현재 항목과 도움말을 우선 표시합니다.
+이후의 agent·methodology·utility 선택과 최종 확인은 목록이 길어 전체 화면 wizard로 진행합니다.
 생성 wizard에서 category, agent와 해당 category의 설치 구성을 선택하고 최종 확인합니다.
 Codex container의 최종 확인에서는 `u`로 user namespace opt-in을 바꿉니다.
 

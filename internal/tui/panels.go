@@ -333,8 +333,9 @@ func overlayPopup(base, popup string, width, height int) string {
 	return strings.Join(baseLines, "\n")
 }
 func (m *Dashboard) View() tea.View {
-	if m.creating != nil && !m.exitPrompt {
-		return m.creationView()
+	creationPopup := m.creating != nil && !m.exitPrompt
+	if creationPopup && m.creationFullScreen() {
+		return m.creating.wizard.View()
 	}
 	m.syncLists()
 	width, height := max(1, m.Width), max(1, m.Height)
@@ -376,7 +377,9 @@ func (m *Dashboard) View() tea.View {
 	default:
 		body = m.panel(m.Focus, width, available)
 	}
-	if content := m.managementContent(); content != "" {
+	if creationPopup {
+		body = overlayPopup(body, m.creationPopupFor(width, available), width, available)
+	} else if content := m.managementContent(); content != "" {
 		if m.confirm != nil {
 			content = "Enter 실행(조건 충족 시) · Esc 취소\n" + content
 		}
@@ -417,7 +420,8 @@ func (m *Dashboard) View() tea.View {
 		popup := renderSection(title, m.modal.View(), popupWidth, popupHeight, true)
 		body = overlayPopup(body, popup, width, available)
 	}
-	if m.actionError != "" {
+	// Creation popups show their own errors.
+	if m.actionError != "" && !creationPopup {
 		footer = m.actionError + " · " + footer
 	}
 	lines := []string{}
