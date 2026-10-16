@@ -17,7 +17,7 @@ func validNativeGuestDirectory(path string) bool {
 		return false
 	}
 	name := filepath.Base(path)
-	suffix := strings.TrimPrefix(name, "paseo-sbx-assets.")
+	suffix := strings.TrimPrefix(name, "paseo-dock-assets.")
 	if suffix == name || suffix == "" {
 		return false
 	}

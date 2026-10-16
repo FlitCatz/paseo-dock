@@ -49,11 +49,11 @@ func TestDockerUpdate(t *testing.T) {
 		return "", err
 	}
 	if utilities := os.Getenv("PASEO_DOCK_UPDATE_TEST_UTILITIES"); utilities != "" {
-		if _, err := run(ctx, []string{"bash", "/opt/paseo-sbx/install/install-utilities.sh", "codex", utilities}, false); err != nil {
+		if _, err := run(ctx, []string{"bash", "/opt/paseo-dock/install/install-utilities.sh", "codex", utilities}, false); err != nil {
 			t.Fatal(err)
 		}
 	}
-	raw, err := run(ctx, []string{"cat", "/home/agent/.local/share/paseo-sbx/installed.json"}, true)
+	raw, err := run(ctx, []string{"cat", "/home/agent/.local/share/paseo-dock/installed.json"}, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -65,7 +65,7 @@ func TestDockerUpdate(t *testing.T) {
 		t.Fatal(err)
 	}
 	if os.Getenv("PASEO_DOCK_UPDATE_TEST_OLDER_PLUGIN") == "1" {
-		dir := "/home/agent/.local/share/paseo-sbx/marketplace/plugins/" + manifest.Tool
+		dir := "/home/agent/.local/share/paseo-dock/marketplace/plugins/" + manifest.Tool
 		for _, args := range [][]string{{"git", "-C", dir, "fetch", "--depth", "2", "origin", "HEAD"}, {"git", "-C", dir, "checkout", "--detach", "FETCH_HEAD~1"}} {
 			if _, err := run(ctx, args, false); err != nil {
 				t.Fatal(err)

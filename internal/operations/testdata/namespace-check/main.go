@@ -28,14 +28,14 @@ func run() error {
 	if *login && *model {
 		return fmt.Errorf("select only one mode")
 	}
-	if filepath.Dir(*root) != "/private/tmp" || !strings.HasPrefix(filepath.Base(*root), "paseo-sbx-category-live-") {
+	if filepath.Dir(*root) != "/private/tmp" || !strings.HasPrefix(filepath.Base(*root), "paseo-dock-category-live-") {
 		return fmt.Errorf("an existing acceptance root is required")
 	}
 	workspace, err := config.Canonical(filepath.Join(*root, "workspace"))
 	if err != nil {
 		return err
 	}
-	sumRuntime := filepath.Join(*root, "home", ".local", "share", "paseo-sbx")
+	sumRuntime := filepath.Join(*root, "home", ".local", "share", "paseo-dock")
 	entries, err := os.ReadDir(sumRuntime)
 	if err != nil {
 		return err

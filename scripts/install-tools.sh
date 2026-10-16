@@ -1,6 +1,6 @@
     if [[ -e "$registered" ]]; then
       # Claude snapshots marketplaces; refresh it to see plugins added since.
-      claude plugin marketplace update paseo-sbx
+      claude plugin marketplace update paseo-dock
     else
       claude plugin marketplace add "$marketplace_dir"; touch "$registered"
     fi
@@ -9,8 +9,8 @@ set -euo pipefail
 agent_kind=$1
 tool_kind=$2
 method_installer=${3:-}
-lock_file=/opt/paseo-sbx/install/versions.lock.json
-marketplace_dir="$HOME/.local/share/paseo-sbx/marketplace"
+lock_file=/opt/paseo-dock/install/versions.lock.json
+marketplace_dir="$HOME/.local/share/paseo-dock/marketplace"
 mkdir -p "$marketplace_dir/plugins" "$HOME/.codex" "$HOME/.claude"
 
 if [[ "$method_installer" == none ]]; then
@@ -48,20 +48,20 @@ const names = fs.readdirSync(`${root}/plugins`).filter(n => fs.existsSync(`${roo
 fs.mkdirSync(`${root}/.agents/plugins`, {recursive: true});
 fs.mkdirSync(`${root}/.claude-plugin`, {recursive: true});
 fs.writeFileSync(`${root}/.agents/plugins/marketplace.json`, JSON.stringify({
-  name: 'paseo-sbx', plugins: names.map(name => ({name, source: {source: 'local', path: `./plugins/${name}`}}))
+  name: 'paseo-dock', plugins: names.map(name => ({name, source: {source: 'local', path: `./plugins/${name}`}}))
 }));
 fs.writeFileSync(`${root}/.claude-plugin/marketplace.json`, JSON.stringify({
-  name: 'paseo-sbx', owner: {name: 'paseo-sbx'}, plugins: names.map(name => ({name, source: `./plugins/${name}`}))
+  name: 'paseo-dock', owner: {name: 'paseo-dock'}, plugins: names.map(name => ({name, source: `./plugins/${name}`}))
 }));
 NODE
   # Register the shared marketplace once per agent; later pairs reuse it.
   registered="$marketplace_dir/.registered-$agent_kind"
   if [[ "$agent_kind" == codex ]]; then
     [[ -e "$registered" ]] || { codex plugin marketplace add "$marketplace_dir"; touch "$registered"; }
-    codex plugin add "$tool_kind@paseo-sbx"
+    codex plugin add "$tool_kind@paseo-dock"
   elif [[ "$agent_kind" == claude ]]; then
     [[ -e "$registered" ]] || { claude plugin marketplace add "$marketplace_dir"; touch "$registered"; }
-    claude plugin install "$tool_kind@paseo-sbx" --scope user
+    claude plugin install "$tool_kind@paseo-dock" --scope user
   elif [[ "$agent_kind" == antigravity-cli && "$tool_kind" == ponytail ]]; then
     agy plugin install "$marketplace_dir/plugins/$tool_kind"
   elif [[ "$agent_kind" == antigravity-cli && "$tool_kind" == superpowers ]]; then
@@ -79,10 +79,10 @@ fi
 
 # Shared instructions are appended once per agent, even when a bundle pairs
 # the agent with several methodologies.
-instructions_marker="$HOME/.local/share/paseo-sbx/instructions-$agent_kind"
+instructions_marker="$HOME/.local/share/paseo-dock/instructions-$agent_kind"
 append_instructions() {
   [[ -e "$instructions_marker" ]] && return 0
-  cat /opt/paseo-sbx/install/agent-instructions.md >> "$1"
+  cat /opt/paseo-dock/install/agent-instructions.md >> "$1"
   touch "$instructions_marker"
 }
 if [[ "$agent_kind" == codex ]]; then
@@ -102,6 +102,6 @@ fi
 node - "$agent_kind" "$tool_kind" "$lock_file" <<'NODE'
 const fs = require('fs');
 const [agent, tool, lock] = process.argv.slice(2);
-fs.writeFileSync(`${process.env.HOME}/.local/share/paseo-sbx/installed.json`,
+fs.writeFileSync(`${process.env.HOME}/.local/share/paseo-dock/installed.json`,
   JSON.stringify({agent, tool, lock: JSON.parse(fs.readFileSync(lock, 'utf8'))}, null, 2));
 NODE

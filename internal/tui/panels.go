@@ -338,7 +338,7 @@ func (m *Dashboard) View() tea.View {
 	}
 	m.syncLists()
 	width, height := max(1, m.Width), max(1, m.Height)
-	header := "PASEO SBX  " + connectionText("sbx", m.Snapshot.SBX) + "  " + connectionText("Paseo", m.Snapshot.Paseo) + "  " + connectionText("Docker", m.Snapshot.Docker)
+	header := "PASEO DOCK  " + connectionText("sbx", m.Snapshot.SBX) + "  " + connectionText("Paseo", m.Snapshot.Paseo) + "  " + connectionText("Docker", m.Snapshot.Docker)
 	if !m.LastSuccess.IsZero() {
 		header += "  마지막 성공: " + m.LastSuccess.Format("15:04:05")
 	}

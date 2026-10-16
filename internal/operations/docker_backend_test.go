@@ -100,7 +100,7 @@ func TestDockerRemoveExactStoppedManagedID(t *testing.T) {
 				labels[DockerManagedLabel] = "false"
 			}
 			if mode == "category" {
-				labels["io.paseo-sbx.category"] = "sandbox"
+				labels["io.paseo-dock.category"] = "sandbox"
 			}
 			if mode == "missing workspace" {
 				e.Workspace = filepath.Join(e.Workspace, "missing")
@@ -153,7 +153,7 @@ func dockerFixture(t *testing.T) (*DockerBackend, config.Entry, map[string]any, 
 		t.Fatal(err)
 	}
 	e := config.Entry{Category: config.CategoryContainer, ContainerID: strings.Repeat("a", 64), Image: "managed:locked", ImageID: "sha256:image", Workspace: workspace, Network: "bridge", Agent: "codex", Tool: "superpowers", Ports: []config.PortMapping{{HostAddress: "127.0.0.1", HostPort: 3000, ContainerPort: 3000}}}
-	raw := map[string]any{"Id": e.ContainerID, "Image": e.ImageID, "State": map[string]any{"Running": true}, "Config": map[string]any{"Labels": map[string]string{DockerManagedLabel: "true", "io.paseo-sbx.category": "container"}}, "Mounts": []any{map[string]any{"Type": "bind", "Source": workspace, "Destination": workspace, "RW": true}}, "HostConfig": map[string]any{"NetworkMode": "bridge", "PortBindings": map[string]any{"3000/tcp": []any{map[string]string{"HostIp": "127.0.0.1", "HostPort": "3000"}}}}}
+	raw := map[string]any{"Id": e.ContainerID, "Image": e.ImageID, "State": map[string]any{"Running": true}, "Config": map[string]any{"Labels": map[string]string{DockerManagedLabel: "true", "io.paseo-dock.category": "container"}}, "Mounts": []any{map[string]any{"Type": "bind", "Source": workspace, "Destination": workspace, "RW": true}}, "HostConfig": map[string]any{"NetworkMode": "bridge", "PortBindings": map[string]any{"3000/tcp": []any{map[string]string{"HostIp": "127.0.0.1", "HostPort": "3000"}}}}}
 	raw["NetworkSettings"] = map[string]any{"Networks": map[string]any{"bridge": map[string]any{}}}
 	writeDockerInspect(t, raw)
 	return &DockerBackend{}, e, raw, filepath.Join(dir, "log")
@@ -317,7 +317,7 @@ func TestDockerStartupFailureRetainsExactIdentity(t *testing.T) {
 		t.Fatalf("startup failure lost resource: %+v %v", created, err)
 	}
 	calls := dockerCalls(t, log)
-	if !strings.Contains(calls, `"HOME=/home/agent"`) || !strings.Contains(calls, "paseo-sbx-agent-ready") || !strings.Contains(calls, "runuser -u agent") || !strings.Contains(calls, "chown -R") {
+	if !strings.Contains(calls, `"HOME=/home/agent"`) || !strings.Contains(calls, "paseo-dock-agent-ready") || !strings.Contains(calls, "runuser -u agent") || !strings.Contains(calls, "chown -R") {
 		t.Fatalf("missing ownership/readiness: %s", calls)
 	}
 }

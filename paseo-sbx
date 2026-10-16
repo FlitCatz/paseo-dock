@@ -1,6 +1,0 @@
-#!/bin/sh
-# paseo-sbx was renamed to paseo-dock; this compatibility shim stays.
-set -eu
-source_root=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-echo "paseo-sbx: renamed to paseo-dock; running $source_root/paseo-dock" >&2
-exec "$source_root/paseo-dock" "$@"

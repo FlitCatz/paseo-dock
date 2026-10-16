@@ -38,11 +38,11 @@ func TestFilterGeneratedProviderBases(t *testing.T) {
 		if err := config.ReadJSON(filepath.Join(home, "config.json"), &probe); err != nil {
 			return err
 		}
-		p := object(object(probe, "agents"), "providers")["paseo-sbx-base-probe"].(map[string]any)
+		p := object(object(probe, "agents"), "providers")["paseo-dock-base-probe"].(map[string]any)
 		base := p["extends"].(string)
 		calls[base]++
 		if base == "missing" {
-			return fmt.Errorf("Provider %q extends unknown provider %q.", "paseo-sbx-base-probe", base)
+			return fmt.Errorf("Provider %q extends unknown provider %q.", "paseo-dock-base-probe", base)
 		}
 		return nil
 	}}
@@ -218,7 +218,7 @@ func TestInstalledPaseoConfigValidator(t *testing.T) {
 	}
 	s := &Service{Root: t.TempDir()}
 	a := s.execution(context.Background(), nil, nil)
-	generated := ProviderConfig("/trusted/launcher", map[string]string{"sbx-codex": "codex", "sbx-antigravity-cli": "antigravity-cli", "sbx-unsupported": "paseo-sbx-nonexistent-base"})
+	generated := ProviderConfig("/trusted/launcher", map[string]string{"sbx-codex": "codex", "sbx-antigravity-cli": "antigravity-cli", "sbx-unsupported": "paseo-dock-nonexistent-base"})
 	if err := a.filterProviderBases(generated); err != nil {
 		t.Fatal(err)
 	}

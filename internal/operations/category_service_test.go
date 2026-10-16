@@ -75,9 +75,9 @@ func (b *categoryBackend) Exec(_ context.Context, e config.Entry, args []string,
 		fmt.Fprint(out, "codex 1.2.3")
 	case "rtk --version":
 		fmt.Fprint(out, "rtk 0.1.0")
-	case "cat /home/agent/.local/share/paseo-sbx/installed.json":
+	case "cat /home/agent/.local/share/paseo-dock/installed.json":
 		fmt.Fprint(out, `{"agent":"codex","tool":"native","lock":{"tools":{}}}`)
-	case "cat /home/agent/.local/share/paseo-sbx/utilities/installed.json":
+	case "cat /home/agent/.local/share/paseo-dock/utilities/installed.json":
 		fmt.Fprint(out, `{"agent":"codex","utilities":{"rtk":{"installer":"rtk"}}}`)
 	case "uname -m":
 		return errors.New("RTK stage reached")
@@ -139,7 +139,7 @@ func TestNewSandboxUpdateTouchesAgentOnly(t *testing.T) {
 	if err != nil || !result.Changed {
 		t.Fatalf("%+v %v", result, err)
 	}
-	want := []string{"printenv HOME", "mkdir -p /home/agent/.local/share/paseo-sbx/updates /home/agent/.local/bin", "npm view @openai/codex@latest version", "codex --version"}
+	want := []string{"printenv HOME", "mkdir -p /home/agent/.local/share/paseo-dock/updates /home/agent/.local/bin", "npm view @openai/codex@latest version", "codex --version"}
 	if !slices.Equal(b.calls, want) {
 		t.Fatalf("calls %v", b.calls)
 	}
@@ -151,7 +151,7 @@ func TestNewSandboxUpdateTouchesAgentOnly(t *testing.T) {
 func TestContainerUpdateKeepsStackStages(t *testing.T) {
 	s, target, b := categoryFixture(t, config.CategoryContainer)
 	_, err := s.Execute(context.Background(), Request{Kind: KindUpdate, Target: target}, nil)
-	if err == nil || !slices.Contains(b.calls, "env -C /tmp cat /home/agent/.local/share/paseo-sbx/installed.json") || !slices.Contains(b.calls, "env -C /tmp uname -m") {
+	if err == nil || !slices.Contains(b.calls, "env -C /tmp cat /home/agent/.local/share/paseo-dock/installed.json") || !slices.Contains(b.calls, "env -C /tmp uname -m") {
 		t.Fatalf("err=%v calls=%v", err, b.calls)
 	}
 }

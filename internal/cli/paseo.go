@@ -77,10 +77,10 @@ func createPluginAgent(ctx context.Context, home string, agentConfig map[string]
 		return "", err
 	}
 	id := hex.EncodeToString(random[:])
-	if err = send(map[string]any{"type": "hello", "clientId": "paseo-sbx-" + id, "clientType": "cli", "protocolVersion": 1, "auth": map[string]any{"kind": "localCredential", "token": token}}); err != nil {
+	if err = send(map[string]any{"type": "hello", "clientId": "paseo-dock-" + id, "clientType": "cli", "protocolVersion": 1, "auth": map[string]any{"kind": "localCredential", "token": token}}); err != nil {
 		return "", errors.New("cannot authenticate with local daemon")
 	}
-	request := map[string]any{"type": "create_agent_request", "requestId": id, "idempotencyKey": "paseo-sbx-" + id, "config": agentConfig}
+	request := map[string]any{"type": "create_agent_request", "requestId": id, "idempotencyKey": "paseo-dock-" + id, "config": agentConfig}
 	if prompt != "" {
 		request["initialPrompt"] = prompt
 	}
@@ -208,7 +208,7 @@ func (a *App) runPlugin(args []string) error {
 	if err = a.installLauncher(base, []string{w}); err != nil {
 		return err
 	}
-	settings := map[string]any{"provider": "antigravity-cli", "cwd": w, "providerOptions": map[string]any{"agyPath": config.LauncherPath(base), "extraArgs": []string{"--paseo-sbx-profile", antigravityProviderID(key, entry)}}, "featureValues": map[string]any{"shareMcp": "off"}}
+	settings := map[string]any{"provider": "antigravity-cli", "cwd": w, "providerOptions": map[string]any{"agyPath": config.LauncherPath(base), "extraArgs": []string{"--paseo-dock-profile", antigravityProviderID(key, entry)}}, "featureValues": map[string]any{"shareMcp": "off"}}
 	if *model != "" {
 		settings["model"] = *model
 	}

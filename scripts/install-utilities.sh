@@ -2,7 +2,7 @@
 set -euo pipefail
 agent_kind=${1:?agent required}
 utilities=${2:-}
-lock_file=${3:-/opt/paseo-sbx/install/versions.lock.json}
+lock_file=${3:-/opt/paseo-dock/install/versions.lock.json}
 [[ -n "$utilities" ]] || exit 0
 case "$agent_kind" in codex|claude|antigravity-cli) ;; *) echo "unsupported utility agent: $agent_kind" >&2; exit 1 ;; esac
 
@@ -23,7 +23,7 @@ for (const id of process.argv[3].split(',')) {
 NODE
 
 bin_dir="$HOME/.local/bin"
-utility_dir="$HOME/.local/share/paseo-sbx/utilities"
+utility_dir="$HOME/.local/share/paseo-dock/utilities"
 mkdir -p "$bin_dir" "$utility_dir"
 export PATH="$bin_dir:$PATH"
 case "$(uname -m)" in aarch64|arm64) arch=aarch64 ;; x86_64|amd64) arch=x86_64 ;; *) echo 'unsupported utility architecture' >&2; exit 1 ;; esac

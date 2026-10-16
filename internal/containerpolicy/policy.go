@@ -47,7 +47,7 @@ func WriteTemp() (string, func(), error) {
 	if err != nil {
 		return "", nil, err
 	}
-	f, err := os.CreateTemp("", "paseo-sbx-seccomp-*.json")
+	f, err := os.CreateTemp("", "paseo-dock-seccomp-*.json")
 	if err != nil {
 		return "", nil, err
 	}

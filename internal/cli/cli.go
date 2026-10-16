@@ -176,7 +176,7 @@ func (a *App) execute(args []string) error {
 		f.BoolVar(&codexUserNS, "codex-userns", false, "opt in new Codex containers to workspace-write isolation; expands kernel syscall access for all guest processes, no added capabilities")
 		f.StringVar(&portsText, "ports", "", "comma-separated host:container ports, bound to 127.0.0.1 (container only)")
 		f.StringVar(&memory, "memory", memory, "sandbox-only memory (default 2g); invalid for container")
-		f.StringVar(&namespace, "namespace", "", "image namespace (default: the workspace's recorded namespace, else "+config.DefaultNamespace+")")
+		f.StringVar(&namespace, "namespace", config.DefaultNamespace, "image namespace")
 		f.BoolVar(&buildFirst, "build", false, "build and load selected images before creating")
 		f.BoolVar(&apply, "apply", false, "register selected providers and reload Paseo after creating")
 		f.StringVar(&home, "paseo-home", home, "Paseo configuration home")

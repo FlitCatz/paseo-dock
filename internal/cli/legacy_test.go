@@ -38,7 +38,7 @@ func runLegacyFixture(root string, args []string, in io.Reader, out, stderr io.W
 	})
 	selection, err := a.resolveSelection(*workspace, *profile, *profiles, *utilities, "", "", "", setUtilities)
 	if err == nil {
-		_, err = a.Service.Execute(context.Background(), operations.Request{Kind: operations.Kind(args[0]), Target: operations.Target{Workspace: *workspace}, Selection: selection, Namespace: "paseo-sbx", Memory: "2g", Apply: *apply, PaseoHome: "~/.paseo"}, nil)
+		_, err = a.Service.Execute(context.Background(), operations.Request{Kind: operations.Kind(args[0]), Target: operations.Target{Workspace: *workspace}, Selection: selection, Namespace: "paseo-dock", Memory: "2g", Apply: *apply, PaseoHome: "~/.paseo"}, nil)
 	}
 	if err != nil {
 		fmt.Fprintln(stderr, err)

@@ -101,7 +101,7 @@ func (a *execution) prepareRepository(workspace string, repo config.Repository) 
 	if err = os.MkdirAll(parent, 0755); err != nil {
 		return err
 	}
-	stage, err := os.MkdirTemp(parent, ".paseo-sbx-clone-")
+	stage, err := os.MkdirTemp(parent, ".paseo-dock-clone-")
 	if err != nil {
 		return err
 	}

@@ -22,7 +22,7 @@ func layoutFixture() *Dashboard {
 	s.Workspaces[0].Sandboxes[1].Target.Entry.Agent = "claude"
 	s.Workspaces[0].Sandboxes = append(s.Workspaces[0].Sandboxes, operations.Sandbox{Target: operations.Target{Profile: "legacy-core", Entry: config.Entry{Agent: "legacy", Tool: "core"}}, RuntimeState: "missing"})
 	s.Workspaces[1].Missing = true
-	s.TemplateRows = []operations.Template{{Repository: "paseo-sbx/codex", Tag: "stable", ID: "sha256:template"}}
+	s.TemplateRows = []operations.Template{{Repository: "paseo-dock/codex", Tag: "stable", ID: "sha256:template"}}
 	s.Templates = operations.Connection{Status: "connected", CheckedAt: time.Now()}
 	deliver(m, s)
 	return m

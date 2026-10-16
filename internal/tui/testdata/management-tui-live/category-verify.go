@@ -27,7 +27,7 @@ import (
 	"paseo-dock/internal/process"
 )
 
-const namespace = "paseo-sbx-category-live-20261007"
+const namespace = "paseo-dock-category-live-20261007"
 
 func must(err error) {
 	if err != nil {
@@ -150,7 +150,7 @@ func main() {
 	must(err)
 	temp := flag(os.Args[1:], "--resume")
 	if resume := flag(os.Args[1:], "--resume"); resume != "" {
-		if filepath.Dir(resume) != "/private/tmp" || !strings.HasPrefix(filepath.Base(resume), "paseo-sbx-category-live-") {
+		if filepath.Dir(resume) != "/private/tmp" || !strings.HasPrefix(filepath.Base(resume), "paseo-dock-category-live-") {
 			must(fmt.Errorf("invalid resume root"))
 		}
 		info, e := os.Stat(resume)
@@ -166,7 +166,7 @@ func main() {
 			}
 		}
 	} else {
-		temp, err = os.MkdirTemp("/private/tmp", "paseo-sbx-category-live-")
+		temp, err = os.MkdirTemp("/private/tmp", "paseo-dock-category-live-")
 		must(err)
 	}
 	trusted := filepath.Join(temp, "trusted")
@@ -259,11 +259,11 @@ func proxy() {
 		case "info":
 			allowed = len(args) == 3 && args[1] == "--format"
 		case "ps":
-			allowed = slices.Contains(args, "label=io.paseo-sbx.managed=true")
+			allowed = slices.Contains(args, "label=io.paseo-dock.managed=true")
 		case "image":
 			allowed = len(args) >= 3 && args[1] == "inspect" && strings.HasPrefix(args[len(args)-1], namespace+"/container/")
 		case "run":
-			allowed = slices.Contains(args, "sha256:7760a63ba6a62611c4434c1208c1c87236cd37d36b691da206ebd0d7e77d6521") && slices.Contains(args, "type=bind,src="+workspace+",dst="+workspace) && flag(args, "--label") == "io.paseo-sbx.managed=true" && flag(args, "--network") == "bridge"
+			allowed = slices.Contains(args, "sha256:7760a63ba6a62611c4434c1208c1c87236cd37d36b691da206ebd0d7e77d6521") && slices.Contains(args, "type=bind,src="+workspace+",dst="+workspace) && flag(args, "--label") == "io.paseo-dock.managed=true" && flag(args, "--network") == "bridge"
 		case "inspect":
 			for _, id := range ownedDocker {
 				if id != "" && args[len(args)-1] == id {
@@ -435,9 +435,9 @@ func child() {
 		if e != nil {
 			continue
 		}
-		inspect := "set -e; id; " + entry.Agent + " --version; cat /home/agent/.local/share/paseo-sbx/agent.json; cat /home/agent/.local/share/paseo-sbx/installed.json"
+		inspect := "set -e; id; " + entry.Agent + " --version; cat /home/agent/.local/share/paseo-dock/agent.json; cat /home/agent/.local/share/paseo-dock/installed.json"
 		if entry.Category == config.CategorySandbox {
-			inspect += "; for x in rtk headroom openspec; do if command -v $x; then exit 21; fi; done; for x in /home/agent/.claude/plugins/cache/superpowers /home/agent/.claude/plugins/marketplaces/superpowers /home/agent/.agents/skills/superpowers /home/agent/.codex/superpowers /opt/paseo-sbx/runtime/lib/node_modules/@fission-ai/openspec; do test ! -e $x || exit 22; done; echo AGENT_ONLY_CHECK_OK"
+			inspect += "; for x in rtk headroom openspec; do if command -v $x; then exit 21; fi; done; for x in /home/agent/.claude/plugins/cache/superpowers /home/agent/.claude/plugins/marketplaces/superpowers /home/agent/.agents/skills/superpowers /home/agent/.codex/superpowers /opt/paseo-dock/runtime/lib/node_modules/@fission-ai/openspec; do test ! -e $x || exit 22; done; echo AGENT_ONLY_CHECK_OK"
 			if entry.Agent == "claude" {
 				inspect += "; stat -c '%u:%g %n' /home/agent/.claude; test $(stat -c %u /home/agent/.claude) = $(id -u); test -w /home/agent/.claude/settings.json; echo CLAUDE_KIT_CONFIG_WRITABLE"
 			}
@@ -606,7 +606,7 @@ func diagnostics(ctx context.Context, trusted string) {
 	selected(inventory)
 	step("SBX direct PATH", sbx.Exec(ctx, entry, []string{"printenv", "PATH"}, nil, os.Stdout, os.Stderr))
 	step("SBX direct Codex version", sbx.Exec(ctx, entry, []string{"codex", "--version"}, nil, os.Stdout, os.Stderr))
-	step("SBX exact installed version paths", sbx.Exec(ctx, entry, []string{"bash", "-lc", "printf 'PATH=%s\\n' \"$PATH\"; type -a codex; codex --version; /home/agent/.local/bin/codex --version; /opt/paseo-sbx/runtime/bin/codex --version; cat /home/agent/.local/share/paseo-sbx/agent.json; ls -l /home/agent/.local/bin/codex"}, nil, os.Stdout, os.Stderr))
+	step("SBX exact installed version paths", sbx.Exec(ctx, entry, []string{"bash", "-lc", "printf 'PATH=%s\\n' \"$PATH\"; type -a codex; codex --version; /home/agent/.local/bin/codex --version; /opt/paseo-dock/runtime/bin/codex --version; cat /home/agent/.local/share/paseo-dock/agent.json; ls -l /home/agent/.local/bin/codex"}, nil, os.Stdout, os.Stderr))
 	step("SBX diagnostic stop", sbx.Stop(ctx, entry))
 }
 func resultError(r operations.Result, e error) error {

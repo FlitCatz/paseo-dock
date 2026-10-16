@@ -4,8 +4,7 @@ Go 관리 TUI에서 workspace의 SBX sandbox와 Docker container를 구분하여
 
 2026-10-12: 합의한 기능 구현과 로컬 main 통합을 완료했고, race/helper 테스트·vet·build를
 통과했습니다. 인증된 모델·MCP/native 실행과 추가 플랫폼의 인수 검증은 남아 있습니다.
-[최신 통합·검증 상태](docs/superpowers/reviews/2026-10-12-pr-stack/README.md)와
-[GUI 사용 안내](README_GUI.md)를 참고하세요. 날짜가 있는 계획·실험 보고서는 당시 증거를 보존합니다.
+[GUI 사용 안내](README_GUI.md)를 참고하세요.
 
 ## 실행 category
 
@@ -45,8 +44,6 @@ SBX shell/version/update는 중지된 guest를 시작할 수 있어 실행 전�
 
 생성 확인에서 sandbox의 공식 출처를 표시하고 정확한 버전은 build에서 확정합니다.
 아주 낮은 터미널에서는 최종 확인 내용이 잘릴 수 있으므로 터미널 높이를 늘려 확인하세요.
-실환경 결과와 모델 인증·runtime 제한은
-[category 검증 기록](docs/superpowers/reviews/2026-10-06-runtime-categories/task-7-report.md)에 있습니다.
 기본 Docker 정책을 쓰는 OrbStack 환경에서는 Codex 0.161.0의 workspace-write sandbox가
 user namespace 권한 때문에 실행되지 않았습니다. 새 Codex container 생성에만
 `--codex-userns`로 검토된 `codex-userns-v1` seccomp 정책을 선택할 수 있습니다.
@@ -69,8 +66,6 @@ AppArmor가 활성화된 일반 Linux host도 아직 검증하지 않았습니�
 AppArmor 정책을 바꾸지 않으므로 host의 mount/user namespace 제한에 따라 실행이 실패할 수 있습니다.
 Docker의 기본 AppArmor 적용과 진단 방법은 [공식 문서](https://docs.docker.com/engine/security/apparmor/)를 참고하세요.
 인증된 모델 추론과 모델이 MCP 도구를 호출하는 전체 경로는 미검증이며, 제품 acceptance는 미완료입니다.
-정확한 정책·workspace/외부 쓰기·network 제한과 검증 결과는
-[namespace 검증 기록](docs/superpowers/reviews/2026-10-06-runtime-categories/namespace-compatibility-proposal.md)에 있습니다.
 
 ## 관리 TUI
 
@@ -133,7 +128,6 @@ container는 호스트 자원을 공유하며 이 프로그램은 개별 CPU·�
 고급 정리는 미리보기의 누락 workspace만 다시 검증하여 registry·selection·launch routing을
 정리하며 sandbox와 update 기록·lock을 보존합니다.
 
-검증 기록은 [관리 TUI 설계 상태](docs/2026-10-02-management-tui-plan.md)에 있습니다.
 실제 PTY의 shell 복귀·터미널 복원과 fake 외부 명령 테스트는 통과했습니다.
 폐기용 실환경에서 생성·중지·shell·격리된 Paseo 등록/해제는 확인했고, Antigravity 업데이트는
 공식 manifest HTTP 403으로 부분 실패했습니다. 모든 단계가 성공하는 live lifecycle은 아직 미검증입니다.
@@ -244,7 +238,7 @@ provider ID는 agent마다 `container-<이름>-<agent>`이며 label은 `Dock <�
 
 omp·gjc는 lock에 고정한 공식 Linux binary를 SHA-256으로 확인해 설치하며 Bun이 필요하지 않습니다.
 두 agent는 이미지에 고정한 버전을 유지하고 자체 업데이트를 사용하지 않습니다. 라이선스와 고지
-(`LICENSE`, omp `THIRD-PARTY-NOTICES.txt`, gjc `NOTICE.md`)는 `/opt/paseo-sbx/licenses/<agent>/`에
+(`LICENSE`, omp `THIRD-PARTY-NOTICES.txt`, gjc `NOTICE.md`)는 `/opt/paseo-dock/licenses/<agent>/`에
 함께 설치합니다. 현재 methodology는 `native`만 지원합니다. omp `native` 연결에서 Paseo는 MCP 도구를
 호스트에서 중계하며, 호스트의 omp 세션 기록 화면은 container 안 세션을 읽지 못합니다.
 
@@ -371,25 +365,9 @@ paseo-dock이 등록하지 않은 provider는 보존합니다.
 launcher 오류를 수정한 뒤에도 모델 조회 오류가 남으면 `paseo daemon restart`로
 Paseo의 기존 provider 오류 캐시를 초기화합니다.
 
-## 이전 이름(paseo-sbx)과 호환
+## Paseo provider label
 
-이 프로젝트의 이전 이름은 `paseo-sbx`입니다. 이름을 바꾼 뒤에도 기존 설치와 workspace는 그대로 동작합니다.
-
-- 저장소의 `./paseo-sbx`는 호환 shim으로 남습니다. stderr에 안내 한 줄을 출력한 뒤 `./paseo-dock`을 실행합니다.
-- `PASEO_DOCK_ROOT`, `PASEO_DOCK_AUTO_UPDATE`가 비어 있으면 이전 `PASEO_SBX_ROOT`,
-  `PASEO_SBX_AUTO_UPDATE`를 계속 읽습니다. 둘 다 설정하면 새 이름이 우선합니다.
-- 새 workspace의 기본 image namespace는 `paseo-dock`입니다. 이미 만든 workspace는 registry에
-  기록된 namespace(예: `paseo-sbx`)를 계속 사용하므로 다시 `create`해도 기존 sandbox/container를
-  재사용합니다. `--namespace`를 지정하면 그 값을 사용합니다.
-  TUI의 build/load도 선택한 workspace의 namespace를 따릅니다. CLI `build`/`load`는 workspace와
-  무관하게 `paseo-dock`을 쓰므로, 기존 workspace용 이미지는 `create --build`로 만들거나
-  `--namespace paseo-sbx`를 지정합니다.
-- Paseo provider label은 Docker container이면 `Dock …`, SBX sandbox이면 `SBX …`입니다.
-  provider ID는 바뀌지 않으며 label은 다음 `register` 때 갱신됩니다.
-- 다음 이름은 기존 container·이미지·설정에 저장되어 있어 바꾸지 않습니다: 호스트 데이터 폴더
-  `~/.local/share/paseo-sbx`, Docker label `io.paseo-sbx.*`, container 이름 `paseo-sbx-<hash>`,
-  image 안의 `/opt/paseo-sbx`와 `~/.local/share/paseo-sbx`, plugin marketplace 이름 `paseo-sbx`,
-  Antigravity 인수 `--paseo-sbx-profile`.
+Paseo provider label은 Docker container이면 `Dock …`, SBX sandbox이면 `SBX …`입니다.
 
 ## Go 빌드와 기존 설치 갱신
 
@@ -496,7 +474,7 @@ Headroom을 선택하지 않은 이미지에는 이 전용 런타임을 추가�
 Headroom은 `headroom mcp serve`를 agent에 등록해 압축·조회 도구를 제공합니다.
 모든 모델 요청을 자동으로 압축하는 proxy 설정은 포함하지 않습니다.
 Paseo의 delegation MCP와 별도로 동작합니다. 유틸리티의 설치 정보는 sandbox의
-`~/.local/share/paseo-sbx/utilities/installed.json`에 기록합니다.
+`~/.local/share/paseo-dock/utilities/installed.json`에 기록합니다.
 
 기본 카탈로그는 `internal/config/catalog.json`입니다. 소스 root의 `catalog.json`을
 추가하면 기본 카탈로그를 대체합니다. `schema`, `agents`, `methodologies`, `utilities`
@@ -631,9 +609,9 @@ SBX relay는 host loopback에 bind하고 해당 sandbox에 임시 포트 접근�
 Docker 경로는 별도 relay를 사용하며 해당 guest의 reachability 검증을 통과해야 합니다.
 새 category의 모델이 실제로 이 경로를 호출하는 인수 검증은 아직 미완료입니다.
 
-호스트 launcher는 `~/.local/share/paseo-sbx/launcher/`에, workspace별 registry는
-`~/.local/share/paseo-sbx/<workspace-id>/`에 저장합니다. agent가 host launcher와 registry를
-수정하지 못하도록 `~/.local/share/paseo-sbx`를 포함하거나 그 안에 있는 workspace는 거부합니다.
+호스트 launcher는 `~/.local/share/paseo-dock/launcher/`에, workspace별 registry는
+`~/.local/share/paseo-dock/<workspace-id>/`에 저장합니다. agent가 host launcher와 registry를
+수정하지 못하도록 `~/.local/share/paseo-dock`를 포함하거나 그 안에 있는 workspace는 거부합니다.
 같은 이유로 paseo-dock 소스 디렉터리(또는 이를 포함하는 상위 디렉터리)는 workspace로
 지정할 수 없으며, `create`와 `register`가 거부합니다. 저장소 안에서 `--workspace` 없이
 TUI를 실행하면 현재 디렉터리가 workspace가 되므로 대상 프로젝트 경로를 지정하세요.
@@ -695,7 +673,7 @@ registry만 정리하므로 부분 실패 후 같은 명령으로 재시도할 �
 ### 여러 프로젝트
 
 여러 workspace가 같은 조합을 사용할 수 있습니다. Paseo provider는 조합 이름으로 하나씩
-등록되며 공용 launcher(`~/.local/share/paseo-sbx/launcher/agent-wrapper`)를 실행합니다.
+등록되며 공용 launcher(`~/.local/share/paseo-dock/launcher/agent-wrapper`)를 실행합니다.
 launcher는 Paseo가 세션에 전달한 프로젝트 경로(`PASEO_AGENT_CWD`)를 포함하는 workspace의
 sandbox로 연결합니다. 중첩된 workspace는 가장 깊은 쪽을 사용합니다.
 프로젝트 경로가 해당 조합을 등록한 workspace에 속하지 않으면 실행을 거부합니다.
@@ -719,7 +697,7 @@ sandbox와 저장된 선택은 남기므로 `create --workspace <path> --skip-bu
 
 폴더를 삭제한 workspace는 `list --all`에 `"missing": true`로 표시됩니다. 이런 workspace는
 sandbox 연결과 Paseo provider 목록에서 자동으로 제외됩니다. `prune`은 그 기록
-(`~/.local/share/paseo-sbx/<id>/`)을 삭제하고, Paseo 설정을 백업한 뒤 provider 목록을
+(`~/.local/share/paseo-dock/<id>/`)을 삭제하고, Paseo 설정을 백업한 뒤 provider 목록을
 다시 만들어 reload합니다. sandbox에는 로그인 상태와 세션이 남아 있으므로 삭제하지 않고
 `sbx rm`과 container의 `docker rm <id>` 명령만 안내합니다. entry lock 파일은 보존합니다.
 `--remove-runtimes`를 주면 남은 sandbox/container도 삭제하며, running 또는 상태 확인 불가
@@ -802,5 +780,3 @@ GSD Core 1.15.0 공식 Codex installer는 일부 project-level `.claude/` 경로
 공식 문서: [SBX 설치](https://docs.docker.com/ai/sandboxes/install/),
 [호스트 서비스 접근](https://docs.docker.com/ai/sandboxes/workflows/development/),
 [Paseo MCP](https://paseo.sh/docs/mcp), [custom providers](https://paseo.sh/docs/custom-providers).
-
-이번 머신의 구성 상태와 오류 해결 기록은 [구현 기록](docs/implementation-log.md)을 참고하세요.

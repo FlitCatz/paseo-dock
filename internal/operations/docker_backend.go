@@ -20,10 +20,10 @@ import (
 	"time"
 )
 
-// io.paseo-sbx.* labels are on existing containers and stay after the rename (see config/legacy.go).
-const DockerManagedLabel = "io.paseo-sbx.managed"
-const dockerPolicyLabel = "io.paseo-sbx.security-policy"
-const dockerPolicyDigestLabel = "io.paseo-sbx.security-policy-digest"
+// io.paseo-dock.* labels are on existing containers and stay after the rename (see config/legacy.go).
+const DockerManagedLabel = "io.paseo-dock.managed"
+const dockerPolicyLabel = "io.paseo-dock.security-policy"
+const dockerPolicyDigestLabel = "io.paseo-dock.security-policy-digest"
 
 var dockerExactID = regexp.MustCompile(`^[a-f0-9]{64}$`)
 
@@ -92,7 +92,7 @@ func (b *DockerBackend) inspectID(ctx context.Context, id string) (dockerInspect
 		return result, fmt.Errorf("Docker inspect returned %d containers", len(values))
 	}
 	result = values[0]
-	if result.ID != id || result.Config.Labels[DockerManagedLabel] != "true" || result.Config.Labels["io.paseo-sbx.category"] != "container" {
+	if result.ID != id || result.Config.Labels[DockerManagedLabel] != "true" || result.Config.Labels["io.paseo-dock.category"] != "container" {
 		return dockerInspection{}, fmt.Errorf("Docker container identity or management label mismatch")
 	}
 	return result, nil
@@ -249,7 +249,7 @@ func validateDockerPolicy(e config.Entry, raw dockerInspection) error {
 	return nil
 }
 func (b *DockerBackend) List(ctx context.Context) ([]RuntimeState, error) {
-	out, err := b.capture(ctx, "ps", "--all", "--no-trunc", "--filter", "label="+DockerManagedLabel+"=true", "--filter", "label=io.paseo-sbx.category=container", "--format", "{{.ID}}")
+	out, err := b.capture(ctx, "ps", "--all", "--no-trunc", "--filter", "label="+DockerManagedLabel+"=true", "--filter", "label=io.paseo-dock.category=container", "--format", "{{.ID}}")
 	if err != nil {
 		return nil, err
 	}
@@ -327,7 +327,7 @@ func (b *DockerBackend) ready(ctx context.Context, e config.Entry, user string) 
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	ids := strings.Split(user, ":")
-	probe := fmt.Sprintf(`test -f /tmp/paseo-sbx-agent-ready && test "$(id -u)" = %s && test "$(id -g)" = %s && test -w "$HOME" && test -w .`, ids[0], ids[1])
+	probe := fmt.Sprintf(`test -f /tmp/paseo-dock-agent-ready && test "$(id -u)" = %s && test "$(id -g)" = %s && test -w "$HOME" && test -w .`, ids[0], ids[1])
 	var last error
 	for {
 		if _, err := b.Inspect(ctx, e); err != nil {
@@ -394,14 +394,14 @@ func (b *DockerBackend) Create(ctx context.Context, e config.Entry) (config.Entr
 	}
 	// Docker writes the CID before starting the container. A private directory
 	// keeps that identity recoverable even when run fails or is canceled later.
-	cidDir, err := os.MkdirTemp("", "paseo-sbx-docker-cid-")
+	cidDir, err := os.MkdirTemp("", "paseo-dock-docker-cid-")
 	if err != nil {
 		return e, err
 	}
 	defer os.RemoveAll(cidDir)
 	cidPath := filepath.Join(cidDir, "container-id")
 	sum := sha256.Sum256([]byte(e.Workspace + "\x00" + e.Key()))
-	args := []string{"run", "--detach", "--name", fmt.Sprintf("paseo-sbx-%x", sum[:12]), "--label", DockerManagedLabel + "=true", "--label", "io.paseo-sbx.category=container", "--network", "bridge", "--mount", "type=bind,src=" + e.Workspace + ",dst=" + e.Workspace, "--workdir", e.Workspace, "--user", "root", "--env", "HOME=/home/agent", "--entrypoint", "/bin/sh"}
+	args := []string{"run", "--detach", "--name", fmt.Sprintf("paseo-dock-%x", sum[:12]), "--label", DockerManagedLabel + "=true", "--label", "io.paseo-dock.category=container", "--network", "bridge", "--mount", "type=bind,src=" + e.Workspace + ",dst=" + e.Workspace, "--workdir", e.Workspace, "--user", "root", "--env", "HOME=/home/agent", "--entrypoint", "/bin/sh"}
 	if e.SecurityPolicy != "" {
 		path, cleanup, err := containerpolicy.WriteTemp()
 		if err != nil {
@@ -417,7 +417,7 @@ func (b *DockerBackend) Create(ctx context.Context, e config.Entry) (config.Entr
 	ids := strings.Split(user, ":")
 	// Root only aligns permissions. The persistent main process and all later
 	// exec commands use the host-aligned agent user.
-	bootstrap := fmt.Sprintf(`set -eu; /usr/bin/rm -f /tmp/paseo-sbx-agent-ready; /usr/sbin/groupmod -o -g %s "$(/usr/bin/id -gn agent)"; /usr/sbin/usermod -o -u %s -g %s agent; /usr/bin/chown -R %s /home/agent; /usr/bin/touch /tmp/paseo-sbx-agent-ready; exec /usr/sbin/runuser -u agent -- /usr/bin/sleep infinity`, ids[1], ids[0], ids[1], user)
+	bootstrap := fmt.Sprintf(`set -eu; /usr/bin/rm -f /tmp/paseo-dock-agent-ready; /usr/sbin/groupmod -o -g %s "$(/usr/bin/id -gn agent)"; /usr/sbin/usermod -o -u %s -g %s agent; /usr/bin/chown -R %s /home/agent; /usr/bin/touch /tmp/paseo-dock-agent-ready; exec /usr/sbin/runuser -u agent -- /usr/bin/sleep infinity`, ids[1], ids[0], ids[1], user)
 	args = append(args, e.ImageID, "-c", bootstrap)
 	out, err := b.capture(ctx, args...)
 	cid, _ := os.ReadFile(cidPath)

@@ -12,9 +12,9 @@ RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -o /insta
 
 FROM ${BASE_IMAGE}
 USER root
-COPY versions.lock.json /opt/paseo-sbx/install/
-COPY --from=installer /install-runtime /opt/paseo-sbx/install/install-runtime
-ENV PATH="/opt/paseo-sbx/runtime/bin:/opt/paseo-sbx/node/bin:${PATH}"
+COPY versions.lock.json /opt/paseo-dock/install/
+COPY --from=installer /install-runtime /opt/paseo-dock/install/install-runtime
+ENV PATH="/opt/paseo-dock/runtime/bin:/opt/paseo-dock/node/bin:${PATH}"
 # SBX requires bash/sh, curl/git/CA certificates and the agent UID/home contract.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends bash curl git ca-certificates sudo xz-utils \
@@ -23,8 +23,8 @@ RUN apt-get update \
     && useradd --uid 1000 --create-home --shell /bin/bash agent \
     && printf 'agent ALL=(ALL) NOPASSWD:ALL\n' > /etc/sudoers.d/agent \
     && chmod 0440 /etc/sudoers.d/agent \
-    && mkdir -p /opt/paseo-sbx/runtime /home/agent/workspace /home/agent/.local/share/paseo-sbx \
-    && /opt/paseo-sbx/install/install-runtime
+    && mkdir -p /opt/paseo-dock/runtime /home/agent/workspace /home/agent/.local/share/paseo-dock \
+    && /opt/paseo-dock/install/install-runtime
 
 ARG AGENT
 ARG AGENT_VERSION
@@ -35,10 +35,10 @@ RUN case "$AGENT" in \
       claude) package='@anthropic-ai/claude-code' ;; \
       *) echo "Unsupported sandbox agent: $AGENT" >&2; exit 1 ;; \
     esac \
-    && npm install --global --prefix /opt/paseo-sbx/runtime "$package@$AGENT_VERSION" \
-    && test "$(npm pkg get version --prefix "/opt/paseo-sbx/runtime/lib/node_modules/$package")" = "\"$AGENT_VERSION\"" \
-    && printf '%s\n' "$AGENT_MANIFEST" > /home/agent/.local/share/paseo-sbx/agent.json \
-    && cp /home/agent/.local/share/paseo-sbx/agent.json /home/agent/.local/share/paseo-sbx/installed.json \
+    && npm install --global --prefix /opt/paseo-dock/runtime "$package@$AGENT_VERSION" \
+    && test "$(npm pkg get version --prefix "/opt/paseo-dock/runtime/lib/node_modules/$package")" = "\"$AGENT_VERSION\"" \
+    && printf '%s\n' "$AGENT_MANIFEST" > /home/agent/.local/share/paseo-dock/agent.json \
+    && cp /home/agent/.local/share/paseo-dock/agent.json /home/agent/.local/share/paseo-dock/installed.json \
     # SBX mounts kit plugins below .claude before its agent-user install hook.
     # Precreate the parent so mount setup cannot create it as root.
     && if [ "$AGENT" = claude ]; then mkdir -p /home/agent/.claude; fi \
@@ -48,5 +48,5 @@ ENV HOME=/home/agent
 WORKDIR /home/agent/workspace
 CMD ["bash"]
 LABEL org.opencontainers.image.title="Paseo sandbox agent" \
-      io.paseo-sbx.category="sandbox" io.paseo-sbx.agent="${AGENT}" \
-      io.paseo-sbx.agent.version="${AGENT_VERSION}" io.paseo-sbx.agent.source="${AGENT_SOURCE}"
+      io.paseo-dock.category="sandbox" io.paseo-dock.agent="${AGENT}" \
+      io.paseo-dock.agent.version="${AGENT_VERSION}" io.paseo-dock.agent.source="${AGENT_SOURCE}"

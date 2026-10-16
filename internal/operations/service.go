@@ -3,6 +3,7 @@ package operations
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -326,7 +327,7 @@ func (s *Service) Execute(ctx context.Context, r Request, emit func(Event)) (res
 		return Result{Changed: a.changed, NeedsVerification: a.uncertain, Remaining: a.remaining}, err
 	}
 	if r.Kind == KindUpdate || r.Kind == KindStop {
-		if r.Kind == KindUpdate && r.AutomaticUpdate && config.Getenv("AUTO_UPDATE") == "0" {
+		if r.Kind == KindUpdate && r.AutomaticUpdate && os.Getenv("PASEO_DOCK_AUTO_UPDATE") == "0" {
 			return result, nil
 		}
 		targets, e := s.updateTargets(r)
@@ -459,20 +460,14 @@ func (s *Service) Execute(ctx context.Context, r Request, emit func(Event)) (res
 			return result, err
 		}
 	}
+	r.Namespace = cmp.Or(r.Namespace, config.DefaultNamespace)
 	switch r.Kind {
 	case KindBuild:
-		if r.Namespace, err = a.workspaceNamespace(r.Namespace, r.Target.Workspace); err == nil {
-			err = a.build(r.Namespace, r.Platforms, r.Push)
-		}
+		err = a.build(r.Namespace, r.Platforms, r.Push)
 	case KindLoad:
-		if r.Namespace, err = a.workspaceNamespace(r.Namespace, r.Target.Workspace); err == nil {
-			err = a.load(r.Namespace, r.KeepArchive)
-		}
+		err = a.load(r.Namespace, r.KeepArchive)
 	case KindCreate:
 		err = a.prepareRepository(r.Target.Workspace, r.Repository)
-		if err == nil {
-			r.Namespace, err = a.workspaceNamespace(r.Namespace, r.Target.Workspace)
-		}
 		if err == nil && r.BuildFirst {
 			err = a.build(r.Namespace, r.Platforms, false)
 			if err == nil && (a.Selection == nil || a.Selection.Category != config.CategoryContainer) {

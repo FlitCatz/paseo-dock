@@ -186,7 +186,7 @@ func TestCommandLifecycle(t *testing.T) {
 }
 func TestWorkspaceMustNotContainSourceRoot(t *testing.T) {
 	parent := t.TempDir()
-	root := filepath.Join(parent, "paseo-sbx")
+	root := filepath.Join(parent, "paseo-dock")
 	t.Setenv("HOME", t.TempDir())
 	os.MkdirAll(filepath.Join(root, "bin"), 0755)
 	b, _ := os.ReadFile("../../versions.lock.json")
@@ -367,7 +367,7 @@ func TestCreateMismatchPreservesRegistry(t *testing.T) {
 	rows := []map[string]string{}
 	for _, p := range config.Profiles {
 		agent, tool, _ := strings.Cut(p, "-")
-		e := config.Entry{Agent: agent, Tool: tool, Workspace: workspace, Sandbox: "paseo-" + p + "-" + filepath.Base(runtime), Image: "paseo-sbx/" + p + ":2026.09.30"}
+		e := config.Entry{Agent: agent, Tool: tool, Workspace: workspace, Sandbox: "paseo-" + p + "-" + filepath.Base(runtime), Image: "paseo-dock/" + p + ":2026.09.30"}
 		rows = append(rows, map[string]string{"name": e.Sandbox})
 		reg.Profiles[p] = e
 	}
@@ -382,7 +382,7 @@ func TestCreateMismatchPreservesRegistry(t *testing.T) {
 	os.WriteFile(filepath.Join(fake, "sbx"), []byte("#!/bin/sh\nprintf '%s\\n' '"+string(list)+"'\n"), 0700)
 	a.Out = &bytes.Buffer{}
 	a.Err = &bytes.Buffer{}
-	if err = a.create(workspace, "paseo-sbx", "2g"); err == nil {
+	if err = a.create(workspace, "paseo-dock", "2g"); err == nil {
 		t.Fatal("mismatch accepted")
 	}
 	after, _ := os.ReadFile(filepath.Join(runtime, "registry.json"))

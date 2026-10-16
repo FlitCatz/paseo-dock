@@ -20,12 +20,12 @@ func TestVersionsDoesNotInstall(t *testing.T) {
 	target.Entry.Tool = "superpowers"
 	writeTarget(t, target)
 	observationResponses(t, map[string]observedResponse{
-		"sbx exec --workdir /tmp one printenv HOME":                                                                            {Output: "/home/agent\n"},
-		"sbx exec --workdir /tmp one codex --version":                                                                          {Output: "codex-cli 2.0.0\n"},
-		"sbx exec --workdir /tmp one cat /home/agent/.local/share/paseo-sbx/installed.json":                                    {Output: `{"agent":"codex","tool":"superpowers","lock":{"schema":1,"tools":{"superpowers":{"repository":"https://example.invalid/tool","revision":"image-old"}}}}`},
-		"sbx exec --workdir /tmp one git -C /home/agent/.local/share/paseo-sbx/marketplace/plugins/superpowers rev-parse HEAD": {Output: "aabbccdd\n"},
-		"sbx exec --workdir /tmp one cat /home/agent/.local/share/paseo-sbx/utilities/installed.json":                          {Output: `{"agent":"codex","utilities":{"rtk":{"installer":"rtk","version":"old"}}}`},
-		"sbx exec --workdir /tmp one rtk --version":                                                                            {Output: "rtk 0.99.0\n"},
+		"sbx exec --workdir /tmp one printenv HOME":                                                                             {Output: "/home/agent\n"},
+		"sbx exec --workdir /tmp one codex --version":                                                                           {Output: "codex-cli 2.0.0\n"},
+		"sbx exec --workdir /tmp one cat /home/agent/.local/share/paseo-dock/installed.json":                                    {Output: `{"agent":"codex","tool":"superpowers","lock":{"schema":1,"tools":{"superpowers":{"repository":"https://example.invalid/tool","revision":"image-old"}}}}`},
+		"sbx exec --workdir /tmp one git -C /home/agent/.local/share/paseo-dock/marketplace/plugins/superpowers rev-parse HEAD": {Output: "aabbccdd\n"},
+		"sbx exec --workdir /tmp one cat /home/agent/.local/share/paseo-dock/utilities/installed.json":                          {Output: `{"agent":"codex","utilities":{"rtk":{"installer":"rtk","version":"old"}}}`},
+		"sbx exec --workdir /tmp one rtk --version":                                                                             {Output: "rtk 0.99.0\n"},
 		"sbx ls --json": {Output: `[]`},
 	})
 	before, err := os.ReadFile(filepath.Join(target.Runtime, "registry.json"))
@@ -72,10 +72,10 @@ func TestVersionsPartialFailureDoesNotConfirmImageLock(t *testing.T) {
 	target.Entry.Tool = "gsd-core"
 	writeTarget(t, target)
 	observationResponses(t, map[string]observedResponse{
-		"sbx exec --workdir /tmp one printenv HOME":                                                   {Output: "/home/agent\n"},
-		"sbx exec --workdir /tmp one codex --version":                                                 {Output: "2.0.0"},
-		"sbx exec --workdir /tmp one cat /home/agent/.local/share/paseo-sbx/installed.json":           {Output: `{"agent":"codex","tool":"gsd-core","lock":{"schema":1,"tools":{"gsd-core":{"package":"gsd-core","version":"image-only-1.0"}}}}`},
-		"sbx exec --workdir /tmp one cat /home/agent/.local/share/paseo-sbx/utilities/installed.json": {Error: true},
+		"sbx exec --workdir /tmp one printenv HOME":                                                    {Output: "/home/agent\n"},
+		"sbx exec --workdir /tmp one codex --version":                                                  {Output: "2.0.0"},
+		"sbx exec --workdir /tmp one cat /home/agent/.local/share/paseo-dock/installed.json":           {Output: `{"agent":"codex","tool":"gsd-core","lock":{"schema":1,"tools":{"gsd-core":{"package":"gsd-core","version":"image-only-1.0"}}}}`},
+		"sbx exec --workdir /tmp one cat /home/agent/.local/share/paseo-dock/utilities/installed.json": {Error: true},
 		"sbx ls --json": {Output: `[]`},
 	})
 	result, err := s.Execute(context.Background(), Request{Kind: KindVersions, Target: target}, nil)
@@ -140,10 +140,10 @@ func TestVersionsMalformedUtilityManifestIsErrorWithEmptySelection(t *testing.T)
 	reg.Selection = &config.Selection{Schema: 1, Utilities: []string{}}
 	_ = config.WriteJSON(filepath.Join(target.Runtime, "registry.json"), reg)
 	observationResponses(t, map[string]observedResponse{
-		"sbx exec --workdir /tmp one printenv HOME":                                                   {Output: "/home/agent"},
-		"sbx exec --workdir /tmp one codex --version":                                                 {Output: "2.0"},
-		"sbx exec --workdir /tmp one cat /home/agent/.local/share/paseo-sbx/installed.json":           {Output: `{"agent":"codex","tool":"native","lock":{}}`},
-		"sbx exec --workdir /tmp one cat /home/agent/.local/share/paseo-sbx/utilities/installed.json": {Output: `{`},
+		"sbx exec --workdir /tmp one printenv HOME":                                                    {Output: "/home/agent"},
+		"sbx exec --workdir /tmp one codex --version":                                                  {Output: "2.0"},
+		"sbx exec --workdir /tmp one cat /home/agent/.local/share/paseo-dock/installed.json":           {Output: `{"agent":"codex","tool":"native","lock":{}}`},
+		"sbx exec --workdir /tmp one cat /home/agent/.local/share/paseo-dock/utilities/installed.json": {Output: `{`},
 	})
 	result, err := s.Execute(context.Background(), Request{Kind: KindVersions, Target: target}, nil)
 	if err == nil || result.VersionErrors["utilities"] == "" {
@@ -169,12 +169,12 @@ func TestVersionsUtilityIDsCannotOverwriteComponentProvenance(t *testing.T) {
 			target.Entry.Tool = "gsd-core"
 			writeTarget(t, target)
 			observationResponses(t, map[string]observedResponse{
-				"sbx exec --workdir /tmp one printenv HOME":                                                   {Output: "/home/agent"},
-				"sbx exec --workdir /tmp one codex --version":                                                 {Output: "codex-cli 2.0.0"},
-				"sbx exec --workdir /tmp one cat /home/agent/.local/share/paseo-sbx/installed.json":           {Output: `{"agent":"codex","tool":"gsd-core","lock":{"schema":1,"tools":{"gsd-core":{"package":"gsd-core","version":"image-only"}}}}`},
-				"sbx exec --workdir /tmp one cat /home/agent/.local/share/paseo-sbx/utilities/installed.json": {Output: tc.manifest},
-				"sbx exec --workdir /tmp one rtk --version":                                                   tc.rtk,
-				"sbx exec --workdir /tmp one headroom --version":                                              tc.headroom,
+				"sbx exec --workdir /tmp one printenv HOME":                                                    {Output: "/home/agent"},
+				"sbx exec --workdir /tmp one codex --version":                                                  {Output: "codex-cli 2.0.0"},
+				"sbx exec --workdir /tmp one cat /home/agent/.local/share/paseo-dock/installed.json":           {Output: `{"agent":"codex","tool":"gsd-core","lock":{"schema":1,"tools":{"gsd-core":{"package":"gsd-core","version":"image-only"}}}}`},
+				"sbx exec --workdir /tmp one cat /home/agent/.local/share/paseo-dock/utilities/installed.json": {Output: tc.manifest},
+				"sbx exec --workdir /tmp one rtk --version":                                                    tc.rtk,
+				"sbx exec --workdir /tmp one headroom --version":                                               tc.headroom,
 				"sbx ls --json": {Output: `[]`},
 			})
 			var warnedBeforeExec bool

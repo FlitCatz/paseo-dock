@@ -19,7 +19,7 @@ const (
 
 // SandboxAgentPath selects verified home updates before the minimal image agent.
 // It is a guest-only path; never derive it from the host's PATH.
-const SandboxAgentPath = "/home/agent/.local/bin:/opt/paseo-sbx/runtime/bin:/opt/paseo-sbx/node/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+const SandboxAgentPath = "/home/agent/.local/bin:/opt/paseo-dock/runtime/bin:/opt/paseo-dock/node/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
 type PortMapping struct {
 	HostAddress   string `json:"host_address"`

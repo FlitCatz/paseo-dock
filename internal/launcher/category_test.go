@@ -35,7 +35,7 @@ func TestMain(m *testing.M) {
 			os.Exit(0)
 		}
 		if root := os.Getenv("LAUNCH_ACTIVATION_FIXTURE"); root != "" && (strings.Contains(strings.Join(os.Args, " "), "--version") || os.Args[len(os.Args)-1] == "activation-check") {
-			guestPath := "/opt/paseo-sbx/runtime/bin:/usr/bin:/bin"
+			guestPath := "/opt/paseo-dock/runtime/bin:/usr/bin:/bin"
 			for i, arg := range os.Args {
 				if arg == "--env" && i+1 < len(os.Args) && strings.HasPrefix(os.Args[i+1], "PATH=") {
 					guestPath = strings.TrimPrefix(os.Args[i+1], "PATH=")
@@ -46,7 +46,7 @@ func TestMain(m *testing.M) {
 				switch dir {
 				case "/home/agent/.local/bin":
 					fixture = "updated"
-				case "/opt/paseo-sbx/runtime/bin":
+				case "/opt/paseo-dock/runtime/bin":
 					fixture = "image"
 				default:
 					continue
@@ -59,7 +59,7 @@ func TestMain(m *testing.M) {
 			os.Exit(127)
 		}
 		if strings.Contains(strings.Join(os.Args, " "), "mktemp") {
-			fmt.Println("/tmp/paseo-sbx-assets.fixture")
+			fmt.Println("/tmp/paseo-dock-assets.fixture")
 			os.Exit(0)
 		}
 		if strings.Contains(strings.Join(os.Args, " "), "curl") {
@@ -173,7 +173,7 @@ func launcherCategoryFixture(t *testing.T, category config.Category) (string, st
 		e.ImageID = "sha256:image"
 		e.Network = "bridge"
 		id = "container-codex-superpowers"
-		raw := []any{map[string]any{"Id": e.ContainerID, "Image": e.ImageID, "State": map[string]any{"Running": true}, "Config": map[string]any{"Labels": map[string]string{"io.paseo-sbx.managed": "true", "io.paseo-sbx.category": "container"}}, "Mounts": []any{map[string]any{"Type": "bind", "Source": workspace, "Destination": workspace, "RW": true}}, "HostConfig": map[string]any{"NetworkMode": "bridge"}, "NetworkSettings": map[string]any{"Networks": map[string]any{"bridge": map[string]any{}}}}}
+		raw := []any{map[string]any{"Id": e.ContainerID, "Image": e.ImageID, "State": map[string]any{"Running": true}, "Config": map[string]any{"Labels": map[string]string{"io.paseo-dock.managed": "true", "io.paseo-dock.category": "container"}}, "Mounts": []any{map[string]any{"Type": "bind", "Source": workspace, "Destination": workspace, "RW": true}}, "HostConfig": map[string]any{"NetworkMode": "bridge"}, "NetworkSettings": map[string]any{"Networks": map[string]any{"bridge": map[string]any{}}}}}
 		b, _ := json.Marshal(raw)
 		t.Setenv("LAUNCH_INSPECT", string(b))
 	}
@@ -274,7 +274,7 @@ func TestNativeAssetsUseInspectedDockerID(t *testing.T) {
 		t.Fatal(err)
 	}
 	cleanup()
-	if args[1] == asset || !strings.HasPrefix(args[1], "/tmp/paseo-sbx-assets.") {
+	if args[1] == asset || !strings.HasPrefix(args[1], "/tmp/paseo-dock-assets.") {
 		t.Fatal(args)
 	}
 	calls, _ := os.ReadFile(log)

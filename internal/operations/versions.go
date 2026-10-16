@@ -103,7 +103,7 @@ func (a *execution) checkVersions(target Target) (Result, error) {
 			confirm(id, config.AgentCommand(agent), "--version")
 		}
 		if target.Category != config.CategorySandbox {
-			raw, err := probe("cat", home+"/.local/share/paseo-sbx/installed.json")
+			raw, err := probe("cat", home+"/.local/share/paseo-dock/installed.json")
 			var manifest struct {
 				Agent string        `json:"agent"`
 				Tool  string        `json:"tool"`
@@ -166,14 +166,14 @@ func (a *execution) checkVersions(target Target) (Result, error) {
 				case err != nil:
 					fail(id, err)
 				case installer == "git-plugin" && tool.Repository != "":
-					confirm(id, "git", "-C", home+"/.local/share/paseo-sbx/marketplace/plugins/"+toolID, "rev-parse", "HEAD")
+					confirm(id, "git", "-C", home+"/.local/share/paseo-dock/marketplace/plugins/"+toolID, "rev-parse", "HEAD")
 				case installer == "openspec":
 					confirm(id, "openspec", "--version")
 				default:
 					fail(id, errors.New("installed methodology has no supported current-version probe; image lock is unconfirmed"))
 				}
 			}
-			raw, err = probe("cat", home+"/.local/share/paseo-sbx/utilities/installed.json")
+			raw, err = probe("cat", home+"/.local/share/paseo-dock/utilities/installed.json")
 			readFailed := err != nil
 			var utilities struct {
 				Agent     string                     `json:"agent"`

@@ -52,7 +52,7 @@ func TestBundleUpdatesEveryAgentAndSharedMethodologyOnce(t *testing.T) {
 	}
 	// omp stays pinned; the shared plugin is fetched once and reinstalled for both agents.
 	if s.Versions["agent:omp"] != "" || strings.Contains(calls, "omp") || strings.Count(calls, "fetch --depth 1") != 1 ||
-		!strings.Contains(calls, "codex plugin add superpowers@paseo-sbx") || !strings.Contains(calls, "claude plugin update superpowers@paseo-sbx") {
+		!strings.Contains(calls, "codex plugin add superpowers@paseo-dock") || !strings.Contains(calls, "claude plugin update superpowers@paseo-dock") {
 		t.Fatal(calls)
 	}
 }

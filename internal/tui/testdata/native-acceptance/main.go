@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-const root = "/private/tmp/paseo-sbx-category-native-20261008"
+const root = "/private/tmp/paseo-dock-category-native-20261008"
 
 func must(e error) {
 	if e != nil {
@@ -119,7 +119,7 @@ func main() {
 		}
 		target.Runtime, target.Profile, target.Entry = runtime, entry.Key(), entry
 	}
-	result, e := s.Execute(ctx, operations.Request{Kind: kind, Target: target, Selection: selection, Namespace: "paseo-sbx-category-native-20261008", BuildFirst: kind == operations.KindCreate && !(len(os.Args) > 1 && os.Args[1] == "start"), PaseoHome: root + "/paseo"}, nil)
+	result, e := s.Execute(ctx, operations.Request{Kind: kind, Target: target, Selection: selection, Namespace: "paseo-dock-category-native-20261008", BuildFirst: kind == operations.KindCreate && !(len(os.Args) > 1 && os.Args[1] == "start"), PaseoHome: root + "/paseo"}, nil)
 	must(e)
 	fmt.Printf("RESULT %+v\n", result)
 	var reg config.Registry

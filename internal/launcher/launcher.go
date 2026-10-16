@@ -232,7 +232,7 @@ func prepareNativeContext(ctx context.Context, runtime, key string, args []strin
 			}
 		}
 		if guest == "" {
-			b, e := run(ctx, nativeExec, true, "mktemp", "-d", "/tmp/paseo-sbx-assets.XXXXXXXXXX")
+			b, e := run(ctx, nativeExec, true, "mktemp", "-d", "/tmp/paseo-dock-assets.XXXXXXXXXX")
 			if e != nil {
 				return fail(fmt.Errorf("cannot create guest assets directory: %w", e))
 			}
@@ -954,7 +954,7 @@ func Main() int {
 // LaunchArguments also accepts the metadata appended by a native plugin.
 func LaunchArguments(args []string) (string, []string, error) {
 	for i, arg := range args {
-		if arg != "--paseo-sbx-profile" {
+		if arg != "--paseo-dock-profile" {
 			continue
 		}
 		if i+1 >= len(args) || args[i+1] == "" {
@@ -963,7 +963,7 @@ func LaunchArguments(args []string) (string, []string, error) {
 		profile := args[i+1]
 		filtered := append(append([]string{}, args[:i]...), args[i+2:]...)
 		for _, arg := range filtered {
-			if arg == "--paseo-sbx-profile" {
+			if arg == "--paseo-dock-profile" {
 				return "", nil, errors.New("duplicate profile")
 			}
 		}

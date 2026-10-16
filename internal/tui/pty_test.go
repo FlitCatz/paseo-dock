@@ -115,11 +115,11 @@ func TestDashboardPTYRestore(t *testing.T) {
 				t.Fatal(err)
 			}
 			sum := sha256.Sum256([]byte(workspace))
-			runtime := filepath.Join(home, ".local", "share", "paseo-sbx", fmt.Sprintf("%x", sum)[:10])
-			reg := config.Registry{Workspace: workspace, Active: []string{"codex-superpowers"}, Profiles: map[string]config.Entry{"codex-superpowers": {Agent: "codex", Tool: "superpowers", Workspace: workspace, Sandbox: "pty-sandbox", Image: "paseo-sbx/codex-superpowers:test"}}}
+			runtime := filepath.Join(home, ".local", "share", "paseo-dock", fmt.Sprintf("%x", sum)[:10])
+			reg := config.Registry{Workspace: workspace, Active: []string{"codex-superpowers"}, Profiles: map[string]config.Entry{"codex-superpowers": {Agent: "codex", Tool: "superpowers", Workspace: workspace, Sandbox: "pty-sandbox", Image: "paseo-dock/codex-superpowers:test"}}}
 			rowLabel := "codex-superpowers"
 			if scenario.category == config.CategorySandbox {
-				entry := config.Entry{Category: config.CategorySandbox, Agent: "codex", Workspace: workspace, Sandbox: "pty-sandbox", Image: "paseo-sbx/sandbox/codex:test"}
+				entry := config.Entry{Category: config.CategorySandbox, Agent: "codex", Workspace: workspace, Sandbox: "pty-sandbox", Image: "paseo-dock/sandbox/codex:test"}
 				reg.Schema = 2
 				reg.Active = []string{entry.Key()}
 				reg.Profiles = map[string]config.Entry{entry.Key(): entry}
@@ -220,7 +220,7 @@ func TestDashboardPTYRestore(t *testing.T) {
 			offset := transcript.length()
 			send("exit\n")
 			wait("SHELL_EXIT", offset)
-			wait("PASEO SBX", offset)
+			wait("PASEO DOCK", offset)
 			// Real subprocess output must flow into bounded logs without flooding the PTY.
 			offset = transcript.length()
 			send("\r")

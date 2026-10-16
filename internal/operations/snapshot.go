@@ -459,8 +459,8 @@ func (s *Service) initialVersions(reg config.Registry, profile string, entry con
 		}
 		if config.ReadJSON(filepath.Join(s.Root, ".generated", "images", "sandbox-"+entry.Agent+".json"), &record) == nil {
 			for _, image := range record.Targets {
-				if slices.Contains(image.Tags, entry.Image) && image.Labels["io.paseo-sbx.category"] == "sandbox" && image.Labels["io.paseo-sbx.agent"] == entry.Agent {
-					versions["agent"] = image.Labels["io.paseo-sbx.agent.version"]
+				if slices.Contains(image.Tags, entry.Image) && image.Labels["io.paseo-dock.category"] == "sandbox" && image.Labels["io.paseo-dock.agent"] == entry.Agent {
+					versions["agent"] = image.Labels["io.paseo-dock.agent.version"]
 				}
 			}
 		}

@@ -27,8 +27,8 @@ import (
 )
 
 const expectedImage = "sha256:7760a63ba6a62611c4434c1208c1c87236cd37d36b691da206ebd0d7e77d6521"
-const namespace = "paseo-sbx-category-live-20261007"
-const sourceRoot = "/Users/dev-r/devsbx/paseo-sbx/.worktrees/management-tui"
+const namespace = "paseo-dock-category-live-20261007"
+const sourceRoot = "/Users/dev-r/devsbx/paseo-dock/.worktrees/management-tui"
 
 type inspection struct {
 	ID    string `json:"Id"`
@@ -98,7 +98,7 @@ func captureEnv(ctx context.Context, env []string, args ...string) ([]byte, erro
 func cleanupDaemon(ctx context.Context, home string) error {
 	root := filepath.Dir(home)
 	canonical, err := config.Canonical(home)
-	if err != nil || canonical != home || filepath.Base(home) != "paseo" || filepath.Dir(root) != "/private/tmp" || !strings.HasPrefix(filepath.Base(root), "paseo-sbx-userns-live-") {
+	if err != nil || canonical != home || filepath.Base(home) != "paseo" || filepath.Dir(root) != "/private/tmp" || !strings.HasPrefix(filepath.Base(root), "paseo-dock-userns-live-") {
 		return fmt.Errorf("daemon cleanup requires canonical isolated acceptance home")
 	}
 	pidPath := filepath.Join(home, "paseo.pid")
@@ -172,7 +172,7 @@ func inspect(ctx context.Context, backend *operations.DockerBackend, target oper
 		return nil, fmt.Errorf("inspect count")
 	}
 	v := values[0]
-	if v.ID != target.Entry.ContainerID || v.Image != expectedImage || v.Config.Labels[operations.DockerManagedLabel] != "true" || v.Config.Labels["io.paseo-sbx.category"] != "container" || v.Config.Labels["io.paseo-sbx.security-policy"] != containerpolicy.ID || v.Config.Labels["io.paseo-sbx.security-policy-digest"] != containerpolicy.SHA256 || v.HostConfig.Privileged || len(v.HostConfig.CapAdd) != 0 || !(slices.Contains(v.HostConfig.CapDrop, "SYS_ADMIN") || slices.Contains(v.HostConfig.CapDrop, "CAP_SYS_ADMIN")) || v.HostConfig.NetworkMode != "bridge" || len(v.HostConfig.PortBindings) != 0 || len(v.HostConfig.SecurityOpt) != 2 || len(v.Mounts) != 1 || v.Mounts[0].Type != "bind" || v.Mounts[0].Source != target.Workspace || v.Mounts[0].Destination != target.Workspace || !v.Mounts[0].RW {
+	if v.ID != target.Entry.ContainerID || v.Image != expectedImage || v.Config.Labels[operations.DockerManagedLabel] != "true" || v.Config.Labels["io.paseo-dock.category"] != "container" || v.Config.Labels["io.paseo-dock.security-policy"] != containerpolicy.ID || v.Config.Labels["io.paseo-dock.security-policy-digest"] != containerpolicy.SHA256 || v.HostConfig.Privileged || len(v.HostConfig.CapAdd) != 0 || !(slices.Contains(v.HostConfig.CapDrop, "SYS_ADMIN") || slices.Contains(v.HostConfig.CapDrop, "CAP_SYS_ADMIN")) || v.HostConfig.NetworkMode != "bridge" || len(v.HostConfig.PortBindings) != 0 || len(v.HostConfig.SecurityOpt) != 2 || len(v.Mounts) != 1 || v.Mounts[0].Type != "bind" || v.Mounts[0].Source != target.Workspace || v.Mounts[0].Destination != target.Workspace || !v.Mounts[0].RW {
 		return nil, fmt.Errorf("raw Docker policy/mount mismatch")
 	}
 	nnp, profile := false, false
@@ -278,13 +278,13 @@ func run() (retErr error) {
 	var err error
 	var expectedCID string
 	if root == "" {
-		root, err = os.MkdirTemp("/private/tmp", "paseo-sbx-userns-live-")
+		root, err = os.MkdirTemp("/private/tmp", "paseo-dock-userns-live-")
 		if err != nil {
 			return err
 		}
 	} else {
 		canonical, err := config.Canonical(root)
-		if err != nil || canonical != root || filepath.Dir(root) != "/private/tmp" || !strings.HasPrefix(filepath.Base(root), "paseo-sbx-userns-live-") {
+		if err != nil || canonical != root || filepath.Dir(root) != "/private/tmp" || !strings.HasPrefix(filepath.Base(root), "paseo-dock-userns-live-") {
 			return fmt.Errorf("invalid preserved acceptance root")
 		}
 		// No registry is reconstructed: require the CID record and original trusted recipe.
@@ -328,7 +328,7 @@ func run() (retErr error) {
 		}
 	}
 	// Preserve trusted recipe/build inputs outside the sole mounted workspace.
-	for _, name := range []string{"versions.lock.json", "catalog.json", "Dockerfile", "bin/agent-wrapper", "bin/paseo-sbx", "bin/install-runtime"} {
+	for _, name := range []string{"versions.lock.json", "catalog.json", "Dockerfile", "bin/agent-wrapper", "bin/paseo-dock", "bin/install-runtime"} {
 		destination := filepath.Join(root, "recipe", name)
 		canonical, err := config.Canonical(destination)
 		if err != nil || canonical != destination {
@@ -358,7 +358,7 @@ func run() (retErr error) {
 	}
 	build := exec.Command("go", "build", "-trimpath", "-o", probeDestination, "./internal/operations/testdata/namespace-probe")
 	build.Dir = sourceRoot
-	build.Env = append(os.Environ(), "GOOS=linux", "GOARCH=arm64", "CGO_ENABLED=0", "GOCACHE=/private/tmp/paseo-sbx-go-cache", "GOTMPDIR=/private/tmp")
+	build.Env = append(os.Environ(), "GOOS=linux", "GOARCH=arm64", "CGO_ENABLED=0", "GOCACHE=/private/tmp/paseo-dock-go-cache", "GOTMPDIR=/private/tmp")
 	build.Stdout, build.Stderr = os.Stdout, os.Stderr
 	if err := build.Run(); err != nil {
 		return err

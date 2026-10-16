@@ -257,7 +257,7 @@ func TestBuildBundlesSelectedPairsIntoOneImage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if args["BASE_IMAGE"] != lock.BaseImages["codex"] || !strings.HasPrefix(target.Tags[0], "paseo-dock/container/ci-all:"+lock.Tag+"-") || target.Labels["io.paseo-sbx.agent"] != "codex,claude" {
+	if args["BASE_IMAGE"] != lock.BaseImages["codex"] || !strings.HasPrefix(target.Tags[0], "paseo-dock/container/ci-all:"+lock.Tag+"-") || target.Labels["io.paseo-dock.agent"] != "codex,claude" {
 		t.Fatal(target)
 	}
 	var manifests map[string]map[string]any
