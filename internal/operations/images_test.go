@@ -169,7 +169,7 @@ func TestImageFingerprintSeparatesCategories(t *testing.T) {
 		t.Fatal("container target missing")
 	}
 	labels, ok := item["labels"].(map[string]string)
-	if !ok || labels["io.paseo-sbx.category"] != "container" || labels["io.paseo-sbx.fingerprint"] == "" {
+	if !ok || labels["io.paseo-dock.category"] != "container" || labels["io.paseo-dock.fingerprint"] == "" {
 		t.Fatalf("missing category identity: %v", item)
 	}
 	entry := config.Entry{Agent: "codex", Tool: "superpowers"}
@@ -266,7 +266,7 @@ func TestSandboxLoadRejectsChangedRecordedIdentity(t *testing.T) {
 		t.Fatalf("namespace mismatch reused recorded image: %s", image)
 	}
 	item := cfg["target"].(map[string]any)["sandbox-codex"].(map[string]any)
-	item["labels"].(map[string]string)["io.paseo-sbx.category"] = "container"
+	item["labels"].(map[string]string)["io.paseo-dock.category"] = "container"
 	if err := config.WriteJSON(record, cfg); err != nil {
 		t.Fatal(err)
 	}
@@ -289,7 +289,7 @@ func TestImageSpecNormalizesEmptyUtilitiesAndRecordsSource(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if labels["io.paseo-sbx.agent.source"] != "https://registry.npmjs.org/@openai%2Fcodex/0.159.2" {
+	if labels["io.paseo-dock.agent.source"] != "https://registry.npmjs.org/@openai%2Fcodex/0.159.2" {
 		t.Fatalf("ImageSpec omitted package source: %v", labels)
 	}
 	entry.Utilities = []string{}

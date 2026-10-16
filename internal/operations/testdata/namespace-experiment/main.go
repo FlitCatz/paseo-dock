@@ -24,7 +24,7 @@ const image = "sha256:7760a63ba6a62611c4434c1208c1c87236cd37d36b691da206ebd0d7e7
 const baselineSHA = "6416b47770785a41ac59073cdc77d9fe98517df2799dc83ef207e622de3053f6"
 
 func profile() ([]byte, error) {
-	b, err := os.ReadFile("/private/tmp/paseo-sbx-docker-pinned-seccomp.json")
+	b, err := os.ReadFile("/private/tmp/paseo-dock-docker-pinned-seccomp.json")
 	if err != nil {
 		return nil, err
 	}
@@ -108,11 +108,11 @@ func run() (retErr error) {
 	}
 	root := *existing
 	if root == "" {
-		root, err = os.MkdirTemp("/private/tmp", "paseo-sbx-userns-live-")
+		root, err = os.MkdirTemp("/private/tmp", "paseo-dock-userns-live-")
 		if err != nil {
 			return err
 		}
-	} else if filepath.Dir(root) != "/private/tmp" || !strings.HasPrefix(filepath.Base(root), "paseo-sbx-userns-live-") {
+	} else if filepath.Dir(root) != "/private/tmp" || !strings.HasPrefix(filepath.Base(root), "paseo-dock-userns-live-") {
 		return fmt.Errorf("invalid experiment root")
 	}
 	workspace := filepath.Join(root, "workspace")
@@ -164,7 +164,7 @@ func run() (retErr error) {
 	defer stop()
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Minute)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "docker", "create", "--name", filepath.Base(root), "--label", "io.paseo-sbx.experiment="+filepath.Base(root), "--network", "bridge", "--security-opt", "seccomp="+path, "--security-opt", "no-new-privileges=true", "--mount", "type=bind,src="+workspace+",dst="+workspace, "--workdir", workspace, "--user", "root", "--env", "HOME=/home/agent", "--entrypoint", "/usr/bin/sh", image, "-c", "set -eu; /usr/sbin/groupmod -o -g 20 \"$(/usr/bin/id -gn agent)\"; /usr/sbin/usermod -o -u 501 -g 20 agent; /usr/bin/chown -R 501:20 /home/agent; /usr/bin/touch /tmp/paseo-sbx-agent-ready; exec /usr/sbin/runuser -u agent -- /usr/bin/sleep infinity")
+	cmd := exec.CommandContext(ctx, "docker", "create", "--name", filepath.Base(root), "--label", "io.paseo-dock.experiment="+filepath.Base(root), "--network", "bridge", "--security-opt", "seccomp="+path, "--security-opt", "no-new-privileges=true", "--mount", "type=bind,src="+workspace+",dst="+workspace, "--workdir", workspace, "--user", "root", "--env", "HOME=/home/agent", "--entrypoint", "/usr/bin/sh", image, "-c", "set -eu; /usr/sbin/groupmod -o -g 20 \"$(/usr/bin/id -gn agent)\"; /usr/sbin/usermod -o -u 501 -g 20 agent; /usr/bin/chown -R 501:20 /home/agent; /usr/bin/touch /tmp/paseo-dock-agent-ready; exec /usr/sbin/runuser -u agent -- /usr/bin/sleep infinity")
 	var out []byte
 	if *existing == "" {
 		out, err = cmd.CombinedOutput()
@@ -213,7 +213,7 @@ func run() (retErr error) {
 			return fmt.Errorf("inspect count")
 		}
 		s := states[0]
-		if s.ID != cid || s.Image != image || s.Config.Labels["io.paseo-sbx.experiment"] != filepath.Base(root) || s.HostConfig.Privileged || len(s.HostConfig.CapAdd) != 0 || s.HostConfig.NetworkMode != "bridge" || len(s.Mounts) != 1 || s.Mounts[0].Source != workspace || s.Mounts[0].Destination != workspace || !s.Mounts[0].RW {
+		if s.ID != cid || s.Image != image || s.Config.Labels["io.paseo-dock.experiment"] != filepath.Base(root) || s.HostConfig.Privileged || len(s.HostConfig.CapAdd) != 0 || s.HostConfig.NetworkMode != "bridge" || len(s.Mounts) != 1 || s.Mounts[0].Source != workspace || s.Mounts[0].Destination != workspace || !s.Mounts[0].RW {
 			return fmt.Errorf("identity/policy mismatch")
 		}
 		// Engine inspect may serialize the loaded JSON instead of the filename.
@@ -269,7 +269,7 @@ func run() (retErr error) {
 		return fmt.Errorf("start: %w: %s", err, out)
 	}
 	for i := 0; i < 50; i++ {
-		if exec.CommandContext(ctx, "docker", "exec", cid, "test", "-f", "/tmp/paseo-sbx-agent-ready").Run() == nil {
+		if exec.CommandContext(ctx, "docker", "exec", cid, "test", "-f", "/tmp/paseo-dock-agent-ready").Run() == nil {
 			break
 		}
 		time.Sleep(100 * time.Millisecond)

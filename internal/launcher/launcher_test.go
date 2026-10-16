@@ -214,11 +214,11 @@ func TestAntigravityLaunchAndBoundaries(t *testing.T) {
 }
 
 func TestNativePluginLaunchArguments(t *testing.T) {
-	p, args, err := LaunchArguments([]string{"--input-format", "stream-json", "--paseo-sbx-profile", "antigravity-cli-native"})
+	p, args, err := LaunchArguments([]string{"--input-format", "stream-json", "--paseo-dock-profile", "antigravity-cli-native"})
 	if err != nil || p != "antigravity-cli-native" || strings.Join(args, " ") != "--input-format stream-json" {
 		t.Fatalf("%s %v %v", p, args, err)
 	}
-	for _, args := range [][]string{{"--paseo-sbx-profile"}, {"--input-format", "stream-json"}, {"--paseo-sbx-profile", "a", "--paseo-sbx-profile", "b"}} {
+	for _, args := range [][]string{{"--paseo-dock-profile"}, {"--input-format", "stream-json"}, {"--paseo-dock-profile", "a", "--paseo-dock-profile", "b"}} {
 		if _, _, err := LaunchArguments(args); err == nil {
 			t.Fatalf("accepted %v", args)
 		}

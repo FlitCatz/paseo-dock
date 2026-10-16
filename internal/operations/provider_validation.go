@@ -61,7 +61,7 @@ func (a *execution) filterProviderBases(generated map[string]any) error {
 	}
 	sort.Strings(ids)
 	known := map[string]bool{}
-	probeHome, err := os.MkdirTemp("", "paseo-sbx-provider-check-*")
+	probeHome, err := os.MkdirTemp("", "paseo-dock-provider-check-*")
 	if err != nil {
 		return err
 	}
@@ -80,7 +80,7 @@ func (a *execution) filterProviderBases(generated map[string]any) error {
 		supported, checked := known[base]
 		if !checked {
 			probe := map[string]any{"version": 1, "agents": map[string]any{"providers": map[string]any{
-				"paseo-sbx-base-probe": map[string]any{"label": "SBX base probe", "extends": base, "command": []string{"paseo-sbx-base-probe"}},
+				"paseo-dock-base-probe": map[string]any{"label": "paseo-dock base probe", "extends": base, "command": []string{"paseo-dock-base-probe"}},
 			}}}
 			if err := config.WriteJSON(filepath.Join(probeHome, "config.json"), probe); err != nil {
 				return err

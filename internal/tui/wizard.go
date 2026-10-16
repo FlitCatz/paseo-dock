@@ -615,7 +615,7 @@ func (m *Model) View() tea.View {
 	if agents == "" {
 		agents = "선택 전"
 	}
-	header := []string{paint("38;5;81;1", "PASEO SBX") + "  " + paint(muted, fmt.Sprintf("STEP %d / 4", m.Step+1)), paint(muted, "Workspace: "+m.Workspace), paint(muted, "Agent: "+agents)}
+	header := []string{paint("38;5;81;1", "PASEO DOCK") + "  " + paint(muted, fmt.Sprintf("STEP %d / 4", m.Step+1)), paint(muted, "Workspace: "+m.Workspace), paint(muted, "Agent: "+agents)}
 	footer := []string{"", paint(muted, "↑/↓ 이동 · Space/x 선택 · Enter/Tab 다음 · Esc/Shift+Tab 이전"), paint(muted, "Ctrl+C 취소 · 최종 확인 화면에서 Enter로 생성")}
 	if m.Error != "" {
 		footer = append([]string{paint("38;5;203", m.Error)}, footer...)

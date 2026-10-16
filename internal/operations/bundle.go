@@ -79,7 +79,7 @@ func bundleImageSpec(c config.Catalog, entry config.Entry, lock config.Lock) (st
 	}
 	sum := sha256.Sum256(b)
 	fingerprint := fmt.Sprintf("%x", sum[:])
-	labels := map[string]string{"io.paseo-sbx.category": string(config.CategoryContainer), "io.paseo-sbx.agent": strings.Join(agents, ","), "io.paseo-sbx.tool": strings.Join(tools, ","), "io.paseo-sbx.utilities": strings.Join(utilities, ","), "io.paseo-sbx.fingerprint": fingerprint, "io.paseo-sbx.agent.version": strings.Join(versions, ","), "io.paseo-sbx.agent.source": strings.Join(sources, ",")}
+	labels := map[string]string{"io.paseo-dock.category": string(config.CategoryContainer), "io.paseo-dock.agent": strings.Join(agents, ","), "io.paseo-dock.tool": strings.Join(tools, ","), "io.paseo-dock.utilities": strings.Join(utilities, ","), "io.paseo-dock.fingerprint": fingerprint, "io.paseo-dock.agent.version": strings.Join(versions, ","), "io.paseo-dock.agent.source": strings.Join(sources, ",")}
 	return lock.Tag + "-" + fingerprint[:12], labels, nil
 }
 

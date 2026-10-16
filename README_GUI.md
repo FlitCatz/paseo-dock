@@ -1,8 +1,7 @@
 # Paseo GUI에서 사용하기
 
 2026-10-12 기준으로 main에 통합된 sandbox/container 구성을 설명합니다.
-설치·CLI·관리 TUI 전체는 [README](README.md), 구현 및 검증 상태는
-[통합 기록](docs/superpowers/reviews/2026-10-12-pr-stack/README.md)을 참고하세요.
+설치·CLI·관리 TUI 전체는 [README](README.md)를 참고하세요.
 Paseo 앱의 메뉴 위치는 버전에 따라 다를 수 있습니다.
 
 ## 실행 대상과 provider

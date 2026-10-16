@@ -1,7 +1,6 @@
 package operations
 
 import (
-	"cmp"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -695,28 +694,4 @@ func (a *execution) createCategory(w, runtime, namespace, memory string, saved c
 		return err
 	}
 	return a.writeJSON(filepath.Join(a.Root, ".generated", "runtime.json"), map[string]string{"path": runtime})
-}
-
-// workspaceNamespace resolves an unset namespace: an existing workspace keeps the
-// image namespace recorded in its registry; anything else gets config.DefaultNamespace.
-func (a *execution) workspaceNamespace(namespace, workspace string) (string, error) {
-	if namespace != "" || workspace == "" {
-		return cmp.Or(namespace, config.DefaultNamespace), nil
-	}
-	w, err := config.Canonical(workspace)
-	if err != nil {
-		return "", err
-	}
-	runtime, err := config.RuntimePath(w)
-	if err != nil {
-		return "", err
-	}
-	var saved config.Registry
-	if err = config.ReadJSON(filepath.Join(runtime, "registry.json"), &saved); err != nil && !os.IsNotExist(err) {
-		return "", err
-	}
-	if namespace := config.RecordedNamespace(saved, a.profiles()); namespace != "" {
-		return namespace, nil
-	}
-	return config.DefaultNamespace, nil
 }

@@ -40,8 +40,8 @@ func policyDockerFixture(t *testing.T) (*DockerBackend, config.Entry, map[string
 	e.SecurityPolicy = containerpolicy.ID
 	e.SecurityPolicyDigest = containerpolicy.SHA256
 	labels := raw["Config"].(map[string]any)["Labels"].(map[string]string)
-	labels["io.paseo-sbx.security-policy"] = containerpolicy.ID
-	labels["io.paseo-sbx.security-policy-digest"] = containerpolicy.SHA256
+	labels["io.paseo-dock.security-policy"] = containerpolicy.ID
+	labels["io.paseo-dock.security-policy-digest"] = containerpolicy.SHA256
 	profile, err := containerpolicy.Profile()
 	if err != nil {
 		t.Fatal(err)
@@ -60,9 +60,9 @@ func TestUserNSObservedPolicyMismatchBlocksMutation(t *testing.T) {
 			labels := raw["Config"].(map[string]any)["Labels"].(map[string]string)
 			switch change {
 			case "label":
-				labels["io.paseo-sbx.security-policy"] = "other"
+				labels["io.paseo-dock.security-policy"] = "other"
 			case "digest":
-				labels["io.paseo-sbx.security-policy-digest"] = "other"
+				labels["io.paseo-dock.security-policy-digest"] = "other"
 			case "json":
 				host["SecurityOpt"] = []string{"no-new-privileges", "seccomp={}"}
 			case "missing-nnp":
@@ -132,7 +132,7 @@ func TestUserNSCreatePolicyOptions(t *testing.T) {
 			}
 		}
 	}
-	for _, want := range []string{`"--security-opt","seccomp=`, `"--security-opt","no-new-privileges"`, `"--cap-drop","SYS_ADMIN"`, `io.paseo-sbx.security-policy=codex-userns-v1`, `io.paseo-sbx.security-policy-digest=` + containerpolicy.SHA256, `"--entrypoint","/bin/sh"`, `/usr/sbin/groupmod`, `/usr/sbin/usermod`, `/usr/bin/chown`, `/usr/sbin/runuser`, `/usr/bin/sleep`} {
+	for _, want := range []string{`"--security-opt","seccomp=`, `"--security-opt","no-new-privileges"`, `"--cap-drop","SYS_ADMIN"`, `io.paseo-dock.security-policy=codex-userns-v1`, `io.paseo-dock.security-policy-digest=` + containerpolicy.SHA256, `"--entrypoint","/bin/sh"`, `/usr/sbin/groupmod`, `/usr/sbin/usermod`, `/usr/bin/chown`, `/usr/sbin/runuser`, `/usr/bin/sleep`} {
 		if !strings.Contains(calls, want) {
 			t.Errorf("missing %s", want)
 		}

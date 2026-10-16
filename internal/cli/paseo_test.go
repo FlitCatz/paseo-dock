@@ -90,7 +90,7 @@ func TestPluginAgentCreation(t *testing.T) {
 }
 
 func TestRetireOwnedACPProvider(t *testing.T) {
-	base := "/trusted/paseo-sbx"
+	base := "/trusted/paseo-dock"
 	old := "antigravity-cli-native"
 	providers := map[string]any{old: map[string]any{"command": []string{base + "/launcher/agent-wrapper", old, "--acp"}}, "custom": map[string]any{"command": []string{"/external/agent-wrapper", "custom", "--acp"}}}
 	current := map[string]any{"agents": map[string]any{"providers": providers}}

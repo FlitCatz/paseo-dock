@@ -67,7 +67,7 @@ func (f *fixture) run(_ context.Context, args []string, _ bool) (string, error) 
 	case s == "codex --version" || s == "claude --version" || s == "openspec --version":
 		return f.current, nil
 	case strings.HasPrefix(s, "mktemp -d "):
-		return "/home/agent/.local/share/paseo-sbx/updates/install.test", nil
+		return "/home/agent/.local/share/paseo-dock/updates/install.test", nil
 	case strings.HasPrefix(s, "mktemp -u "):
 		return strings.TrimSuffix(args[2], "XXXXXXXXXX") + "test", nil
 	case strings.HasSuffix(s, "--version"):
@@ -81,7 +81,7 @@ func TestNPMInstallIsVerifiedBeforeSwitch(t *testing.T) {
 	for _, failure := range []string{"", "npm install", "/bin/codex --version"} {
 		t.Run(failure, func(t *testing.T) {
 			f := &fixture{fail: failure, current: "codex-cli 1.0.0"}
-			u := updater{ctx: context.Background(), run: f.run, home: "/home/agent", root: "/home/agent/.local/share/paseo-sbx/updates"}
+			u := updater{ctx: context.Background(), run: f.run, home: "/home/agent", root: "/home/agent/.local/share/paseo-dock/updates"}
 			_, err := u.npm("@openai/codex", "codex")
 			if (err != nil) != (failure != "") {
 				t.Fatal(err)
@@ -224,14 +224,14 @@ func TestAntigravityChecksumFailureKeepsInstalledAgent(t *testing.T) {
 		case strings.HasPrefix(s, "curl ") && strings.Contains(s, "/manifests/"):
 			return `{"version":"2.0.0","url":"https://storage.googleapis.com/antigravity-public/antigravity-cli/2/linux-arm/cli_linux_arm64.tar.gz","sha512":"` + digest + `"}`, nil
 		case strings.HasPrefix(s, "mktemp -d "):
-			return "/home/agent/.local/share/paseo-sbx/updates/install.test", nil
+			return "/home/agent/.local/share/paseo-dock/updates/install.test", nil
 		case strings.HasPrefix(s, "sha512sum "):
 			return strings.Repeat("b", 128) + "  archive", nil
 		default:
 			return "", nil
 		}
 	}
-	u := updater{ctx: context.Background(), run: run, home: "/home/agent", root: "/home/agent/.local/share/paseo-sbx/updates"}
+	u := updater{ctx: context.Background(), run: run, home: "/home/agent", root: "/home/agent/.local/share/paseo-dock/updates"}
 	if _, err := u.antigravity(); err == nil || !strings.Contains(err.Error(), "checksum") {
 		t.Fatal(err)
 	}

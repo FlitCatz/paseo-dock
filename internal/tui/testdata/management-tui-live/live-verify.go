@@ -72,7 +72,7 @@ func main() {
 				continue
 			}
 			tag := config.ImageTag(s.Lock, candidate, s.Catalog)
-			wanted := "paseo-sbx/" + profile + ":" + tag
+			wanted := "paseo-dock/" + profile + ":" + tag
 			for _, row := range rows.Images {
 				if strings.TrimPrefix(row.Repository, "docker.io/")+":"+row.Tag == wanted {
 					selection = candidate
@@ -91,7 +91,7 @@ func main() {
 	if image == "" {
 		must(fmt.Errorf("no loaded template exactly matches current lock/catalog/selection; no rebuild or retag authorized"))
 	}
-	temp, err := os.MkdirTemp("/private/tmp", "paseo-sbx-live-task6-")
+	temp, err := os.MkdirTemp("/private/tmp", "paseo-dock-live-task6-")
 	must(err)
 	home := filepath.Join(temp, "home")
 	trusted := filepath.Join(temp, "trusted-root")
@@ -184,7 +184,7 @@ func child() {
 	runtime, err := config.RuntimePath(workspace)
 	must(err)
 	launcher := config.LauncherPath(base)
-	realBase := filepath.Join(os.Getenv("LIVE_AUTH_HOME"), ".local", "share", "paseo-sbx")
+	realBase := filepath.Join(os.Getenv("LIVE_AUTH_HOME"), ".local", "share", "paseo-dock")
 	for _, path := range []string{base, runtime, launcher, trusted, filepath.Join(paseoHome, "config.json")} {
 		if !config.Within(path, temp) || config.Within(path, realBase) {
 			must(fmt.Errorf("unsafe isolated path %s", path))

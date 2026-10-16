@@ -32,7 +32,7 @@ func TestClaudeSandboxConfigSurvivesKitMount(t *testing.T) {
 	if err := json.Unmarshal(data, &images); err != nil {
 		t.Fatal(err)
 	}
-	if len(images) != 1 || images[0].Config.Labels["io.paseo-sbx.category"] != "sandbox" || images[0].Config.Labels["io.paseo-sbx.agent"] != "claude" {
+	if len(images) != 1 || images[0].Config.Labels["io.paseo-dock.category"] != "sandbox" || images[0].Config.Labels["io.paseo-dock.agent"] != "claude" {
 		t.Fatal("requires disposable agent-only Claude image")
 	}
 	cmd := exec.CommandContext(ctx, "docker", "run", "--rm", "--network", "none", "--user", "agent", "--mount", "type=bind,src="+t.TempDir()+",dst=/home/agent/.claude/plugins/kit-probe,readonly", image, "sh", "-c", "set -e; test $(stat -c %u /home/agent/.claude) = $(id -u); printf kit-probe > /home/agent/.claude/settings.json; test $(cat /home/agent/.claude/settings.json) = kit-probe")

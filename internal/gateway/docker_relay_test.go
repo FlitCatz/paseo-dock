@@ -27,7 +27,7 @@ func TestDockerRelayKeepsHostCredentialOutOfGuest(t *testing.T) {
 		}
 		defer res.Body.Close()
 		b, _ := io.ReadAll(res.Body)
-		if string(b) != "paseo-sbx-relay-ready" {
+		if string(b) != "paseo-dock-relay-ready" {
 			return errors.New("unexpected challenge response")
 		}
 		return nil

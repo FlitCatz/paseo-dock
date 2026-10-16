@@ -75,7 +75,7 @@ func TestBundleProvidersFollowConnections(t *testing.T) {
 }
 
 func TestMergeRetiresOwnedACPProviderOfAnyAgent(t *testing.T) {
-	base := "/trusted/paseo-sbx"
+	base := "/trusted/paseo-dock"
 	stale := "container-dev-codex"
 	providers := map[string]any{stale: map[string]any{"command": []any{config.LauncherPath(base), stale, "--acp"}}, "user": map[string]any{"command": []any{"/external/agent-wrapper", "user", "--acp"}}}
 	current := map[string]any{"agents": map[string]any{"providers": providers}}
@@ -153,7 +153,7 @@ func TestACPCheck(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "ACP check failed for gjc in container/dev; its Paseo provider container-dev-gjc stays disabled") || strings.Contains(err.Error(), "codex") {
 		t.Fatal(err)
 	}
-	if strings.Join(b.probed, "\n") != "codex: env CODEX_PATH=/opt/paseo-sbx/runtime/bin/codex codex-acp\ngjc: env GJC_ACP_PERMISSION_MODE=prompt gjc acp" {
+	if strings.Join(b.probed, "\n") != "codex: env CODEX_PATH=/opt/paseo-dock/runtime/bin/codex codex-acp\ngjc: env GJC_ACP_PERMISSION_MODE=prompt gjc acp" {
 		t.Fatal(b.probed)
 	}
 	if strings.Join(reg.DisabledProviders, ",") != "container-dev-gjc" {
@@ -230,7 +230,7 @@ type versionsBackend struct{ categoryBackend }
 
 func (b *versionsBackend) Exec(ctx context.Context, e config.Entry, args []string, in io.Reader, out, stderr io.Writer) error {
 	switch command := strings.Join(args, " "); command {
-	case "cat /home/agent/.local/share/paseo-sbx/installed.json":
+	case "cat /home/agent/.local/share/paseo-dock/installed.json":
 		b.calls = append(b.calls, command)
 		_, err := io.WriteString(out, `{"pairs":[{"agent":"omp","methodology":"native"},{"agent":"claude","methodology":"openspec"},{"agent":"codex","methodology":"openspec"}],"lock":{"tools":{"openspec":{"package":"@fission-ai/openspec"}}}}`)
 		return err

@@ -85,7 +85,7 @@ func WriteJSON(path string, v any) error {
 	if err = os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		return err
 	}
-	f, err := os.CreateTemp(filepath.Dir(path), ".paseo-sbx-*")
+	f, err := os.CreateTemp(filepath.Dir(path), ".paseo-dock-*")
 	if err != nil {
 		return err
 	}
@@ -170,14 +170,16 @@ func Within(path, root string) bool {
 	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && !filepath.IsAbs(rel)
 }
 
-// BaseDir holds every trusted workspace runtime and the shared launcher. It keeps
-// the paseo-sbx name after the rename (see legacy.go).
+// DefaultNamespace names images when no namespace is given.
+const DefaultNamespace = "paseo-dock"
+
+// BaseDir holds every trusted workspace runtime and the shared launcher.
 func BaseDir() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(home, ".local", "share", "paseo-sbx"), nil
+	return filepath.Join(home, ".local", "share", "paseo-dock"), nil
 }
 func RuntimePath(workspace string) (string, error) {
 	base, err := BaseDir()

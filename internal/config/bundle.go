@@ -26,8 +26,8 @@ type connection struct {
 var connections = map[string]connection{
 	// ACP adapters run the image's pinned CLI, which matches their SDK range,
 	// even after the guest updates the CLI used by native sessions.
-	"codex":           {modes: []string{ConnectionNative, ConnectionACP, ConnectionNone}, acp: []string{"env", "CODEX_PATH=/opt/paseo-sbx/runtime/bin/codex", "codex-acp"}},
-	"claude":          {modes: []string{ConnectionNative, ConnectionACP, ConnectionNone}, acp: []string{"env", "CLAUDE_CODE_EXECUTABLE=/opt/paseo-sbx/runtime/bin/claude", "claude-agent-acp"}},
+	"codex":           {modes: []string{ConnectionNative, ConnectionACP, ConnectionNone}, acp: []string{"env", "CODEX_PATH=/opt/paseo-dock/runtime/bin/codex", "codex-acp"}},
+	"claude":          {modes: []string{ConnectionNative, ConnectionACP, ConnectionNone}, acp: []string{"env", "CLAUDE_CODE_EXECUTABLE=/opt/paseo-dock/runtime/bin/claude", "claude-agent-acp"}},
 	"omp":             {modes: []string{ConnectionNative, ConnectionACP, ConnectionNone}, acp: []string{"omp", "acp"}},
 	"gjc":             {modes: []string{ConnectionACP, ConnectionNone}, acp: []string{"env", "GJC_ACP_PERMISSION_MODE=prompt", "gjc", "acp"}},
 	"antigravity-cli": {modes: []string{ConnectionNone}},

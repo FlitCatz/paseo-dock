@@ -31,11 +31,11 @@ func TestNativeAssetsNeverRunRootMutation(t *testing.T) {
 
 func TestNativeExtractionUsesFixedAgentTar(t *testing.T) {
 	_, _, entry, _, _ := nativeReviewFixture(t)
-	cmd, err := nativeCommand(context.Background(), entry, nativeExtract, "/tmp/paseo-sbx-assets.fixture")
+	cmd, err := nativeCommand(context.Background(), entry, nativeExtract, "/tmp/paseo-dock-assets.fixture")
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"docker", "exec", "-i", "--user", fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid()), "--env", "HOME=/home/agent", entry.ContainerID, "/usr/bin/tar", "-xpf", "-", "--no-same-owner", "-C", "/tmp/paseo-sbx-assets.fixture"}
+	want := []string{"docker", "exec", "-i", "--user", fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid()), "--env", "HOME=/home/agent", entry.ContainerID, "/usr/bin/tar", "-xpf", "-", "--no-same-owner", "-C", "/tmp/paseo-dock-assets.fixture"}
 	if strings.Join(cmd.Args, "\x00") != strings.Join(want, "\x00") {
 		t.Fatalf("unsafe extraction argv: %q", cmd.Args)
 	}
@@ -52,7 +52,7 @@ func TestNativeExtractionPropagatesSubprocessFailure(t *testing.T) {
 
 func TestNativeExtractionRejectsUnsafePaths(t *testing.T) {
 	_, _, entry, log, _ := nativeReviewFixture(t)
-	for _, path := range []string{"/home/agent/.config", "/tmp", "/tmp/paseo-sbx-assets.fixture/../elsewhere", "/tmp/paseo-sbx-assets.fixture/schema", "/tmp/paseo-sbx-assets.fixture/asset-x", "/tmp/paseo-sbx-assets.fixture/asset-0/child", "/tmp/paseo-sbx-assets.bad\nname"} {
+	for _, path := range []string{"/home/agent/.config", "/tmp", "/tmp/paseo-dock-assets.fixture/../elsewhere", "/tmp/paseo-dock-assets.fixture/schema", "/tmp/paseo-dock-assets.fixture/asset-x", "/tmp/paseo-dock-assets.fixture/asset-0/child", "/tmp/paseo-dock-assets.bad\nname"} {
 		cmd, err := nativeCommand(context.Background(), entry, nativeExtract, path)
 		if err == nil || cmd != nil {
 			t.Fatalf("unsafe root ownership allowed: %q", path)
@@ -74,7 +74,7 @@ func TestDockerNativePrivateAssetsLive(t *testing.T) {
 	if os.Getenv("NATIVE_ACCEPTANCE_LIVE") != "1" {
 		t.Skip("requires exact disposable native acceptance resource")
 	}
-	const root = "/private/tmp/paseo-sbx-category-native-20261008"
+	const root = "/private/tmp/paseo-dock-category-native-20261008"
 	t.Setenv("HOME", root+"/home")
 	t.Setenv("PASEO_HOME", root+"/paseo")
 	t.Setenv("DOCKER_HOST", "unix:///Users/dev-r/.orbstack/run/docker.sock")
@@ -127,7 +127,7 @@ func TestNativeArchiveIgnoresAgentChownLive(t *testing.T) {
 	if os.Getenv("NATIVE_ACCEPTANCE_LIVE") != "1" {
 		t.Skip("requires exact disposable native acceptance resource")
 	}
-	const root = "/private/tmp/paseo-sbx-category-native-20261008"
+	const root = "/private/tmp/paseo-dock-category-native-20261008"
 	t.Setenv("HOME", root+"/home")
 	t.Setenv("PASEO_HOME", root+"/paseo")
 	t.Setenv("DOCKER_HOST", "unix:///Users/dev-r/.orbstack/run/docker.sock")

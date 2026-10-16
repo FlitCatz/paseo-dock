@@ -9,7 +9,7 @@ import (
 )
 
 func main() {
-	root := config.Getenv("ROOT")
+	root := os.Getenv("PASEO_DOCK_ROOT")
 	if root == "" {
 		if exe, err := os.Executable(); err == nil {
 			root = config.FindRoot(filepath.Dir(exe))

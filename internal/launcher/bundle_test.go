@@ -19,7 +19,7 @@ func bundleRegistry(t *testing.T) (string, config.Registry, config.Entry) {
 		t.Fatal(err)
 	}
 	runtime := t.TempDir()
-	entry := config.Entry{Category: config.CategoryContainer, Name: "dev", Pairs: []config.Pair{{Agent: "claude", Methodology: "superpowers"}, {Agent: "codex", Methodology: "superpowers"}}, Workspace: workspace, ContainerID: strings.Repeat("c", 64), ImageID: "sha256:img", Image: "paseo-sbx/container/dev:tag", Network: "bridge"}
+	entry := config.Entry{Category: config.CategoryContainer, Name: "dev", Pairs: []config.Pair{{Agent: "claude", Methodology: "superpowers"}, {Agent: "codex", Methodology: "superpowers"}}, Workspace: workspace, ContainerID: strings.Repeat("c", 64), ImageID: "sha256:img", Image: "paseo-dock/container/dev:tag", Network: "bridge"}
 	reg := config.Registry{Workspace: workspace, Profiles: map[string]config.Entry{entry.Key(): entry}, Active: []string{entry.Key()}}
 	if err := config.WriteJSON(filepath.Join(runtime, "registry.json"), reg); err != nil {
 		t.Fatal(err)
@@ -57,7 +57,7 @@ func TestAgentArgv(t *testing.T) {
 		t.Fatal(argv, err)
 	}
 	entry.Connections = map[string]string{"codex": config.ConnectionACP}
-	if argv, err := agentArgv(entry.ForAgent("codex"), []string{"--acp"}); err != nil || strings.Join(argv, " ") != "env CODEX_PATH=/opt/paseo-sbx/runtime/bin/codex codex-acp" {
+	if argv, err := agentArgv(entry.ForAgent("codex"), []string{"--acp"}); err != nil || strings.Join(argv, " ") != "env CODEX_PATH=/opt/paseo-dock/runtime/bin/codex codex-acp" {
 		t.Fatal(argv, err)
 	}
 	gjc := config.Entry{Category: config.CategoryContainer, Agent: "gjc", Tool: "native"}

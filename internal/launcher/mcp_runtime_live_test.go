@@ -27,8 +27,8 @@ func TestLiveCodexProviderMCPDiscovery(t *testing.T) {
 	if os.Getenv("CATEGORY_MCP_RUNTIME") != "true" {
 		t.Skip("requires local Docker access and the previously built acceptance image")
 	}
-	const approvedRoot = "/private/tmp/paseo-sbx-category-live-1638524322"
-	root, err := os.MkdirTemp("/private/tmp", "paseo-sbx-mcp-live-")
+	const approvedRoot = "/private/tmp/paseo-dock-category-live-1638524322"
+	root, err := os.MkdirTemp("/private/tmp", "paseo-dock-mcp-live-")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,7 +62,7 @@ func TestLiveCodexProviderMCPDiscovery(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
-	_, err = service.Execute(ctx, operations.Request{Kind: operations.KindCreate, Target: operations.Target{Workspace: filepath.Join(root, "workspace")}, Selection: selection, Namespace: "paseo-sbx-category-live-20261007", PaseoHome: filepath.Join(root, "paseo")}, nil)
+	_, err = service.Execute(ctx, operations.Request{Kind: operations.KindCreate, Target: operations.Target{Workspace: filepath.Join(root, "workspace")}, Selection: selection, Namespace: "paseo-dock-category-live-20261007", PaseoHome: filepath.Join(root, "paseo")}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

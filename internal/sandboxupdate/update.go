@@ -49,7 +49,7 @@ func UpdateContext(ctx context.Context, runtime string, entry config.Entry, forc
 	if entry.Sandbox == "" || !supported(entry) {
 		return errors.New("invalid sandbox entry")
 	}
-	if !force && config.Getenv("AUTO_UPDATE") == "0" {
+	if !force && os.Getenv("PASEO_DOCK_AUTO_UPDATE") == "0" {
 		return nil
 	}
 	release, err := operationlock.Acquire(ctx, runtime, []string{operationlock.EntryKey(entry)})
@@ -83,7 +83,7 @@ func UpdateTransportLockedContext(ctx context.Context, runtime string, entry con
 	if Identity(entry) == "" || !supported(entry) {
 		return errors.New("invalid sandbox entry")
 	}
-	if !force && config.Getenv("AUTO_UPDATE") == "0" {
+	if !force && os.Getenv("PASEO_DOCK_AUTO_UPDATE") == "0" {
 		return nil
 	}
 	sum := sha256.Sum256([]byte(Identity(entry)))
@@ -166,7 +166,7 @@ func refreshStages(ctx context.Context, entry config.Entry, run runner, now time
 		return s
 	}
 	u.home = home
-	u.root = home + "/.local/share/paseo-sbx/updates"
+	u.root = home + "/.local/share/paseo-dock/updates"
 	if err := u.command("mkdir", "-p", u.root, home+"/.local/bin"); err != nil {
 		s.Errors["environment"] = err.Error()
 		return s
@@ -216,7 +216,7 @@ func refreshStages(ctx context.Context, entry config.Entry, run runner, now time
 		return s
 	}
 	// Read the installed lock from the guest, including custom package and utility IDs.
-	raw, err := u.output("cat", home+"/.local/share/paseo-sbx/installed.json")
+	raw, err := u.output("cat", home+"/.local/share/paseo-dock/installed.json")
 	var installed struct {
 		Lock config.Lock `json:"lock"`
 	}
@@ -243,7 +243,7 @@ func refreshStages(ctx context.Context, entry config.Entry, run runner, now time
 		step("methodology", u.methodology([]string{entry.Agent}, entry.Tool, installed.Lock))
 	}
 	// Absence of a utility manifest means this image has no selected utilities.
-	raw, err = u.output("cat", home+"/.local/share/paseo-sbx/utilities/installed.json")
+	raw, err = u.output("cat", home+"/.local/share/paseo-dock/utilities/installed.json")
 	if err == nil {
 		var utilities struct {
 			Utilities map[string]json.RawMessage `json:"utilities"`
@@ -354,7 +354,7 @@ func (u updater) npm(pkg, binary string) (string, error) {
 // plugin fetches a shared plugin checkout once, then reinstalls it for each
 // agent; on failure it restores the old revision for every agent touched.
 func (u updater) plugin(agents []string, tool string) (string, error) {
-	dir := u.home + "/.local/share/paseo-sbx/marketplace/plugins/" + tool
+	dir := u.home + "/.local/share/paseo-dock/marketplace/plugins/" + tool
 	old, err := u.output("git", "-C", dir, "rev-parse", "HEAD")
 	if err != nil {
 		return "", err
@@ -408,7 +408,7 @@ func (u updater) pluginInstall(agent, tool, dir string) ([]string, error) {
 		// Codex has no plugin-update command. Remove its cached copy before
 		// reinstalling; renaming a cache directory from an image's lower layer
 		// fails with EXDEV on overlay filesystems.
-		if err := u.command("codex", "plugin", "remove", tool+"@paseo-sbx"); err != nil {
+		if err := u.command("codex", "plugin", "remove", tool+"@paseo-dock"); err != nil {
 			return nil, err
 		}
 	}
@@ -419,9 +419,9 @@ func (u updater) pluginInstall(agent, tool, dir string) ([]string, error) {
 func (u updater) pluginReinstall(agent, tool, dir string) []string {
 	switch agent {
 	case "codex":
-		return []string{"codex", "plugin", "add", tool + "@paseo-sbx"}
+		return []string{"codex", "plugin", "add", tool + "@paseo-dock"}
 	case "claude":
-		return []string{"claude", "plugin", "update", tool + "@paseo-sbx"}
+		return []string{"claude", "plugin", "update", tool + "@paseo-dock"}
 	case "antigravity-cli":
 		if tool == "ponytail" {
 			return []string{"agy", "plugin", "install", dir}
@@ -529,7 +529,7 @@ func (u updater) headroom(pkg string) (string, error) {
 			_ = u.command("rm", "-rf", "--", dir)
 		}
 	}()
-	python := u.home + "/.local/share/paseo-sbx/utilities/headroom/venv/bin/python"
+	python := u.home + "/.local/share/paseo-dock/utilities/headroom/venv/bin/python"
 	if err = u.command("uv", "venv", "--python", python, dir+"/venv"); err != nil {
 		return "", err
 	}

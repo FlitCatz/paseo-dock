@@ -72,12 +72,12 @@ func ImageSpec(category config.Category, entry config.Entry, lock config.Lock) (
 	}
 	sum := sha256.Sum256(b)
 	fingerprint := fmt.Sprintf("%x", sum[:])
-	labels := map[string]string{"io.paseo-sbx.category": string(category), "io.paseo-sbx.agent": entry.Agent, "io.paseo-sbx.tool": entry.Tool, "io.paseo-sbx.utilities": strings.Join(utilities, ","), "io.paseo-sbx.fingerprint": fingerprint, "io.paseo-sbx.agent.version": version}
+	labels := map[string]string{"io.paseo-dock.category": string(category), "io.paseo-dock.agent": entry.Agent, "io.paseo-dock.tool": entry.Tool, "io.paseo-dock.utilities": strings.Join(utilities, ","), "io.paseo-dock.fingerprint": fingerprint, "io.paseo-dock.agent.version": version}
 	source, err := imageAgentSource(entry.Agent, version, lock)
 	if err != nil {
 		return "", nil, err
 	}
-	labels["io.paseo-sbx.agent.source"] = source
+	labels["io.paseo-dock.agent.source"] = source
 	return lock.Tag + "-" + fingerprint[:12], labels, nil
 }
 
@@ -231,7 +231,7 @@ func (a *execution) bakeConfig(namespace, platforms string, resolve stableResolv
 		if err != nil {
 			return nil, err
 		}
-		labels["io.paseo-sbx.agent.source"] = source
+		labels["io.paseo-dock.agent.source"] = source
 		manifest := map[string]any{"category": category, "agent": agent, "version": lock.Agents[agent], "source": source}
 		if artifacts := lock.AgentArtifacts[agent]; artifacts != nil {
 			manifest["artifacts"] = artifacts

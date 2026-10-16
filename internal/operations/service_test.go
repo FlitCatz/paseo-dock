@@ -232,7 +232,7 @@ func fakeSBX() {
 	case command == "codex --version":
 		fmt.Println("1.0.0")
 	case strings.HasPrefix(command, "mktemp -d"):
-		fmt.Println("/home/agent/.local/share/paseo-sbx/updates/install.test")
+		fmt.Println("/home/agent/.local/share/paseo-dock/updates/install.test")
 	case strings.HasPrefix(command, "npm install"):
 		_ = os.WriteFile(os.Getenv("SBX_TEST_READY"), []byte("ready"), 0600)
 		end := time.Now().Add(2 * time.Second)

@@ -169,7 +169,7 @@ func TestDaemonCleanupRejectsUntrustedIdentityBeforeCommand(t *testing.T) {
 		server   string
 	}{{"wrong-user", 123, os.Getuid() + 1, "fixture-server"}, {"missing-server", 123, os.Getuid(), ""}, {"invalid-pid", 0, os.Getuid(), "fixture-server"}} {
 		t.Run(fixture.name, func(t *testing.T) {
-			root, err := os.MkdirTemp("/private/tmp", "paseo-sbx-userns-live-fixture-")
+			root, err := os.MkdirTemp("/private/tmp", "paseo-dock-userns-live-fixture-")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -200,7 +200,7 @@ func TestDaemonCleanupAlreadyStopped(t *testing.T) {
 		t.Skip("daemon acceptance helper is confined to macOS /private/tmp")
 	}
 	t.Setenv("PATH", "")
-	root, err := os.MkdirTemp("/private/tmp", "paseo-sbx-userns-live-fixture-")
+	root, err := os.MkdirTemp("/private/tmp", "paseo-dock-userns-live-fixture-")
 	if err != nil {
 		t.Fatal(err)
 	}

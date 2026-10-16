@@ -22,9 +22,9 @@ import (
 	"time"
 )
 
-const trial = "/private/tmp/paseo-sbx-runtime-remove-live-20261013"
-const evidence = "/private/tmp/paseo-sbx-runtime-remove-evidence"
-const template = "docker.io/paseo-sbx-category-live-20261007/sandbox/codex:2026.09.30-3b32788af33b"
+const trial = "/private/tmp/paseo-dock-runtime-remove-live-20261013"
+const evidence = "/private/tmp/paseo-dock-runtime-remove-evidence"
+const template = "docker.io/paseo-dock-category-live-20261007/sandbox/codex:2026.09.30-3b32788af33b"
 const imageTag = "paseo-runtime-remove-live:20261013"
 
 var source, wrapper, cliBinary string
@@ -126,7 +126,7 @@ func guarded(name string, args []string) {
 				ok = slices.Contains([]string{"paseo-remove-live-20261013-single", "paseo-remove-live-20261013-prune"}, flag(args, "--name")) && flag(args, "--network") == "bridge" && o.Image != "" && args[len(args)-1] == o.Image && len(o.Containers) < 2
 				mount := flag(args, "--mount")
 				ok = ok && (mount == "type=bind,src="+trial+"/workspace-remove,dst="+trial+"/workspace-remove" || mount == "type=bind,src="+trial+"/workspace-prune,dst="+trial+"/workspace-prune")
-				for _, label := range []string{"io.paseo-sbx.managed=true", "io.paseo-sbx.category=container", "io.paseo-sbx.profile=container/codex-native"} {
+				for _, label := range []string{"io.paseo-dock.managed=true", "io.paseo-dock.category=container", "io.paseo-dock.profile=container/codex-native"} {
 					ok = ok && slices.Contains(args, label)
 				}
 			case "start", "stop", "rm":
@@ -243,7 +243,7 @@ func snapshot(paths []string) map[string]string {
 	return out
 }
 func hostPaths() []string {
-	return []string{"/Users/dev-r/.local/share/paseo-sbx", "/Users/dev-r/.paseo/config.json", "/Users/dev-r/devsbx/paseo-sbx/.worktrees/runtime-remove-fix/.generated"}
+	return []string{"/Users/dev-r/.local/share/paseo-dock", "/Users/dev-r/.paseo/config.json", "/Users/dev-r/devsbx/paseo-dock/.worktrees/runtime-remove-fix/.generated"}
 }
 func decode(b []byte) any { var x any; must(json.Unmarshal(b, &x)); return x }
 func sbxRows(b []byte) map[string]any {
@@ -353,7 +353,7 @@ func prepare(checkout string) {
 	out, code := run("diff", "-u", original, replacement)
 	assert(code == 1, "overlay diff missing")
 	write(evidence+"/overlay.diff", out)
-	good("go", "build", "-overlay", trial+"/overlay.json", "-o", cliBinary, "./cmd/paseo-sbx")
+	good("go", "build", "-overlay", trial+"/overlay.json", "-o", cliBinary, "./cmd/paseo-dock")
 	good("go", "build", "-o", source+"/bin/agent-wrapper", "./cmd/agent-wrapper")
 	must(os.MkdirAll(trial+"/guard", 0700))
 	for _, name := range []string{"sbx", "docker", "paseo"} {
@@ -404,7 +404,7 @@ func execute() {
 	for i, w := range workspaces {
 		checkIsolation()
 		good("sbx", "create", "--name", o.Sandboxes[i], "--pull", "never", "--skills", "off", "--cpus", "2", "--memory", "512m", "--template", template, "codex", w)
-		cid := strings.TrimSpace(string(good("docker", "create", "--name", o.Sandboxes[i], "--label", "io.paseo-sbx.managed=true", "--label", "io.paseo-sbx.category=container", "--label", "io.paseo-sbx.profile=container/codex-native", "--label", "io.paseo-sbx.security-policy="+containerpolicy.ID, "--label", "io.paseo-sbx.security-policy-digest="+containerpolicy.SHA256, "--network", "bridge", "--mount", "type=bind,src="+w+",dst="+w, "--workdir", w, "--user", fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid()), "--security-opt", "seccomp="+trial+"/policy.json", "--security-opt", "no-new-privileges", "--cap-drop", "SYS_ADMIN", o.Image)))
+		cid := strings.TrimSpace(string(good("docker", "create", "--name", o.Sandboxes[i], "--label", "io.paseo-dock.managed=true", "--label", "io.paseo-dock.category=container", "--label", "io.paseo-dock.profile=container/codex-native", "--label", "io.paseo-dock.security-policy="+containerpolicy.ID, "--label", "io.paseo-dock.security-policy-digest="+containerpolicy.SHA256, "--network", "bridge", "--mount", "type=bind,src="+w+",dst="+w, "--workdir", w, "--user", fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid()), "--security-opt", "seccomp="+trial+"/policy.json", "--security-opt", "no-new-privileges", "--cap-drop", "SYS_ADMIN", o.Image)))
 		assert(len(cid) == 64, "exact CID missing")
 		o.Containers = append(o.Containers, cid)
 		writeJSON(trial+"/ownership.json", o)
@@ -521,7 +521,7 @@ func cleanup() {
 		}
 		m := decode(out).([]any)[0].(map[string]any)
 		labels := m["Config"].(map[string]any)["Labels"].(map[string]any)
-		assert(labels["io.paseo-sbx.managed"] == "true" && labels["io.paseo-sbx.category"] == "container" && labels["io.paseo-sbx.profile"] == "container/codex-native", "cleanup container labels mismatch")
+		assert(labels["io.paseo-dock.managed"] == "true" && labels["io.paseo-dock.category"] == "container" && labels["io.paseo-dock.profile"] == "container/codex-native", "cleanup container labels mismatch")
 		workspace := trial + "/workspace-remove"
 		if i == 1 {
 			workspace = trial + "/workspace-prune"
@@ -625,7 +625,7 @@ func main() {
 		return
 	}
 	source = trial + "/source"
-	cliBinary = trial + "/bin/paseo-sbx"
+	cliBinary = trial + "/bin/paseo-dock"
 	if b, e := os.ReadFile(evidence + "/commands.jsonl"); e == nil {
 		sequence = bytes.Count(b, []byte{'\n'})
 	}

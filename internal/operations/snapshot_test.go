@@ -247,7 +247,7 @@ func TestSnapshotOptionalConnections(t *testing.T) {
 		"sbx ls --json": {Output: `[{"name":"one","status":"running"}]`},
 		"paseo --home " + home + " status --json": {Output: `{"localDaemon":"running"}`},
 		"docker info --format {{json .}}":         {Error: true},
-		"sbx template ls --json":                  {Output: `{"images":[{"repository":"docker.io/paseo-sbx/codex-native","tag":"test","id":"abc","flavor":"codex","created_at":"2026-10-01T07:54:03Z","size":2308130110}]}`},
+		"sbx template ls --json":                  {Output: `{"images":[{"repository":"docker.io/paseo-dock/codex-native","tag":"test","id":"abc","flavor":"codex","created_at":"2026-10-01T07:54:03Z","size":2308130110}]}`},
 	})
 	snap, row := snapshotRow(t, s, Query{PaseoHome: home, IncludePaseo: true, IncludeDocker: true, IncludeTemplates: true})
 	if row.RuntimeState != "running" || snap.SBX.Error != "" || snap.Paseo.Status != "running" || snap.Docker.Error == "" || snap.Templates.Error != "" || len(snap.TemplateRows) != 1 || snap.TemplateRows[0].ID != "abc" {

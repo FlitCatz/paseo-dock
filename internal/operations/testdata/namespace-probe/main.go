@@ -19,7 +19,7 @@ func run() error {
 		return fmt.Errorf("mode and workspace required")
 	}
 	mode, workspace := os.Args[1], os.Args[2]
-	if !strings.HasPrefix(workspace, "/private/tmp/paseo-sbx-userns-live-") || filepath.Base(workspace) != "workspace" {
+	if !strings.HasPrefix(workspace, "/private/tmp/paseo-dock-userns-live-") || filepath.Base(workspace) != "workspace" {
 		return fmt.Errorf("invalid workspace")
 	}
 	outside := "/home/agent/namespace-experiment-outside"

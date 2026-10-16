@@ -42,7 +42,7 @@ type Relay struct {
 	challenge       string
 }
 
-const RelayReady = "paseo-sbx-relay-ready"
+const RelayReady = "paseo-dock-relay-ready"
 
 // DockerProbeCommand ignores guest curl configuration and proxy environment.
 func DockerProbeCommand(endpoint string) []string {
