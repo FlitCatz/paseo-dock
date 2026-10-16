@@ -132,6 +132,20 @@ func terminalStreams(in io.Reader, out io.Writer) bool {
 	output, ok := out.(*os.File)
 	return ok && term.IsTerminal(input.Fd()) && term.IsTerminal(output.Fd())
 }
+
+// updateUsage states the refresh boundary; see README "업데이트 대상과 제외 대상".
+const updateUsage = `usage: paseo-dock update [PROFILE] [options]
+
+Refreshes only paseo-dock-managed tools: Codex, Claude, Antigravity CLI,
+installed methodologies, and the RTK/Headroom utilities (sandbox: agents only).
+It does not touch OS packages, Node, Python/uv, the base image, the
+image-pinned omp/gjc, or the ACP adapters.
+Full refresh: edit versions.lock.json, rebuild (create --build), remove and
+recreate the target, then log in to each agent again. Recreating loses
+in-container logins, sessions and guest files.
+
+`
+
 func (a *App) execute(args []string) error {
 	command := args[0]
 	if command == "run" {
@@ -139,6 +153,12 @@ func (a *App) execute(args []string) error {
 	}
 	f := flag.NewFlagSet(command, flag.ContinueOnError)
 	f.SetOutput(a.Err)
+	if command == "update" {
+		f.Usage = func() {
+			fmt.Fprint(f.Output(), updateUsage)
+			f.PrintDefaults()
+		}
+	}
 	var profile, workspace, platforms, profiles, utilities, selectionPath, agents, methods, categoryText, agent, portsText string
 	var bundleName, connectionsText string
 	f.StringVar(&categoryText, "category", "", "sandbox or container runtime category")

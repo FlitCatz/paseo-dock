@@ -761,3 +761,17 @@ func TestCancelWordInFailureDoesNotClaimCancellation(t *testing.T) {
 		t.Fatal("unrelated error text claimed confirmed cancellation")
 	}
 }
+
+func TestUpdateWarningStatesRefreshBoundary(t *testing.T) {
+	w := actionWarning(operations.KindUpdate)
+	for _, want := range []string{"agent·methodology·utility", "Node", "base image", "omp/gjc", "ACP adapter", "재로그인"} {
+		if !strings.Contains(w, want) {
+			t.Errorf("update warning lacks %q: %s", want, w)
+		}
+	}
+	for _, line := range strings.Split(w, "\n") {
+		if ansi.StringWidth(line) > 76 {
+			t.Errorf("update warning line too wide for an 80-column popup: %q", line)
+		}
+	}
+}

@@ -83,7 +83,7 @@ Docker의 기본 AppArmor 적용과 진단 방법은 [공식 문서](https://doc
 | /, Enter, Esc | 검색 시작, 입력 확정, 검색 해제·화면 취소 |
 | r / ? | 상태·연결·template 수동 갱신 / 도움말 |
 | Enter | 선택 대상의 작업 메뉴; ↑↓/jk 선택, Enter 확인·실행, Esc 취소 |
-| u / s | 선택 sandbox 업데이트 확인 / shell·로그인 진입 |
+| u / s | 선택 sandbox의 관리 도구 업데이트([대상과 제외 대상](#업데이트-대상과-제외-대상)) / shell·로그인 진입 |
 | n | dashboard 위 팝업에서 경로·설정 파일·포트 입력과 directory picker → 실행 환경 선택 팝업 → 선택 wizard → 생성 확인 |
 | a | 저장된 선택으로 build/load, template 보기, 누락 workspace 정리 미리보기 |
 | t / v | template 탭 / 미등록 sandbox의 읽기 전용 보기 |
@@ -419,8 +419,32 @@ release manifest에서 바이너리를 다운로드하여 SHA512 검증 후 전�
 변경하지 않습니다. RTK는 최신 GitHub release의 아키텍처별 바이너리를 SHA256 검증 후
 전환합니다. Headroom은 하위 의존성까지 새 버전을 확인하고 변경이 있으면 기존 Python으로
 새 가상환경에 최신 패키지를 설치하고 검증 후 전환합니다.
-Node·Python·uv·OS 패키지·base image는 이 업데이트 대상이 아니며 이미지의 고정 구성을
-사용합니다. OpenSpec의 프로젝트 파일은 자동 재생성하지 않습니다.
+OpenSpec의 프로젝트 파일은 자동 재생성하지 않습니다.
+
+#### 업데이트 대상과 제외 대상
+
+`update`(TUI `u`, 자동 갱신 포함)는 paseo-dock가 설치·기록한 도구만 갱신합니다.
+
+| 갱신함 | 갱신하지 않음 |
+| --- | --- |
+| Codex·Claude·Antigravity CLI | OS 패키지(apt), Node, Python·uv |
+| 설치된 methodology(Superpowers·Ponytail·OpenSpec·GSD 등) | base image |
+| 선택한 utility(RTK, Headroom 패키지와 그 venv 의존성) | 이미지에 고정한 omp·gjc |
+| | Codex·Claude ACP adapter, 직접 설치한 npm·pip 패키지 |
+
+`sandbox` category는 agent만 갱신합니다. `update` 성공은 omp·gjc·ACP adapter가 최신이라는
+뜻이 아닙니다. 이 항목들은 `versions.lock.json`에 고정되어 이미지를 다시 만들 때만 바뀝니다.
+
+전체를 새로 맞추려면 다음 순서로 진행합니다.
+
+1. `versions.lock.json`에서 Node·base image·omp·gjc·ACP adapter 등 목표 버전을 수정합니다.
+2. `create --build`(또는 `build`·`load`)로 새 이미지를 만듭니다. 실행 중인 대상의 이미지는
+   자동 교체되지 않습니다.
+3. 기존 대상을 중지하고 `remove`한 뒤 같은 선택으로 `create`하여 container/sandbox를 다시 만듭니다.
+4. 각 agent에서 다시 로그인합니다.
+
+로그인·세션·guest 파일은 container/sandbox 안에 저장되므로 다시 만들면 모두 사라집니다.
+workspace 폴더(bind mount 원본)만 보존됩니다.
 
 같은 sandbox의 중복 업데이트는 호스트 파일 lock으로 막습니다. 업데이트는 sandbox당
 최대 3분이며, 자동 업데이트 실패 시 설치된 agent로 실행을 계속하고 한 시간 뒤 재시도합니다.
