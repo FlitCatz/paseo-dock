@@ -10,6 +10,7 @@ import (
 	"io"
 	"paseo-dock/internal/config"
 	"paseo-dock/internal/operations"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -63,6 +64,10 @@ type Dashboard struct {
 	advancedIndex                                         int
 	flowGeneration                                        uint64
 	pruneBlocked                                          []operations.Target
+	logDir                                                string
+	logPaused                                             bool
+	notice                                                string
+	noticeID                                              uint64
 }
 
 func NewDashboard(b Backend, c config.Catalog, w string) *Dashboard {
@@ -101,6 +106,9 @@ func (m *Dashboard) refresh(now time.Time, manual bool) tea.Cmd {
 }
 func (m *Dashboard) Init() tea.Cmd { return m.refresh(time.Now(), false) }
 func (m *Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if _, ok := msg.(tea.KeyPressMsg); ok {
+		m.notice = ""
+	}
 	if handled, cmd := m.jobMessage(msg); handled {
 		return m, cmd
 	}
@@ -245,8 +253,11 @@ func (m *Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.rightTab = (m.rightTab + 3) % 4
 		case "right", "l", "]":
 			m.rightTab = (m.rightTab + 1) % 4
-		case "up", "k", "down", "j":
+		case "up", "k", "down", "j", "pgup", "pgdown", "home", "end":
 			if m.Focus < 3 {
+				if k == "pgup" || k == "pgdown" || k == "home" || k == "end" {
+					break
+				}
 				m.syncLists()
 				l := &m.workspaces
 				if m.Focus == 1 {
@@ -273,7 +284,15 @@ func (m *Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else {
 				var cmd tea.Cmd
 				if m.rightTab == 1 {
-					m.logs, cmd = m.logs.Update(msg)
+					switch k {
+					case "home":
+						m.logs.GotoTop()
+					case "end":
+						m.logs.GotoBottom()
+					default:
+						m.logs, cmd = m.logs.Update(msg)
+					}
+					m.logPaused = !m.logs.AtBottom()
 				} else {
 					m.details, cmd = m.details.Update(msg)
 				}
@@ -466,6 +485,11 @@ func (m *Dashboard) syncLists() {
 }
 func RunDashboard(b Backend, c config.Catalog, w string, in io.Reader, out io.Writer) error {
 	m := NewDashboard(b, c, w)
+	if root, err := config.BaseDir(); err == nil {
+		m.logDir = filepath.Join(root, "logs", "tui")
+	} else {
+		m.actionError = "로그 저장 불가: " + safeText(err.Error())
+	}
 	defer m.cancel()
 	_, err := tea.NewProgram(m, tea.WithInput(in), tea.WithOutput(out)).Run()
 	return err

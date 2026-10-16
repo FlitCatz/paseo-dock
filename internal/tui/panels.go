@@ -294,6 +294,9 @@ func (m *Dashboard) panel(which, width, height int) string {
 			m.logs.SetWidth(contentWidth)
 			m.logs.SetHeight(available)
 			m.logs.SetContent(m.logContent())
+			if !m.logPaused {
+				m.logs.GotoBottom()
+			}
 			body = m.logs.View()
 		} else {
 			m.details.SetWidth(contentWidth)
@@ -335,7 +338,11 @@ func overlayPopup(base, popup string, width, height int) string {
 func (m *Dashboard) View() tea.View {
 	creationPopup := m.creating != nil && !m.exitPrompt
 	if creationPopup && m.creationFullScreen() {
-		return m.creating.wizard.View()
+		v := m.creating.wizard.View()
+		if m.notice != "" {
+			v.Content = overlayPopup(v.Content, renderSection("작업 결과", m.notice, max(1, m.Width), min(3, max(1, m.Height)), false), m.Width, m.Height)
+		}
+		return v
 	}
 	m.syncLists()
 	width, height := max(1, m.Width), max(1, m.Height)
@@ -423,6 +430,12 @@ func (m *Dashboard) View() tea.View {
 	// Creation popups show their own errors.
 	if m.actionError != "" && !creationPopup {
 		footer = m.actionError + " · " + footer
+	}
+	if m.notice != "" {
+		footer = m.notice + " · 아무 키: 닫기"
+		if footerLines == 0 {
+			body = overlayPopup(body, ansi.Truncate(footer, width, "…"), width, available)
+		}
 	}
 	lines := []string{}
 	if headerLines > 0 {
