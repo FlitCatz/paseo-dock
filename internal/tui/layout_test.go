@@ -284,3 +284,120 @@ func TestLayoutHelpListsNewKeys(t *testing.T) {
 		}
 	}
 }
+
+// Creation's form and category step are popups; the dashboard stays visible behind them.
+func TestCreationPopupsOverDashboard(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	path, err := config.Canonical(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, size := range [][2]int{{120, 40}, {80, 24}, {60, 20}, {40, 12}, {24, 8}, {20, 6}} {
+		m := layoutFixture()
+		defer m.cancel()
+		m.Update(tea.WindowSizeMsg{Width: size[0], Height: size[1]})
+		bounded := func(stage, view string) {
+			lines := strings.Split(view, "\n")
+			if len(lines) > size[1] {
+				t.Fatalf("%v %s height overflow:\n%s", size, stage, view)
+			}
+			for _, line := range lines {
+				if ansi.StringWidth(line) > size[0] {
+					t.Fatalf("%v %s overflow: %q", size, stage, line)
+				}
+			}
+			if !strings.Contains(view, "PASEO DOCK") {
+				t.Fatalf("%v %s replaced the dashboard:\n%s", size, stage, view)
+			}
+		}
+		keyCmd(m, "n")
+		view := m.View().Content
+		bounded("form", view)
+		if !strings.Contains(view, "› 새 환경 생성") || !strings.Contains(view, "┃  > /한국어/a") {
+			t.Fatalf("%v form popup:\n%s", size, view)
+		}
+		if size[1] >= 20 {
+			for _, want := range []string{"Workspaces", "1  Workspace 경로", "2  Create config JSON", "3  Container ports", "4  Directory picker", "│  >", "Esc 취소"} {
+				if !strings.Contains(view, want) {
+					t.Fatalf("%v form missing %q:\n%s", size, want, view)
+				}
+			}
+		}
+		for range 3 {
+			m.Update(tea.KeyPressMsg{Code: tea.KeyTab})
+		}
+		if view := m.View().Content; m.creating.focus != 3 || (size[1] >= 12 && !strings.Contains(view, "←/h 상위")) {
+			t.Fatalf("%v picker focus:\n%s", size, view)
+		}
+		for range 3 {
+			m.Update(tea.KeyPressMsg{Code: tea.KeyTab, Mod: tea.ModShift})
+		}
+		if m.creating.focus != 0 {
+			t.Fatal("shift+tab did not return to the path")
+		}
+		m.creating.path.SetValue(path)
+		keyCmd(m, "enter")
+		view = m.View().Content
+		bounded("category", view)
+		if !strings.Contains(view, "› ✓ sandbox") {
+			t.Fatalf("%v category popup:\n%s", size, view)
+		}
+		if size[1] >= 12 && (!strings.Contains(view, "실행 환경 선택") || !strings.Contains(view, "○ container")) {
+			t.Fatalf("%v category popup:\n%s", size, view)
+		}
+		m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
+		if view := m.View().Content; !strings.Contains(view, "› ✓ container") {
+			t.Fatalf("%v category cursor:\n%s", size, view)
+		}
+		keyCmd(m, "enter")
+		if view := m.View().Content; strings.Contains(view, "PASEO DOCK  sbx") || m.creating.wizard.Step != 0 {
+			t.Fatalf("%v agent step should stay full screen:\n%s", size, view)
+		}
+	}
+}
+
+func TestCreationPopupErrorsAndEsc(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	m := NewDashboard(&dashboardBackend{}, config.DefaultCatalog(), "")
+	defer m.cancel()
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	keyCmd(m, "n")
+	keyCmd(m, "enter")
+	view := m.View().Content
+	if !strings.Contains(view, "║ Workspace 경로를 입력하세요") || strings.Contains(view, "입력하세요 · u 업데이트") {
+		t.Fatalf("form error belongs in the popup:\n%s", view)
+	}
+	m.creating.path.SetValue(t.TempDir())
+	keyCmd(m, "enter")
+	if m.creating == nil || m.creating.wizard == nil {
+		t.Fatal("wizard not opened")
+	}
+	// Esc on the category popup cancels the whole creation, as before.
+	m.Update(keyCmd(m, "esc")())
+	if m.creating != nil || !strings.Contains(m.View().Content, "1 Workspaces") {
+		t.Fatal("Esc did not close the category popup")
+	}
+	keyCmd(m, "n")
+	keyCmd(m, "esc")
+	if m.creating != nil {
+		t.Fatal("Esc did not close the form popup")
+	}
+}
+
+func TestStandaloneCategoryPopupFits(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	for _, size := range [][2]int{{80, 24}, {20, 4}} {
+		m := NewModel(config.DefaultCatalog(), config.Selection{}, "/workspace", "2g")
+		m.Update(tea.WindowSizeMsg{Width: size[0], Height: size[1]})
+		key(m, tea.KeyDown)
+		lines := strings.Split(m.View().Content, "\n")
+		if len(lines) > size[1] || !strings.Contains(m.View().Content, "› ✓ container") {
+			t.Fatalf("%v category:\n%s", size, m.View().Content)
+		}
+		for _, line := range lines {
+			if ansi.StringWidth(line) > size[0] {
+				t.Fatalf("%v overflow: %q", size, line)
+			}
+		}
+	}
+}

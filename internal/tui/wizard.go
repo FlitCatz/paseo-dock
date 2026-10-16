@@ -444,16 +444,13 @@ func (m *Model) View() tea.View {
 		return m.boundedView([]string{"Sandbox 메모리 설정", m.memoryInput.View(), m.Error, "Enter 적용 · Esc 취소"})
 	}
 	if m.Step == -1 {
-		lines := []string{"Category · 실행 환경 선택", "Workspace: " + m.Workspace}
-		for index, i := range m.items() {
-			mark := "  "
-			if index == m.Cursor {
-				mark = "› "
-			}
-			lines = append(lines, mark+i.Label)
+		width, height := m.Width, m.Height
+		if width <= 0 || height <= 0 {
+			width, height = 80, 24
 		}
-		lines = append(lines, "↑↓ 선택 · Enter 다음 · Esc 취소")
-		return m.boundedView(lines)
+		v := tea.NewView(popupScreen(m.categoryPopup(width, height), width, height))
+		v.AltScreen = true
+		return v
 	}
 	if m.Category == config.CategorySandbox {
 		lines := []string{"Category: sandbox · Agent 테스트", "Workspace: " + m.Workspace}
@@ -490,53 +487,10 @@ func (m *Model) View() tea.View {
 		return m.boundedView(lines)
 	}
 
-	paint := func(code, text string) string {
-		if !m.Color {
-			return text
-		}
-		return "\x1b[" + code + "m" + text + "\x1b[0m"
-	}
-	const purple = "38;5;141;1"
-	const green = "38;5;84"
-	const pink = "38;5;213;1"
-	const muted = "38;5;245"
-	var body []string
-	focus := 0
+	sb := &selectionBody{color: m.Color}
+	paint := sb.paint
 	section := func(title, hint string, items []config.Item, active bool, selected func(config.Item) bool, compatible func(config.Item) bool) {
-		if len(body) > 0 {
-			body = append(body, "")
-		}
-		border := paint(muted, "│")
-		if active {
-			border = paint(purple, "┃")
-			focus = len(body)
-		}
-		body = append(body, border+"  "+paint(purple, title))
-		if hint != "" {
-			body = append(body, border+"  "+paint(muted, hint))
-		}
-		for index, item := range items {
-			mark, cursor, color := "○", " ", ""
-			if selected(item) {
-				mark, color = "✓", green
-			}
-			label := item.Label
-			if !compatible(item) {
-				color = muted
-				label += " · 지원 대상 아님"
-			}
-			if active && index == m.Cursor {
-				cursor = paint(pink, "›")
-				focus = len(body)
-				if compatible(item) {
-					color = green
-				}
-			}
-			body = append(body, border+"  "+cursor+" "+paint(color, mark+" "+label))
-			if active && index == m.Cursor && item.Note != "" {
-				body = append(body, border+"      "+paint(muted, item.Note))
-			}
-		}
+		sb.section(title, hint, items, active, m.Cursor, selected, compatible)
 	}
 	allow := func(config.Item) bool { return true }
 	section("1  Agent", "사용할 에이전트를 선택하세요. 여러 개 선택할 수 있습니다.", m.Catalog.Agents, m.Step == 0, func(i config.Item) bool { return m.agents[i.ID] }, allow)
@@ -564,6 +518,7 @@ func (m *Model) View() tea.View {
 		return true
 	}
 	section("3  Utility", "선택 사항 · 모든 에이전트가 지원하는 항목만 선택할 수 있습니다.", m.Catalog.Utilities, m.Step == 2, func(i config.Item) bool { return m.utilities[i.ID] }, utilityCompatible)
+	body, focus := sb.lines, sb.focus
 	if m.Step == 3 {
 		body = append(body, "", paint(purple, "┃  4  최종 확인"))
 		for _, profile := range m.Result.Selection.Profiles() {
@@ -626,11 +581,7 @@ func (m *Model) View() tea.View {
 			header = header[:min(1, max(0, m.Height-2))]
 			footer = footer[len(footer)-min(1, max(0, m.Height-len(header)-1)):]
 		}
-		available := max(1, m.Height-len(header)-len(footer))
-		if len(body) > available {
-			start := min(max(0, focus-available+min(3, available)), len(body)-available)
-			body = body[start : start+available]
-		}
+		body = clipAround(body, focus, max(1, m.Height-len(header)-len(footer)))
 	}
 	lines := append(append(header, body...), footer...)
 	if m.Width > 0 {
@@ -642,6 +593,20 @@ func (m *Model) View() tea.View {
 	v.AltScreen = true
 	return v
 }
+
+// categoryPopup is the category step as a box in the agent-selection style.
+// Enter accepts the focused row, so the check mark follows the cursor.
+func (m *Model) categoryPopup(width, height int) string {
+	sb := selectionBody{color: m.Color}
+	items := m.items()
+	sb.section("Category · 실행 환경 선택", "Workspace: "+m.Workspace, items, true, m.Cursor, func(i config.Item) bool { return i.ID == items[m.Cursor].ID }, func(config.Item) bool { return true })
+	footer := []string{"", sb.paint(muted, "↑/↓ 이동 · Enter 다음 · Esc 취소")}
+	if m.Error != "" {
+		footer = append([]string{sb.paint(errorRed, m.Error)}, footer...)
+	}
+	return selectionPopup("실행 환경 선택", sb, footer, width, height)
+}
+
 func Run(c config.Catalog, s config.Selection, workspace, memory string, in io.Reader, out io.Writer, apply ...bool) (Result, error) {
 	return RunWithPorts(c, s, workspace, memory, nil, in, out, apply...)
 }

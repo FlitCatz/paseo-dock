@@ -13,7 +13,7 @@ import (
 	"charm.land/bubbles/v2/filepicker"
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
-	"github.com/charmbracelet/x/ansi"
+	"charm.land/lipgloss/v2"
 )
 
 // Creation owns only input and selection. Execution always uses the dashboard queue.
@@ -45,22 +45,69 @@ func (m *Dashboard) ownsFlow(flow uint64) bool {
 func (m *Dashboard) startCreation() tea.Cmd {
 	m.newFlow()
 	path, configPath, ports := textinput.New(), textinput.New(), textinput.New()
-	ports.Prompt = "Container ports (host:container, optional): "
-	path.Prompt = "Workspace 경로: "
-	configPath.Prompt = "Create config JSON (optional): "
+	path.Prompt, configPath.Prompt, ports.Prompt = "> ", "> ", "> "
 	picker := filepicker.New()
 	picker.DirAllowed = true
 	picker.FileAllowed = false
+	picker.ShowPermissions, picker.ShowSize = false, false
+	picker.AutoHeight = false
+	picker.Cursor = "›"
+	picker.Styles.Cursor = lipgloss.NewStyle().Foreground(lipgloss.Color("213")).Bold(true)
+	picker.Styles.Selected = lipgloss.NewStyle().Foreground(lipgloss.Color("84"))
+	picker.Styles.Directory = lipgloss.NewStyle()
 	picker.CurrentDirectory, _ = os.Getwd()
 	if w := m.selectedWorkspace(); w != nil {
 		path.SetValue(w.Path)
 		picker.CurrentDirectory = w.Path
 	}
 	m.creating = &creation{path: path, configPath: configPath, ports: ports, picker: picker}
+	m.sizeCreation()
 	m.advancedMenu = false
 	m.actionMenu = false
 	m.actionError = ""
 	return tea.Batch(m.creating.path.Focus(), m.creating.picker.Init())
+}
+
+// creationArea is the dashboard body the creation popups are placed over.
+func (m *Dashboard) creationArea() (int, int) {
+	return max(1, m.Width), max(1, m.Height-2)
+}
+
+// sizeCreation fits the inputs and directory picker to the popup box.
+func (m *Dashboard) sizeCreation() {
+	c := m.creating
+	w, h := popupSize(m.creationArea())
+	contentWidth, contentHeight, _, _ := sectionDimensions(w, h)
+	// Each row is indented by the section bar; inputs also carry a prompt.
+	inputWidth := max(1, contentWidth-6)
+	c.path.SetWidth(inputWidth)
+	c.configPath.SetWidth(inputWidth)
+	c.ports.SetWidth(inputWidth)
+	// Three input sections, the picker heading, blank separators and the help footer.
+	c.picker.SetHeight(min(10, max(3, contentHeight-creationFixedRows)))
+}
+
+const creationFixedRows = 13
+
+// creationPopup renders the new-environment form in the agent-selection style.
+func (m *Dashboard) creationPopup(width, height int) string {
+	c := m.creating
+	sb := selectionBody{color: os.Getenv("NO_COLOR") == ""}
+	sb.field("1  Workspace 경로", c.focus == 0, []string{c.path.View()})
+	sb.field("2  Create config JSON · 선택 사항", c.focus == 1, []string{c.configPath.View()})
+	sb.field("3  Container ports · host:container, 선택 사항", c.focus == 2, []string{c.ports.View()})
+	rows := strings.Split(strings.TrimRight(c.picker.View(), "\n"), "\n")
+	rows = rows[:min(len(rows), max(1, c.picker.Height()))]
+	sb.field("4  Directory picker · "+c.picker.CurrentDirectory, c.focus == 3, rows)
+	help := "Tab/Shift+Tab 이동 · Enter 다음 · Esc 취소"
+	if c.focus == 3 {
+		help = "↑/↓ 이동 · →/l 열기 · ←/h 상위 · Enter 선택 · Esc 취소"
+	}
+	footer := []string{"", sb.paint(muted, help)}
+	if m.actionError != "" {
+		footer = append([]string{sb.paint(errorRed, m.actionError)}, footer...)
+	}
+	return selectionPopup("새 환경 생성", sb, footer, width, height)
 }
 
 func (m *Dashboard) creationMessage(msg tea.Msg) (bool, tea.Cmd) {
@@ -118,10 +165,8 @@ func (m *Dashboard) creationMessage(msg tea.Msg) (bool, tea.Cmd) {
 		if c.wizard != nil {
 			c.wizard.Update(size)
 		}
-		c.path.SetWidth(max(1, size.Width-20))
-		c.ports.SetWidth(max(1, size.Width-20))
-		c.configPath.SetWidth(max(1, size.Width-20))
-		c.picker.SetHeight(max(1, size.Height-8))
+		m.Width, m.Height = max(1, size.Width), max(1, size.Height)
+		m.sizeCreation()
 		return false, nil
 	}
 	if c.wizard != nil {
@@ -240,25 +285,18 @@ func (m *Dashboard) creationMessage(msg tea.Msg) (bool, tea.Cmd) {
 	c.picker, pickerCmd = c.picker.Update(msg)
 	return true, tea.Batch(cmd, pickerCmd)
 }
-func (m *Dashboard) creationView() tea.View {
+
+// The form and the category step are popups over the dashboard; the later
+// wizard steps need the whole screen for their lists and final review.
+func (m *Dashboard) creationFullScreen() bool {
 	c := m.creating
-	if c.wizard != nil {
-		return c.wizard.View()
+	return c != nil && c.wizard != nil && (c.wizard.Step >= 0 || c.wizard.editingMemory)
+}
+func (m *Dashboard) creationPopupFor(width, height int) string {
+	if w := m.creating.wizard; w != nil {
+		return w.categoryPopup(width, height)
 	}
-	content := "새 환경 생성\n" + c.path.View() + "\n" + c.configPath.View() + "\n" + c.ports.View() + "\nTab: 경로 / config / ports / directory picker · Enter: 선택 wizard · Esc: 취소\n" + c.picker.View()
-	if m.actionError != "" {
-		content = m.actionError + "\n" + content
-	}
-	lines := strings.Split(content, "\n")
-	if len(lines) > m.Height {
-		lines = lines[:m.Height]
-	}
-	for i := range lines {
-		lines[i] = ansi.Truncate(lines[i], max(1, m.Width), "…")
-	}
-	v := tea.NewView(strings.Join(lines, "\n"))
-	v.AltScreen = true
-	return v
+	return m.creationPopup(width, height)
 }
 func (m *Dashboard) advancedKey(k string) (bool, tea.Cmd) {
 	if m.advancedMenu {
