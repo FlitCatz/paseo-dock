@@ -68,3 +68,16 @@ esac
 		t.Fatal("profile selection ignored", string(log))
 	}
 }
+
+func TestUpdateHelpStatesRefreshBoundary(t *testing.T) {
+	var out, stderr bytes.Buffer
+	if code := Run("../..", []string{"update", "--help"}, &bytes.Buffer{}, &out, &stderr); code != 0 {
+		t.Fatalf("update --help exit %d: %s", code, stderr.String())
+	}
+	help := stderr.String()
+	for _, want := range []string{"paseo-dock-managed tools", "Node, Python/uv, the base image", "omp/gjc", "ACP adapters", "versions.lock.json", "log in to each agent again", "-profile"} {
+		if !strings.Contains(help, want) {
+			t.Errorf("update help lacks %q:\n%s", want, help)
+		}
+	}
+}

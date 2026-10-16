@@ -360,7 +360,9 @@ func actionWarning(kind operations.Kind) string {
 		return "중지는 실행 중인 세션에 영향을 줍니다."
 	case operations.KindRemove:
 		return "삭제 후 되돌릴 수 없습니다. 실패 시 provider가 이미 비활성화되었을 수 있습니다."
-	case operations.KindUpdate, operations.KindVersions:
+	case operations.KindUpdate:
+		return "갱신: agent·methodology·utility(paseo-dock 관리 도구)\n제외: OS 패키지·Node·Python/uv·base image·omp/gjc·ACP adapter\n제외 항목은 이미지 재빌드 후 재생성으로만 바뀌며 재로그인이 필요합니다.\nsbx exec는 중지된 sandbox를 시작할 수 있습니다."
+	case operations.KindVersions:
 		return "sbx exec는 중지된 sandbox를 시작할 수 있습니다."
 	case operations.KindRegister, operations.KindUnregister:
 		return "workspace 활성 조합 및 Paseo home ~/.paseo/config.json 설정 변경 (backup / merge). 다른 workspace의 provider는 유지됩니다."

@@ -6,3 +6,4 @@
 bin/
 ci-bake.json
 .worktrees/
+.gjc/
