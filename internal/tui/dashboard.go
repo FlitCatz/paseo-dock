@@ -48,6 +48,7 @@ type Dashboard struct {
 	templatesWanted                                       bool
 	slowWanted                                            bool
 	rightTab                                              int
+	expanded                                              bool
 	workspaces, sandboxes, templates                      list.Model
 	details, logs, modal                                  viewport.Model
 	help                                                  help.Model
@@ -239,6 +240,11 @@ func (m *Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "esc":
 			m.Search = ""
 			m.Help = false
+			m.expanded = false
+		case "f":
+			m.expanded = !m.expanded
+		case "L":
+			m.Focus, m.rightTab, m.expanded = 3, 1, true
 		case "?":
 			m.Help = !m.Help
 		case "r":
@@ -400,7 +406,7 @@ func (m *Dashboard) syncLists() {
 			suffix = "  (missing)"
 		}
 		if matches(w.Path) || matches(label) {
-			ws = append(ws, panelItem{id: w.ID, label: label, suffix: suffix})
+			ws = append(ws, panelItem{id: w.ID, label: safeText(label), compactLabel: safeText(filepath.Base(label)), suffix: suffix})
 		}
 	}
 	workspaceVisible := false
@@ -417,10 +423,7 @@ func (m *Dashboard) syncLists() {
 	}
 	for _, s := range m.rows() {
 		id := sandboxID(s)
-		glyph := map[string]string{"running": "●", "stopped": "○", "missing": "✕"}[s.RuntimeState]
-		if glyph == "" {
-			glyph = "?"
-		}
+		glyph := stateMark(s.RuntimeState)
 		label := glyph + " " + id
 		if s.Active {
 			label += "  활성"
@@ -434,7 +437,7 @@ func (m *Dashboard) syncLists() {
 			suffix = "  " + category
 		}
 		if matches(label + suffix) {
-			ss = append(ss, panelItem{id: id, label: label, suffix: suffix})
+			ss = append(ss, panelItem{id: id, label: safeText(label), suffix: suffix, state: s.RuntimeState})
 		}
 	}
 	m.workspaces.SetItems(ws)
@@ -443,7 +446,7 @@ func (m *Dashboard) syncLists() {
 	for _, t := range m.Snapshot.TemplateRows {
 		label := t.Repository + ":" + t.Tag
 		if matches(label) {
-			ts = append(ts, panelItem{id: t.ID, label: label})
+			ts = append(ts, panelItem{id: t.ID, label: safeText(label), compactLabel: safeText(filepath.Base(t.Repository) + ":" + t.Tag)})
 		}
 	}
 	m.templates.SetItems(ts)

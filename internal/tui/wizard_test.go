@@ -212,6 +212,7 @@ func TestContinuousFormNavigation(t *testing.T) {
 }
 
 func TestFormColorAndSmallTerminal(t *testing.T) {
+	t.Setenv("NO_COLOR", "")
 	m := newContainerModel(config.DefaultCatalog(), config.Selection{Schema: 1, Pairs: []config.Pair{{Agent: "antigravity-cli", Methodology: "openspec"}}}, "/한글 project", "2g")
 	m.Color = true
 	if !strings.Contains(m.View().Content, "\x1b[") {

@@ -7,15 +7,6 @@ import (
 	"paseo-dock/internal/config"
 )
 
-// Selection palette shared by the create wizard and its popups.
-const (
-	purple   = "38;5;141;1"
-	green    = "38;5;84"
-	pink     = "38;5;213;1"
-	muted    = "38;5;245"
-	errorRed = "38;5;203"
-)
-
 // selectionBody renders the create wizard's selection look: a bar per section,
 // a pink cursor and ○/✓ marks. focus is the row that must stay visible.
 type selectionBody struct {

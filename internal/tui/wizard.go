@@ -29,26 +29,27 @@ type WizardFinishedMsg struct {
 	source *Model
 }
 type Model struct {
-	Catalog                  config.Catalog
-	Category                 config.Category
-	CodexUserNS              bool
-	Ports                    []config.PortMapping
-	Workspace, Memory        string
-	Repository               config.Repository
-	BuildFirst               bool
-	PaseoHome                string
-	memoryInput              textinput.Model
-	editingMemory            bool
-	Step, Cursor, agentIndex int
-	agents, pairs, utilities map[string]bool
-	selectedAgents           []string
-	Result                   Result
-	Confirmed                bool
-	Err                      error
-	Error                    string
-	Width, Height            int
-	Color                    bool
-	embedded                 bool
+	Catalog                                config.Catalog
+	Category                               config.Category
+	CodexUserNS                            bool
+	Ports                                  []config.PortMapping
+	Workspace, Memory                      string
+	Repository                             config.Repository
+	BuildFirst                             bool
+	PaseoHome                              string
+	memoryInput                            textinput.Model
+	editingMemory                          bool
+	Step, Cursor, agentIndex               int
+	agents, pairs, utilities               map[string]bool
+	selectedAgents                         []string
+	Result                                 Result
+	Confirmed                              bool
+	Err                                    error
+	Error                                  string
+	Width, Height                          int
+	reviewOffset, reviewRows, reviewHeight int
+	Color                                  bool
+	embedded                               bool
 
 	// Name and Connections carry container bundle choices; defaults are derived.
 	Name        string
@@ -73,7 +74,7 @@ func (m *Model) finish() tea.Cmd {
 
 func NewModel(c config.Catalog, s config.Selection, workspace, memory string) *Model {
 	_, noColor := os.LookupEnv("NO_COLOR")
-	m := &Model{Category: config.CategorySandbox, Step: -1, Catalog: c, Workspace: workspace, Memory: memory, Color: !noColor, agents: map[string]bool{}, pairs: map[string]bool{}, utilities: map[string]bool{}}
+	m := &Model{Category: config.CategorySandbox, Step: -1, reviewOffset: -1, Catalog: c, Workspace: workspace, Memory: memory, Color: !noColor, agents: map[string]bool{}, pairs: map[string]bool{}, utilities: map[string]bool{}}
 	m.BuildFirst, m.PaseoHome = true, "~/.paseo"
 	if s.Schema != 0 {
 		m.Category = s.Category
@@ -245,6 +246,28 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			k.Code = tea.KeyEscape
 		} else if m.Step < 3 {
 			k.Code = tea.KeyEnter
+		}
+	}
+	if m.Step == 3 {
+		switch k.String() {
+		case "up", "k":
+			m.reviewOffset = max(0, m.reviewOffset-1)
+			return m, nil
+		case "down", "j":
+			m.reviewOffset = min(max(0, m.reviewRows-m.reviewHeight), m.reviewOffset+1)
+			return m, nil
+		case "pgup":
+			m.reviewOffset = max(0, m.reviewOffset-max(1, m.reviewHeight))
+			return m, nil
+		case "pgdown":
+			m.reviewOffset = min(max(0, m.reviewRows-m.reviewHeight), m.reviewOffset+max(1, m.reviewHeight))
+			return m, nil
+		case "home":
+			m.reviewOffset = 0
+			return m, nil
+		case "end":
+			m.reviewOffset = max(0, m.reviewRows-m.reviewHeight)
+			return m, nil
 		}
 	}
 	m.Error = ""
@@ -520,6 +543,8 @@ func (m *Model) View() tea.View {
 	section("3  Utility", "선택 사항 · 모든 에이전트가 지원하는 항목만 선택할 수 있습니다.", m.Catalog.Utilities, m.Step == 2, func(i config.Item) bool { return m.utilities[i.ID] }, utilityCompatible)
 	body, focus := sb.lines, sb.focus
 	if m.Step == 3 {
+		body = nil
+		focus = 0
 		body = append(body, "", paint(purple, "┃  4  최종 확인"))
 		for _, profile := range m.Result.Selection.Profiles() {
 			body = append(body, "┃    "+paint(green, "✓ "+profile))
@@ -566,32 +591,11 @@ func (m *Model) View() tea.View {
 			body = append(body, "┃    Paseo: "+m.PaseoHome+"/config.json · backup / merge", "┃    다른 workspace provider 유지")
 		}
 	}
-	agents := strings.Join(chosen, ", ")
-	if agents == "" {
-		agents = "선택 전"
-	}
-	header := []string{paint("38;5;81;1", "PASEO DOCK") + "  " + paint(muted, fmt.Sprintf("STEP %d / 4", m.Step+1)), paint(muted, "Workspace: "+m.Workspace), paint(muted, "Agent: "+agents)}
 	footer := []string{"", paint(muted, "↑/↓ 이동 · Space/x 선택 · Enter/Tab 다음 · Esc/Shift+Tab 이전"), paint(muted, "Ctrl+C 취소 · 최종 확인 화면에서 Enter로 생성")}
 	if m.Error != "" {
 		footer = append([]string{paint("38;5;203", m.Error)}, footer...)
 	}
-	if m.Height > 0 {
-		// Keep the active row visible even in a very short terminal.
-		if m.Height < len(header)+len(footer)+1 {
-			header = header[:min(1, max(0, m.Height-2))]
-			footer = footer[len(footer)-min(1, max(0, m.Height-len(header)-1)):]
-		}
-		body = clipAround(body, focus, max(1, m.Height-len(header)-len(footer)))
-	}
-	lines := append(append(header, body...), footer...)
-	if m.Width > 0 {
-		for i, line := range lines {
-			lines[i] = ansi.Truncate(line, m.Width, "…")
-		}
-	}
-	v := tea.NewView(strings.Join(lines, "\n"))
-	v.AltScreen = true
-	return v
+	return m.wizardLayout(body, focus, footer)
 }
 
 // categoryPopup is the category step as a box in the agent-selection style.
@@ -651,6 +655,25 @@ func RunCreation(c config.Catalog, s config.Selection, o CreationOptions, in io.
 }
 
 func (m *Model) boundedView(lines []string) tea.View {
+	if m.Step == 3 && !m.editingMemory {
+		return m.reviewLayout(lines)
+	}
+	if m.Width >= 80 && m.Height >= 20 {
+		_, available, _, _ := sectionDimensions(m.Width, m.Height-1)
+		focus := 2 + m.Cursor
+		if m.Step == 3 || m.editingMemory {
+			focus = len(lines) - 2
+		}
+		body := clipAround(lines, focus, available)
+		header := fillLine(tone(accent, " PASEO DOCK")+" / Create sandbox", m.Width, canvas)
+		content := header + "\n" + renderSection("Sandbox / Agent", strings.Join(body, "\n"), m.Width, m.Height-1, true)
+		if !m.Color {
+			content = ansi.Strip(content)
+		}
+		v := tea.NewView(content)
+		v.AltScreen = true
+		return v
+	}
 	if m.Height > 0 && len(lines) > m.Height {
 		if m.Step == 3 {
 			lines = lines[len(lines)-m.Height:]

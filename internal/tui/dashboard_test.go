@@ -186,7 +186,11 @@ func TestDashboardSectionsHaveVisibleFrames(t *testing.T) {
 			deliver(m, fixtureSnapshot())
 			m.Update(tea.WindowSizeMsg{Width: size[0], Height: size[1]})
 			view := m.View().Content
-			if strings.Count(view, "╭")+strings.Count(view, "╔") != 4 || strings.Count(view, "╰")+strings.Count(view, "╚") != 4 {
+			frames := 4
+			if size[0] >= 80 && size[1] >= 28 {
+				frames += 4
+			} // overview cards
+			if strings.Count(view, "╭")+strings.Count(view, "╔") != frames || strings.Count(view, "╰")+strings.Count(view, "╚") != frames {
 				t.Fatalf("four independently closed sections are not visible:\n%s", view)
 			}
 			for _, title := range []string{"1 Workspaces", "2 Sandbox / Container", "3 Templates", "[상세] · 로그 · 버전 · 설정"} {
@@ -258,7 +262,10 @@ func TestDashboardTerminalBounds(t *testing.T) {
 						t.Fatalf("width exceeds %d: %q", size[0], line)
 					}
 				}
-				want := "› /한국어"
+				want := "› 선택된"
+				if focus == 0 && m.workspaces.SelectedItem().(panelItem).id != "runtime-a" {
+					t.Fatal("compact label changed selected identity")
+				}
 				if focus == 1 {
 					want = "› ? 한글"
 				}
@@ -411,7 +418,7 @@ func TestDashboardUnmanagedRowHasNoCategorySuffix(t *testing.T) {
 	m.Focus = 1
 	m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 	for _, line := range strings.Split(m.View().Content, "\n") {
-		if strings.HasPrefix(line, "║ ›") && strings.Contains(line, "external-sandbox") {
+		if strings.Contains(line, "║ ›") && strings.Contains(line, "external-sandbox") {
 			if !strings.Contains(line, "읽기 전용") || strings.Contains(line, "  L") {
 				t.Fatalf("unmanaged row mislabeled: %q", line)
 			}
