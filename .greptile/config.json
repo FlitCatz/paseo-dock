@@ -1,0 +1,6 @@
+{
+  "strictness": 2,
+  "commentTypes": ["logic", "syntax", "style"],
+  "ignorePatterns": "go.sum\nversions.lock.json",
+  "instructions": "Write all review comments in Korean. This is a Go container manager for Paseo agents; follow the repository's AGENTS.md. Prioritise correctness, container and host security, and resource cleanup over style."
+}
