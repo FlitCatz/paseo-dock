@@ -115,7 +115,9 @@ func TestCLIInteractivePortsReachConfirmationAndCreate(t *testing.T) {
 				send(" ")
 			}
 			send("\r")
-			wait("Methodology · Codex")
+			// Stable progress marker: the renderer may update only the "· Codex"
+			// suffix of the already-visible section heading.
+			wait("2 Methodology]")
 			if !preselected {
 				send(" ")
 			}

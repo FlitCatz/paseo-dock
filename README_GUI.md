@@ -4,6 +4,11 @@
 설치·CLI·관리 TUI 전체는 [README](README.md)를 참고하세요.
 Paseo 앱의 메뉴 위치는 버전에 따라 다를 수 있습니다.
 
+터미널 관리 화면은 [Control Center](docs/design/tui-control-center.md)로 개선되었습니다.
+Workspace별 실행 환경과 Agent·Methodology·Utility 조합을 확인하고, `n`으로 생성,
+`L`로 로그 확장, `f`로 선택 패널 확장을 사용할 수 있습니다. 기존 Paseo provider 연결과
+생성·업데이트·shell 동작은 유지됩니다. 키보드 조작은 [관리 TUI](README.md#관리-tui)를 참고하세요.
+
 ## 실행 대상과 provider
 
 | 대상 | 설치 구성 | Provider ID 예시 |

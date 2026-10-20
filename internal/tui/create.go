@@ -52,8 +52,8 @@ func (m *Dashboard) startCreation() tea.Cmd {
 	picker.ShowPermissions, picker.ShowSize = false, false
 	picker.AutoHeight = false
 	picker.Cursor = "›"
-	picker.Styles.Cursor = lipgloss.NewStyle().Foreground(lipgloss.Color("213")).Bold(true)
-	picker.Styles.Selected = lipgloss.NewStyle().Foreground(lipgloss.Color("84"))
+	picker.Styles.Cursor = lipgloss.NewStyle().Foreground(lipgloss.Color(accent)).Bold(true)
+	picker.Styles.Selected = lipgloss.NewStyle().Foreground(lipgloss.Color(success))
 	picker.Styles.Directory = lipgloss.NewStyle()
 	picker.CurrentDirectory, _ = os.Getwd()
 	if w := m.selectedWorkspace(); w != nil {

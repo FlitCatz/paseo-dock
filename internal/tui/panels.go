@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"github.com/charmbracelet/x/ansi"
 	"io"
-	"os"
 	"paseo-dock/internal/config"
 	"paseo-dock/internal/operations"
 	"slices"
@@ -17,7 +16,7 @@ import (
 	"time"
 )
 
-type panelItem struct{ id, label, suffix string }
+type panelItem struct{ id, label, suffix, state, compactLabel string }
 
 func (i panelItem) FilterValue() string { return i.label }
 
@@ -32,11 +31,23 @@ func (panelDelegate) Render(w io.Writer, m list.Model, index int, item list.Item
 	if index == m.Index() {
 		mark = "› "
 	}
-	line := ansi.Truncate(mark+i.label, max(1, m.Width()-ansi.StringWidth(i.suffix)), "…") + i.suffix
+	labelWidth := max(1, m.Width()-ansi.StringWidth(i.suffix))
+	label := i.label
+	if i.compactLabel != "" && ansi.StringWidth(mark+label) > labelWidth {
+		label = i.compactLabel
+	}
+	line := ansi.Truncate(mark+label, labelWidth, "…")
+	line += strings.Repeat(" ", max(0, labelWidth-ansi.StringWidth(line))) + i.suffix
 	line = ansi.Truncate(line, m.Width(), "…")
 	style := lipgloss.NewStyle()
-	if os.Getenv("NO_COLOR") == "" && index == m.Index() {
-		style = style.Foreground(lipgloss.Color("86"))
+	if colorsEnabled() {
+		style = style.Foreground(lipgloss.Color(ink))
+		if i.state != "" {
+			style = style.Foreground(lipgloss.Color(stateTone(i.state)))
+		}
+		if index == m.Index() {
+			style = style.Foreground(lipgloss.Color(accent)).Background(lipgloss.Color(selectionSurface)).Bold(true)
+		}
 	}
 	fmt.Fprint(w, style.Render(line))
 }
@@ -61,6 +72,7 @@ func (dashboardKeys) ShortHelp() []keys.Binding {
 }
 func (dashboardKeys) FullHelp() [][]keys.Binding {
 	return [][]keys.Binding{dashboardKeys{}.ShortHelp(), {
+		keys.NewBinding(keys.WithKeys("f", "L"), keys.WithHelp("f/L", "패널 확장/로그 화면 · Esc 복귀")),
 		keys.NewBinding(keys.WithKeys("1", "2", "3"), keys.WithHelp("1/2/3", "목록 포커스")), keys.NewBinding(keys.WithKeys("tab", "shift+tab"), keys.WithHelp("Tab/Shift+Tab", "패널 순환")), keys.NewBinding(keys.WithKeys("[", "]", "left", "right", "h", "l"), keys.WithHelp("[ ]/←→/hl", "오른쪽 탭")), keys.NewBinding(keys.WithKeys("up", "down", "j", "k"), keys.WithHelp("↑↓/jk", "이동")), keys.NewBinding(keys.WithKeys("/"), keys.WithHelp("/", "검색")), keys.NewBinding(keys.WithKeys("r"), keys.WithHelp("r", "갱신")), keys.NewBinding(keys.WithKeys("q"), keys.WithHelp("q", "종료")), keys.NewBinding(keys.WithKeys("v"), keys.WithHelp("v", "미등록 sandbox (읽기 전용)")), keys.NewBinding(keys.WithKeys("t"), keys.WithHelp("t", "Templates 포커스")), keys.NewBinding(keys.WithKeys("esc"), keys.WithHelp("Esc", "검색 취소")),
 		keys.NewBinding(keys.WithKeys("enter"), keys.WithHelp("Enter", "작업")), keys.NewBinding(keys.WithKeys("u"), keys.WithHelp("u", "관리 도구 업데이트 (OS·Node·이미지 제외)")), keys.NewBinding(keys.WithKeys("s"), keys.WithHelp("s", "shell")), keys.NewBinding(keys.WithKeys("x"), keys.WithHelp("x", "중지")), keys.NewBinding(keys.WithKeys("d"), keys.WithHelp("d", "삭제")), keys.NewBinding(keys.WithKeys("c"), keys.WithHelp("c", "취소 요청")),
 		keys.NewBinding(keys.WithKeys("R"), keys.WithHelp("R", "고정 대상 재시도")),
@@ -101,9 +113,18 @@ func (m *Dashboard) detailContent() string {
 				break
 			}
 		}
-		return strings.Join(lines, "\n")
+		return safeText(strings.Join(lines, "\n"))
 	}
 	lines := []string{}
+	for _, s := range m.rows() {
+		if sandboxID(s) == m.ProfileID {
+			lines = append(lines, compositionLines(s.Target.Entry)...)
+			lines = append(lines, sectionLabel("RUNTIME"), tone(stateTone(s.RuntimeState), stateMark(s.RuntimeState)+" "+safeText(s.RuntimeState)), "")
+			break
+		}
+	}
+	prefix := lines
+	lines = nil
 	if w := m.selectedWorkspace(); w != nil {
 		lines = append(lines, "Workspace: "+w.Path, "Runtime ID: "+w.ID)
 		if w.Missing {
@@ -152,7 +173,8 @@ func (m *Dashboard) detailContent() string {
 	if len(lines) == 0 {
 		return "선택 항목 없음"
 	}
-	return strings.Join(lines, "\n")
+	lines = append(lines, "", "CONNECTIONS", connectionText("sbx", m.Snapshot.SBX), connectionText("Paseo", m.Snapshot.Paseo), connectionText("Docker", m.Snapshot.Docker))
+	return strings.Join(append(prefix, safeText(strings.Join(lines, "\n"))), "\n")
 }
 func (m *Dashboard) versionContent() string {
 	lines := []string{}
@@ -224,12 +246,12 @@ func renderSection(title, body string, width, height int, focused bool) string {
 		border = lipgloss.DoubleBorder()
 	}
 	edge, heading := lipgloss.NewStyle(), lipgloss.NewStyle()
-	if os.Getenv("NO_COLOR") == "" {
-		edge = edge.Foreground(lipgloss.Color("240"))
-		heading = heading.Bold(true).Foreground(lipgloss.Color("252"))
+	if colorsEnabled() {
+		edge = edge.Foreground(lipgloss.Color(rule))
+		heading = heading.Bold(true).Foreground(lipgloss.Color(secondary))
 		if focused {
-			edge = edge.Foreground(lipgloss.Color("86"))
-			heading = heading.Foreground(lipgloss.Color("86"))
+			edge = edge.Foreground(lipgloss.Color(accent))
+			heading = heading.Foreground(lipgloss.Color(accent))
 		}
 	}
 	if framed {
@@ -251,6 +273,9 @@ func renderSection(title, body string, width, height int, focused bool) string {
 	}
 	if framed {
 		lines = append(lines, edge.Render(border.BottomLeft+strings.Repeat(border.Bottom, width-2)+border.BottomRight))
+	}
+	for i := range lines {
+		lines[i] = fillLine(lines[i], width, surface)
 	}
 	return strings.Join(lines, "\n")
 }
@@ -283,33 +308,66 @@ func (m *Dashboard) panel(which, width, height int) string {
 	case 0:
 		m.workspaces.SetSize(contentWidth, available)
 		body = m.workspaces.View()
+		if len(m.workspaces.Items()) == 0 {
+			body = "Workspace 없음\n\nn 새 환경 생성\nr 다시 조회"
+		}
 	case 1:
 		m.sandboxes.SetSize(contentWidth, available)
 		body = m.sandboxes.View()
+		if len(m.sandboxes.Items()) == 0 {
+			body = "실행 환경 없음\n\nn Agent + Methodology\n  조합으로 생성"
+		}
 	case 2:
 		m.templates.SetSize(contentWidth, available)
 		body = m.templates.View()
+		if len(m.templates.Items()) == 0 {
+			body = "Template 없음 / 미조회\n\nt 목록 조회 · r 갱신"
+		}
 	case 3:
 		if m.rightTab == 1 {
+			toolbar := "FOLLOW · End 최신 · L 확장"
+			if m.logPaused {
+				toolbar = "PAUSED · End 추적 재개"
+			}
+			reserved := 0
+			if available >= 3 {
+				reserved = 1
+			}
+			source := m.logContent()
+			offset := m.logs.YOffset()
+			if m.logPaused {
+				offset = reflowLogOffset(source, offset, m.logs.Width(), contentWidth)
+			}
 			m.logs.SetWidth(contentWidth)
-			m.logs.SetHeight(available)
-			m.logs.SetContent(m.logContent())
+			m.logs.SetHeight(max(1, available-reserved))
+			m.logs.SetContent(inspectorText(source, contentWidth))
 			if !m.logPaused {
 				m.logs.GotoBottom()
+			} else {
+				m.logs.SetYOffset(offset)
 			}
 			body = m.logs.View()
+			if reserved > 0 {
+				body = tone(accent, ansi.Truncate(toolbar, contentWidth, "…")) + "\n" + body
+			}
 		} else {
 			m.details.SetWidth(contentWidth)
 			m.details.SetHeight(available)
 			switch m.rightTab {
 			case 0:
-				m.details.SetContent(m.detailContent())
+				m.details.SetContent(inspectorText(m.detailContent(), contentWidth))
 			case 2:
-				m.details.SetContent(m.versionContent())
+				m.details.SetContent(inspectorText(safeText(m.versionContent()), contentWidth))
 			case 3:
-				m.details.SetContent(m.settingsContent())
+				m.details.SetContent(inspectorText(safeText(m.settingsContent()), contentWidth))
 			}
 			body = m.details.View()
+		}
+	}
+	if which < 3 && m.Search != "" {
+		empty := which == 0 && len(m.workspaces.Items()) == 0 || which == 1 && len(m.sandboxes.Items()) == 0 || which == 2 && len(m.templates.Items()) == 0
+		if empty {
+			body = "검색 결과 없음\n\nEsc 검색 해제"
 		}
 	}
 	return renderSection(title, body, width, height, which == m.Focus)
@@ -346,16 +404,13 @@ func (m *Dashboard) View() tea.View {
 	}
 	m.syncLists()
 	width, height := max(1, m.Width), max(1, m.Height)
-	header := "PASEO DOCK  " + connectionText("sbx", m.Snapshot.SBX) + "  " + connectionText("Paseo", m.Snapshot.Paseo) + "  " + connectionText("Docker", m.Snapshot.Docker)
-	if !m.LastSuccess.IsZero() {
-		header += "  마지막 성공: " + m.LastSuccess.Format("15:04:05")
-	}
-	if m.Error != "" {
-		header += "  " + m.Error
-	}
+	header := m.header(width)
 	m.help.SetWidth(width)
 	m.help.ShowAll = m.Help
 	footer := "u 업데이트 · s shell · x 중지 · d 삭제 · n 생성 · Enter 메뉴 · ? 도움말"
+	if width < 80 {
+		footer = "Tab 패널 · n 생성 · Enter 작업 · ? 도움말"
+	}
 	if m.Help {
 		footer = m.help.View(dashboardKeys{})
 	}
@@ -368,12 +423,32 @@ func (m *Dashboard) View() tea.View {
 		footerLines = 0
 	}
 	headerLines := 1
+	if height >= 28 && width >= 80 && !m.expanded {
+		header += "\n" + m.contextLine(width) + "\n" + m.overview(width)
+		headerLines = 5
+		if !m.Help && !m.Searching && m.Search == "" {
+			footer += "\nTab 패널 · ↑↓/jk 이동 · [ ] 탭 · / 검색 · f 확장 · L 로그 · q 종료"
+			footerLines++
+		}
+	}
 	if height <= 2 {
 		headerLines = 0
 	}
 	available := max(1, height-headerLines-footerLines)
 	var body string
 	switch {
+	case m.expanded:
+		body = m.panel(m.Focus, width, available)
+	case width >= 110 && height >= 28:
+		left := min(32, max(26, width/5))
+		middle := max(32, (width-left)/2-5)
+		right := width - left - middle - 2
+		workspaceHeight := max(5, available*3/5)
+		if m.Focus == 2 {
+			workspaceHeight = max(5, available*2/5)
+		}
+		stack := m.panel(0, left, workspaceHeight) + "\n" + m.panel(2, left, available-workspaceHeight)
+		body = lipgloss.JoinHorizontal(lipgloss.Top, stack, " ", m.panel(1, middle, available), " ", m.panel(3, right, available))
 	case width >= 80 && height >= 20:
 		left := max(28, width/3)
 		right := width - left - 1
@@ -430,6 +505,8 @@ func (m *Dashboard) View() tea.View {
 	// Creation popups show their own errors.
 	if m.actionError != "" && !creationPopup {
 		footer = m.actionError + " · " + footer
+	} else if m.Error != "" {
+		footer = tone(danger, safeText(m.Error)) + " · " + footer
 	}
 	if m.notice != "" {
 		footer = m.notice + " · 아무 키: 닫기"
@@ -439,7 +516,7 @@ func (m *Dashboard) View() tea.View {
 	}
 	lines := []string{}
 	if headerLines > 0 {
-		lines = append(lines, header)
+		lines = append(lines, strings.Split(header, "\n")...)
 	}
 	lines = append(lines, strings.Split(body, "\n")...)
 	if footer != "" {
@@ -449,10 +526,7 @@ func (m *Dashboard) View() tea.View {
 		lines = lines[:height]
 	}
 	for i := range lines {
-		if os.Getenv("NO_COLOR") != "" {
-			lines[i] = ansi.Strip(lines[i])
-		}
-		lines[i] = ansi.Truncate(lines[i], width, "…")
+		lines[i] = fillLine(lines[i], width, canvas)
 	}
 	v := tea.NewView(strings.Join(lines, "\n"))
 	v.AltScreen = true

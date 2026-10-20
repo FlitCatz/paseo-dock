@@ -122,7 +122,8 @@ func TestCLICodexUserNSInteractiveSeeds(t *testing.T) {
 				send(" ")
 			}
 			send("\r")
-			wait("Methodology · Codex")
+			// Section headings are updated incrementally; wait for the active step.
+			wait("2 Methodology]")
 			if !tc.saved && !tc.profile {
 				send(" ")
 			}
