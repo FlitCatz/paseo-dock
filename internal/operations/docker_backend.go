@@ -44,6 +44,8 @@ type dockerInspection struct {
 		CapAdd       []string
 		CapDrop      []string
 		Privileged   bool
+		PidMode      string
+		IpcMode      string
 		NetworkMode  string
 		PortBindings map[string][]struct {
 			HostIP   string `json:"HostIp"`
@@ -216,8 +218,15 @@ func validateDockerPolicy(e config.Entry, raw dockerInspection) error {
 		return fmt.Errorf("Docker security policy labels mismatch")
 	}
 	if e.SecurityPolicy == "" {
+		// Default creation never grants capabilities or shares host namespaces.
+		if raw.HostConfig.Privileged || len(raw.HostConfig.CapAdd) != 0 {
+			return fmt.Errorf("Docker default security capabilities mismatch: privileged mode and added capabilities are forbidden")
+		}
+		if raw.HostConfig.PidMode != "" || (raw.HostConfig.IpcMode != "" && raw.HostConfig.IpcMode != "private") || raw.HostConfig.NetworkMode != "bridge" {
+			return fmt.Errorf("Docker default security namespaces mismatch")
+		}
 		return nil
-	} // Historical daemon policy remains compatible.
+	}
 	// Docker may persist the canonical CAP_ name rather than the CLI spelling.
 	dropsSysAdmin := slices.Contains(raw.HostConfig.CapDrop, "SYS_ADMIN") || slices.Contains(raw.HostConfig.CapDrop, "CAP_SYS_ADMIN")
 	if raw.HostConfig.Privileged || len(raw.HostConfig.CapAdd) != 0 || !dropsSysAdmin {

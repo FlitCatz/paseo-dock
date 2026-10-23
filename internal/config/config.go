@@ -202,17 +202,31 @@ func (i Installed) Missing() bool {
 	return os.IsNotExist(err) || (err == nil && !info.IsDir())
 }
 
-// Registries lists readable workspace registries under base, sorted by runtime path.
+// Registries lists workspace registries under base, sorted by runtime path.
+// An unreadable registry must never look like an absent workspace to provider sync.
 func Registries(base string) ([]Installed, error) {
-	paths, err := filepath.Glob(filepath.Join(base, "*", "registry.json"))
+	dirs, err := os.ReadDir(base)
+	if os.IsNotExist(err) {
+		return []Installed{}, nil
+	}
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("list registries %s: %w", base, err)
 	}
 	out := []Installed{}
-	for _, path := range paths {
-		var reg Registry
-		if ReadJSON(path, &reg) != nil || reg.Workspace == "" {
+	for _, dir := range dirs {
+		if !dir.IsDir() && dir.Type()&os.ModeSymlink == 0 {
 			continue
+		}
+		path := filepath.Join(base, dir.Name(), "registry.json")
+		var reg Registry
+		if err := ReadJSON(path, &reg); err != nil {
+			if os.IsNotExist(err) {
+				continue // Launcher/lock directories need not have registries.
+			}
+			return nil, fmt.Errorf("read registry %s: %w", path, err)
+		}
+		if reg.Workspace == "" {
+			return nil, fmt.Errorf("invalid registry %s: missing workspace", path)
 		}
 		out = append(out, Installed{Runtime: filepath.Dir(path), Registry: reg})
 	}

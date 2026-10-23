@@ -25,7 +25,8 @@ case "$5" in
       */utilities/installed.json) exit 1 ;;
       *) echo '{"lock":{"tools":{"openspec":{"package":"@fission-ai/openspec"}}}}' ;;
     esac ;;
-  npm|codex|openspec) echo 9.0.0 ;;
+  codex) echo 0.159.2 ;;
+  openspec) echo 1.14.0 ;;
 esac
 `
 	if err := os.WriteFile(filepath.Join(bin, "sbx"), []byte(stub), 0700); err != nil {

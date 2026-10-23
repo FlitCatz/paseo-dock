@@ -255,7 +255,7 @@ func TestBundleVersionsProbeEveryAgentAndMethodology(t *testing.T) {
 	if err != nil {
 		t.Fatalf("err=%v calls=%v", err, b.calls)
 	}
-	want := map[string]string{"agent:claude": "claude 1.0.0", "agent:codex": "codex 1.2.3", "agent:omp": "omp 1.0.0", "methodology:openspec": "openspec 1.0.0"}
+	want := map[string]string{"agent:claude": "claude 1.0.0", "agent:codex": "codex 0.159.2", "agent:omp": "omp 1.0.0", "methodology:openspec": "openspec 1.0.0"}
 	for id, version := range want {
 		if result.Versions[id] != version {
 			t.Fatalf("%s: %v", id, result.Versions)
