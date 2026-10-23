@@ -42,6 +42,19 @@ Docker는 bridge network, workspace 하나의 읽기·쓰기 mount, host UID/GID
 SBX shell/version/update는 중지된 guest를 시작할 수 있어 실행 전에 안내합니다.
 기존 기록·이미지는 자동 migration하거나 교체하지 않습니다.
 
+### 보안 경계
+
+컨테이너 격리는 workspace 밖의 host 자원을 보호하기 위한 경계입니다. 프로젝트 디렉터리는
+읽기·쓰기 bind mount로 연결되고 guest agent는 host와 같은 UID/GID로 실행됩니다.
+따라서 **workspace 자체는 agent의 쓰기 범위 안에 있으며 신뢰 경계가 아닙니다**.
+agent는 프로젝트 파일을 수정·삭제할 수 있으므로 보존할 변경은 별도로 백업하세요.
+
+정책을 선택하지 않은 기존 container도 privileged mode, 추가 capability, host 또는 다른 container의
+PID·IPC namespace 사용 및 bridge 이외의 network를 거부합니다. 자체 IPC namespace를 쓰는
+기존 `private`·`shareable`·`none` 설정은 허용하며 새 container는 `--ipc private`로 생성합니다.
+검증에 실패하면 명확한 오류를 반환하며 해당 container를 조용히 채택하거나 삭제하지 않습니다.
+Paseo provider 동기화도 읽을 수 없거나 손상된 registry가 있으면 오류를 반환하여 기존 provider를 보존합니다.
+
 생성 확인에서 sandbox의 공식 출처를 표시하고 정확한 버전은 build에서 확정합니다.
 아주 낮은 터미널에서는 최종 확인 내용이 잘릴 수 있으므로 터미널 높이를 늘려 확인하세요.
 기본 Docker 정책을 쓰는 OrbStack 환경에서는 Codex 0.161.0의 workspace-write sandbox가
@@ -429,18 +442,19 @@ sandbox별로 하루 한 번 agent·설치된 methodology·선택한 utility를 
 ./paseo-dock update --workspace /path/to/project --profile codex-superpowers
 ```
 
-Codex·Claude·OpenSpec은 npm의 `latest` 버전을 조회합니다. 새 버전은 사용자 소유의
-별도 디렉터리에 설치하고 `--version` 검증 후 `~/.local/bin`의 실행 파일을 원자적으로
-전환합니다. 이미 최신 버전이면 다시 설치하지 않습니다. GSD Core는 최신 npm 버전의
-공식 전역 설치기를 실행합니다. Superpowers·Ponytail은 설치된 Git repository의 기본
-branch HEAD로 갱신하고 agent별 plugin 등록을 갱신합니다. checkout에 로컬 변경이 있으면
-덮어쓰지 않고 해당 methodology의 업데이트 실패를 기록합니다.
+업데이트는 이미지 build와 같은 `versions.lock.json`을 사용합니다. 이 lock은 `make build` 시
+CLI와 launcher 실행 파일에 포함되며 guest의 manifest는 설치 대상 확인에만 사용합니다.
+실행 중 npm `latest`, GitHub 최신 release, Git branch HEAD를 조회하지 않습니다.
 
-Antigravity는 [공식 설치기](https://antigravity.google/docs/cli/install/)가 사용하는 최신
-release manifest에서 바이너리를 다운로드하여 SHA512 검증 후 전환합니다. shell profile은
-변경하지 않습니다. RTK는 최신 GitHub release의 아키텍처별 바이너리를 SHA256 검증 후
-전환합니다. Headroom은 하위 의존성까지 새 버전을 확인하고 변경이 있으면 기존 Python으로
-새 가상환경에 최신 패키지를 설치하고 검증 후 전환합니다.
+Antigravity와 RTK는 lock에 고정한 아키텍처별 URL과 SHA512/SHA256으로 검증한 뒤
+사용자 소유 디렉터리에 설치하고 `--version` 검증 후 실행 파일을 원자적으로 전환합니다.
+Superpowers·Ponytail은 lock의 정확한 Git revision만 가져와 검증하고 agent별 plugin 등록을
+갱신합니다. checkout에 로컬 변경이 있으면 해당 methodology의 업데이트 실패를 기록합니다.
+
+현재 lock에는 Codex·Claude·OpenSpec·GSD Core의 npm checksum과 Headroom 및 하위 의존성의
+checksum이 없습니다. 이 항목의 새 설치는 명확한 오류로 거부하며 기존 실행 파일을 보존합니다.
+Codex·Claude·OpenSpec이 이미 lock의 버전이면 재설치 없이 확인만 합니다.
+이 항목을 바꾸려면 이미지를 다시 만들어야 합니다. 검증되지 않은 runtime 설치로 fallback하지 않습니다.
 OpenSpec의 프로젝트 파일은 자동 재생성하지 않습니다.
 
 #### 업데이트 대상과 제외 대상
@@ -449,15 +463,18 @@ OpenSpec의 프로젝트 파일은 자동 재생성하지 않습니다.
 
 | 갱신함 | 갱신하지 않음 |
 | --- | --- |
-| Codex·Claude·Antigravity CLI | OS 패키지(apt), Node, Python·uv |
-| 설치된 methodology(Superpowers·Ponytail·OpenSpec·GSD 등) | base image |
-| 선택한 utility(RTK, Headroom 패키지와 그 venv 의존성) | 이미지에 고정한 omp·gjc |
+| Antigravity CLI (lock의 URL·checksum) | OS 패키지(apt), Node, Python·uv |
+| Superpowers·Ponytail (lock의 Git revision) | base image, checksum 없는 npm methodology |
+| 선택한 RTK (lock의 URL·checksum) | 이미지에 고정한 omp·gjc, npm agent, Headroom 및 의존성 |
 | | Codex·Claude ACP adapter, 직접 설치한 npm·pip 패키지 |
 
 `sandbox` category는 agent만 갱신합니다. `update` 성공은 omp·gjc·ACP adapter가 최신이라는
 뜻이 아닙니다. 이 항목들은 `versions.lock.json`에 고정되어 이미지를 다시 만들 때만 바뀝니다.
 
-전체를 새로 맞추려면 다음 순서로 진행합니다.
+더 새 버전으로 이동하려면 `versions.lock.json`의 버전과 해당 URL·checksum 또는 Git revision을
+함께 수정합니다. `make build` 후 `register --workspace /project --apply`로 launcher도 갱신하고
+수동 `update`를 실행하면 위의 검증 가능한 항목만 새 pin으로 전환합니다.
+전체를 새로 맞추거나 checksum 없는 항목을 바꾸려면 다음 순서로 진행합니다.
 
 1. `versions.lock.json`에서 Node·base image·omp·gjc·ACP adapter 등 목표 버전을 수정합니다.
 2. `create --build`(또는 `build`·`load`)로 새 이미지를 만듭니다. 실행 중인 대상의 이미지는
@@ -470,12 +487,12 @@ workspace 폴더(bind mount 원본)만 보존됩니다.
 
 같은 sandbox의 중복 업데이트는 호스트 파일 lock으로 막습니다. 업데이트는 sandbox당
 최대 3분이며, 자동 업데이트 실패 시 설치된 agent로 실행을 계속하고 한 시간 뒤 재시도합니다.
-npm agent·Antigravity·OpenSpec·RTK·Headroom의 설치·검증 실패는 기존 실행 파일을 보존합니다.
-GSD·plugin 설치기는 자체 설정을 변경하므로 전체 구성의 transaction을 보장하지
+Antigravity·RTK의 설치·검증 실패와 checksum 없는 항목의 거부는 기존 실행 파일을 보존합니다.
+plugin 설치기는 자체 설정을 변경하므로 전체 구성의 transaction을 보장하지
 않습니다. 이미 실행 중인 agent는 다음 세션부터 새 버전을 사용합니다.
 
 업데이트 확인 시각·실제 버전·실패 정보는 호스트 runtime의 `updates/*.json`에 저장합니다.
-guest의 기존 `installed.json`과 `versions.lock.json`은 이미지 최초 설치 기록입니다.
+guest의 기존 `installed.json`과 `versions.lock.json`은 이미지 최초 설치 기록이며 업데이트 pin의 출처가 아닙니다.
 업데이트 로그는 stderr로만 출력하며 Paseo 통신 stdout에 섞지 않습니다.
 이전의 별도 설치 디렉터리는 실행 중 세션을 위해 보존합니다.
 호스트 launcher 또는 CLI 환경에 `PASEO_DOCK_AUTO_UPDATE=0`을 설정하면 자동 갱신을 끕니다.

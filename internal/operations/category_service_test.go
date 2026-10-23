@@ -69,10 +69,8 @@ func (b *categoryBackend) Exec(_ context.Context, e config.Entry, args []string,
 	switch strings.TrimPrefix(command, "env -C /tmp ") {
 	case "printenv HOME":
 		fmt.Fprint(out, "/home/agent")
-	case "npm view @openai/codex@latest version":
-		fmt.Fprint(out, "1.2.3")
 	case "codex --version":
-		fmt.Fprint(out, "codex 1.2.3")
+		fmt.Fprint(out, "codex 0.159.2")
 	case "rtk --version":
 		fmt.Fprint(out, "rtk 0.1.0")
 	case "cat /home/agent/.local/share/paseo-dock/installed.json":
@@ -139,12 +137,12 @@ func TestNewSandboxUpdateTouchesAgentOnly(t *testing.T) {
 	if err != nil || !result.Changed {
 		t.Fatalf("%+v %v", result, err)
 	}
-	want := []string{"printenv HOME", "mkdir -p /home/agent/.local/share/paseo-dock/updates /home/agent/.local/bin", "npm view @openai/codex@latest version", "codex --version"}
+	want := []string{"printenv HOME", "mkdir -p /home/agent/.local/share/paseo-dock/updates /home/agent/.local/bin", "codex --version"}
 	if !slices.Equal(b.calls, want) {
 		t.Fatalf("calls %v", b.calls)
 	}
 	var state sandboxupdate.State
-	if err := config.ReadJSON(observationPath(target.Runtime, "updates", target.Entry.Sandbox), &state); err != nil || state.Success.IsZero() || len(state.Versions) != 1 || state.Versions["agent"] != "codex 1.2.3" {
+	if err := config.ReadJSON(observationPath(target.Runtime, "updates", target.Entry.Sandbox), &state); err != nil || state.Success.IsZero() || len(state.Versions) != 1 || state.Versions["agent"] != "codex 0.159.2" {
 		t.Fatalf("state=%+v err=%v", state, err)
 	}
 }
@@ -175,7 +173,7 @@ func TestCategoryVersionsUseSelectedTransport(t *testing.T) {
 		t.Run(string(c), func(t *testing.T) {
 			s, target, b := categoryFixture(t, c)
 			result, err := s.Execute(context.Background(), Request{Kind: KindVersions, Target: target}, nil)
-			if err != nil || result.Versions["agent"] != "codex 1.2.3" {
+			if err != nil || result.Versions["agent"] != "codex 0.159.2" {
 				t.Fatalf("result=%+v err=%v calls=%v", result, err, b.calls)
 			}
 			if c == config.CategorySandbox && !slices.Equal(b.calls, []string{"printenv HOME", "codex --version"}) {

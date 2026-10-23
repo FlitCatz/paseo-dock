@@ -19,7 +19,7 @@ import (
 	"time"
 )
 
-// Prune must neither overlap a live installer nor unlink the inode held by its lock.
+// Prune must neither overlap a live update probe nor unlink the inode held by its lock.
 func TestPruneDuringUpdatePreservesSandboxLock(t *testing.T) {
 	s, target, _ := operationFixture(t)
 	if err := os.MkdirAll(filepath.Join(s.Root, "bin"), 0700); err != nil {
@@ -229,15 +229,14 @@ func fakeSBX() {
 		fmt.Println("/home/agent")
 	case strings.HasPrefix(command, "npm view"):
 		fmt.Println("9.0.0")
-	case command == "codex --version":
-		fmt.Println("1.0.0")
 	case strings.HasPrefix(command, "mktemp -d"):
 		fmt.Println("/home/agent/.local/share/paseo-dock/updates/install.test")
-	case strings.HasPrefix(command, "npm install"):
+	case command == "codex --version":
 		_ = os.WriteFile(os.Getenv("SBX_TEST_READY"), []byte("ready"), 0600)
 		end := time.Now().Add(2 * time.Second)
 		for time.Now().Before(end) {
 			if _, err := os.Stat(os.Getenv("SBX_TEST_RELEASE")); err == nil {
+				fmt.Println("0.159.2")
 				return
 			}
 			time.Sleep(10 * time.Millisecond)
@@ -738,7 +737,7 @@ func providerScopeFixture(t *testing.T) (*Service, []Target, string) {
 	return s, []Target{selected, other}, home
 }
 
-// Cancellation during a guest installer must preserve partial state and require verification.
+// Cancellation during a guest update probe must preserve partial state and require verification.
 func TestUpdateContextCancellation(t *testing.T) {
 	s, target, log := operationFixture(t)
 	ctx, cancel := context.WithCancel(context.Background())

@@ -44,6 +44,8 @@ type dockerInspection struct {
 		CapAdd       []string
 		CapDrop      []string
 		Privileged   bool
+		PidMode      string
+		IpcMode      string
 		NetworkMode  string
 		PortBindings map[string][]struct {
 			HostIP   string `json:"HostIp"`
@@ -216,8 +218,18 @@ func validateDockerPolicy(e config.Entry, raw dockerInspection) error {
 		return fmt.Errorf("Docker security policy labels mismatch")
 	}
 	if e.SecurityPolicy == "" {
+		// Default creation never grants capabilities or shares host namespaces.
+		if raw.HostConfig.Privileged || len(raw.HostConfig.CapAdd) != 0 {
+			return fmt.Errorf("Docker default security capabilities mismatch: privileged mode and added capabilities are forbidden")
+		}
+		// Older containers inherited daemon IPC defaults. Shareable still owns
+		// its namespace; only host/container modes join an outside namespace.
+		ownIPC := slices.Contains([]string{"", "private", "shareable", "none"}, raw.HostConfig.IpcMode)
+		if raw.HostConfig.PidMode != "" || !ownIPC || raw.HostConfig.NetworkMode != "bridge" {
+			return fmt.Errorf("Docker default security namespaces mismatch")
+		}
 		return nil
-	} // Historical daemon policy remains compatible.
+	}
 	// Docker may persist the canonical CAP_ name rather than the CLI spelling.
 	dropsSysAdmin := slices.Contains(raw.HostConfig.CapDrop, "SYS_ADMIN") || slices.Contains(raw.HostConfig.CapDrop, "CAP_SYS_ADMIN")
 	if raw.HostConfig.Privileged || len(raw.HostConfig.CapAdd) != 0 || !dropsSysAdmin {
@@ -401,7 +413,7 @@ func (b *DockerBackend) Create(ctx context.Context, e config.Entry) (config.Entr
 	defer os.RemoveAll(cidDir)
 	cidPath := filepath.Join(cidDir, "container-id")
 	sum := sha256.Sum256([]byte(e.Workspace + "\x00" + e.Key()))
-	args := []string{"run", "--detach", "--name", fmt.Sprintf("paseo-dock-%x", sum[:12]), "--label", DockerManagedLabel + "=true", "--label", "io.paseo-dock.category=container", "--network", "bridge", "--mount", "type=bind,src=" + e.Workspace + ",dst=" + e.Workspace, "--workdir", e.Workspace, "--user", "root", "--env", "HOME=/home/agent", "--entrypoint", "/bin/sh"}
+	args := []string{"run", "--detach", "--name", fmt.Sprintf("paseo-dock-%x", sum[:12]), "--label", DockerManagedLabel + "=true", "--label", "io.paseo-dock.category=container", "--network", "bridge", "--ipc", "private", "--mount", "type=bind,src=" + e.Workspace + ",dst=" + e.Workspace, "--workdir", e.Workspace, "--user", "root", "--env", "HOME=/home/agent", "--entrypoint", "/bin/sh"}
 	if e.SecurityPolicy != "" {
 		path, cleanup, err := containerpolicy.WriteTemp()
 		if err != nil {

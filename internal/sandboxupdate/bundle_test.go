@@ -26,8 +26,8 @@ func (f *bundleFixture) run(ctx context.Context, args []string, capture bool) (s
 		return f.head, nil
 	case strings.HasSuffix(s, "rev-parse FETCH_HEAD"):
 		f.calls = append(f.calls, s)
-		return "new", nil
-	case strings.Contains(s, "checkout --detach FETCH_HEAD"):
+		return "8ca22dba9a94f28898bbce59f2537ff4d87c747d", nil
+	case strings.Contains(s, "checkout --detach 8ca22dba9a94f28898bbce59f2537ff4d87c747d"):
 		f.head = "new"
 	}
 	if strings.HasPrefix(s, "cat ") && strings.Contains(s, "utilities/installed.json") {

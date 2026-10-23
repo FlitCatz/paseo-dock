@@ -136,10 +136,14 @@ func terminalStreams(in io.Reader, out io.Writer) bool {
 // updateUsage states the refresh boundary; see README "업데이트 대상과 제외 대상".
 const updateUsage = `usage: paseo-dock update [PROFILE] [options]
 
-Refreshes only paseo-dock-managed tools: Codex, Claude, Antigravity CLI,
-installed methodologies, and the RTK/Headroom utilities (sandbox: agents only).
+Refreshes only paseo-dock-managed tools to versions.lock.json pins embedded
+at build time: Antigravity CLI, Git methodologies, and RTK.
+Codex, Claude and OpenSpec are checked against pinned versions; new npm installs
+and Headroom updates fail closed because the lock lacks package/dependency checksums.
+No runtime latest-version lookups are used (sandbox: agents only).
 It does not touch OS packages, Node, Python/uv, the base image, the
 image-pinned omp/gjc, or the ACP adapters.
+New pins: edit versions.lock.json, make build, register --apply, then update.
 Full refresh: edit versions.lock.json, rebuild (create --build), remove and
 recreate the target, then log in to each agent again. Recreating loses
 in-container logins, sessions and guest files.
