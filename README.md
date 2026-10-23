@@ -49,8 +49,9 @@ SBX shell/version/update는 중지된 guest를 시작할 수 있어 실행 전�
 따라서 **workspace 자체는 agent의 쓰기 범위 안에 있으며 신뢰 경계가 아닙니다**.
 agent는 프로젝트 파일을 수정·삭제할 수 있으므로 보존할 변경은 별도로 백업하세요.
 
-정책을 선택하지 않은 기존 container도 privileged mode, 추가 capability, host/shared PID·IPC
-namespace 및 bridge 이외의 network를 거부합니다. paseo-dock 기본 생성 설정은 통과합니다.
+정책을 선택하지 않은 기존 container도 privileged mode, 추가 capability, host 또는 다른 container의
+PID·IPC namespace 사용 및 bridge 이외의 network를 거부합니다. 자체 IPC namespace를 쓰는
+기존 `private`·`shareable`·`none` 설정은 허용하며 새 container는 `--ipc private`로 생성합니다.
 검증에 실패하면 명확한 오류를 반환하며 해당 container를 조용히 채택하거나 삭제하지 않습니다.
 Paseo provider 동기화도 읽을 수 없거나 손상된 registry가 있으면 오류를 반환하여 기존 provider를 보존합니다.
 

@@ -83,8 +83,12 @@ func TestPluginRejectsUnpinnedFetchBeforeCheckout(t *testing.T) {
 	if _, err := u.plugin([]string{"codex"}, "superpowers"); err == nil {
 		t.Fatal("unpinned plugin accepted")
 	}
+	var pin struct{ Revision string }
+	if err := json.Unmarshal(u.lock.Tools["superpowers"], &pin); err != nil {
+		t.Fatal(err)
+	}
 	all := strings.Join(calls, "\n")
-	if !strings.Contains(all, "fetch --depth 1 origin 8ca22dba9a94f28898bbce59f2537ff4d87c747d") || strings.Contains(all, "checkout") || strings.Contains(all, "plugin remove") {
+	if !strings.Contains(all, "fetch --depth 1 origin "+pin.Revision) || strings.Contains(all, "checkout") || strings.Contains(all, "plugin remove") {
 		t.Fatal(all)
 	}
 }

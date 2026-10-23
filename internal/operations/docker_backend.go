@@ -222,7 +222,10 @@ func validateDockerPolicy(e config.Entry, raw dockerInspection) error {
 		if raw.HostConfig.Privileged || len(raw.HostConfig.CapAdd) != 0 {
 			return fmt.Errorf("Docker default security capabilities mismatch: privileged mode and added capabilities are forbidden")
 		}
-		if raw.HostConfig.PidMode != "" || (raw.HostConfig.IpcMode != "" && raw.HostConfig.IpcMode != "private") || raw.HostConfig.NetworkMode != "bridge" {
+		// Older containers inherited daemon IPC defaults. Shareable still owns
+		// its namespace; only host/container modes join an outside namespace.
+		ownIPC := slices.Contains([]string{"", "private", "shareable", "none"}, raw.HostConfig.IpcMode)
+		if raw.HostConfig.PidMode != "" || !ownIPC || raw.HostConfig.NetworkMode != "bridge" {
 			return fmt.Errorf("Docker default security namespaces mismatch")
 		}
 		return nil
@@ -410,7 +413,7 @@ func (b *DockerBackend) Create(ctx context.Context, e config.Entry) (config.Entr
 	defer os.RemoveAll(cidDir)
 	cidPath := filepath.Join(cidDir, "container-id")
 	sum := sha256.Sum256([]byte(e.Workspace + "\x00" + e.Key()))
-	args := []string{"run", "--detach", "--name", fmt.Sprintf("paseo-dock-%x", sum[:12]), "--label", DockerManagedLabel + "=true", "--label", "io.paseo-dock.category=container", "--network", "bridge", "--mount", "type=bind,src=" + e.Workspace + ",dst=" + e.Workspace, "--workdir", e.Workspace, "--user", "root", "--env", "HOME=/home/agent", "--entrypoint", "/bin/sh"}
+	args := []string{"run", "--detach", "--name", fmt.Sprintf("paseo-dock-%x", sum[:12]), "--label", DockerManagedLabel + "=true", "--label", "io.paseo-dock.category=container", "--network", "bridge", "--ipc", "private", "--mount", "type=bind,src=" + e.Workspace + ",dst=" + e.Workspace, "--workdir", e.Workspace, "--user", "root", "--env", "HOME=/home/agent", "--entrypoint", "/bin/sh"}
 	if e.SecurityPolicy != "" {
 		path, cleanup, err := containerpolicy.WriteTemp()
 		if err != nil {

@@ -221,7 +221,9 @@ func Registries(base string) ([]Installed, error) {
 		var reg Registry
 		if err := ReadJSON(path, &reg); err != nil {
 			if os.IsNotExist(err) {
-				continue // Launcher/lock directories need not have registries.
+				if _, statErr := os.Lstat(path); os.IsNotExist(statErr) {
+					continue // Launcher/lock directories need not have registries.
+				}
 			}
 			return nil, fmt.Errorf("read registry %s: %w", path, err)
 		}
