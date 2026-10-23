@@ -71,8 +71,9 @@ func TestControlCenterReviewCanInspectLongSettings(t *testing.T) {
 		m.Workspace = "/workspace/" + strings.Repeat("long-project/", 14) + "mount-tail"
 		m.Update(tea.WindowSizeMsg{Width: size[0], Height: size[1]})
 		var seen strings.Builder
-		m.View()
-		key(m, tea.KeyHome)
+		if view := m.View().Content; !strings.Contains(view, "codex-superpowers") {
+			t.Fatalf("%v initial review hides selected profile: %s", size, view)
+		}
 		for i := 0; i < 80; i++ {
 			view := m.View().Content
 			assertScreenBounds(t, view, size[0], size[1])
