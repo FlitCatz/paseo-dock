@@ -107,10 +107,15 @@ func TestCreationRequestFrozen(t *testing.T) {
 	if child.Step != 3 {
 		t.Fatal("wizard did not reach final confirmation", child.Step)
 	}
-	for _, want := range []string{"codex-superpowers", "호스트 자원 공유", "Utilities: rtk", "Build", "Paseo", "~/.paseo/config.json"} {
+	for _, want := range []string{"codex-superpowers", "호스트 자원 공유", "Utilities: rtk", "Build", "Paseo"} {
 		if !strings.Contains(m.View().Content, want) {
 			t.Fatalf("confirmation omits %s: %s", want, m.View().Content)
 		}
+	}
+	// The registration destination is below the initial page on short screens.
+	m.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnd}))
+	if view := m.View().Content; !strings.Contains(view, "~/.paseo/config.json") {
+		t.Fatalf("confirmation omits registration destination: %s", view)
 	}
 	cmd := keyCmd(m, "enter")
 	if cmd == nil {

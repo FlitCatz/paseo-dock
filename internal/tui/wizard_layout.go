@@ -115,7 +115,8 @@ func (m *Model) reviewLayout(body []string) tea.View {
 	wrapped := strings.Split(ansi.Hardwrap(strings.Join(body, "\n"), cw, true), "\n")
 	m.reviewRows, m.reviewHeight = len(wrapped), ch
 	if m.reviewOffset < 0 {
-		m.reviewOffset = max(0, len(wrapped)-ch)
+		// Show the selected profile first; later settings remain scrollable.
+		m.reviewOffset = 0
 	}
 	m.reviewOffset = min(max(0, m.reviewOffset), max(0, len(wrapped)-ch))
 	end := min(len(wrapped), m.reviewOffset+ch)
