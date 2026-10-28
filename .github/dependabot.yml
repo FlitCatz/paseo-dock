@@ -1,28 +1,7 @@
 version: 2
 updates:
-  # 1. 프론트엔드 / Node.js 의존성 점검
-  - package-ecosystem: "npm"
-    directory: "/"
-    schedule:
-      interval: "weekly"
-      day: "monday"
-      time: "09:00"
-      timezone: "Asia/Seoul"
-    open-pull-requests-limit: 10
-    labels:
-      - "dependencies"
-      - "javascript"
-    # 소규모 업데이트는 단일 PR로 묶어서 생성
-    groups:
-      minor-and-patch:
-        patterns:
-          - "*"
-        update-types:
-          - "patch"
-          - "minor"
-
-  # 2. .NET / C# 백엔드 의존성 점검
-  - package-ecosystem: "nuget"
+  # Go 모듈 주간 업데이트
+  - package-ecosystem: "gomod"
     directory: "/"
     schedule:
       interval: "weekly"
@@ -32,12 +11,17 @@ updates:
     open-pull-requests-limit: 5
     labels:
       - "dependencies"
-      - "dotnet"
+      - "golang"
+    groups:
+      go-patch:
+        patterns:
+          - "*"
+        update-types:
+          - "patch"
+          - "minor"
 
-  # 3. GitHub Actions 워크플로 버전 점검
+  # GitHub Actions 워크플로 점검
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "monthly"
-    labels:
-      - "ci"
